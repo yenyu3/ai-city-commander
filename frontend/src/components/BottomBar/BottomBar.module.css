@@ -1,0 +1,18 @@
+.wrap {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 20px;
+  width: min(100%, 1560px);
+  height: 58px;
+  margin: 0 auto;
+  padding: 10px 22px 14px;
+  background: transparent;
+  border-top: 1px solid var(--soft-border);
+  overflow: hidden;
+}
+
+.wrap > * + * {
+  padding-left: 20px;
+  border-left: 1px solid var(--soft-border);
+}

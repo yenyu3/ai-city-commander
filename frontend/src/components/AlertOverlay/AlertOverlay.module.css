@@ -1,0 +1,95 @@
+.overlay {
+  position: absolute;
+  top: 18px;
+  left: 50%;
+  transform: translateX(-50%);
+  width: 320px;
+  max-width: calc(100% - 32px);
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  z-index: 50;
+  pointer-events: none;
+}
+
+.card {
+  pointer-events: auto;
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-lg);
+  padding: 14px 16px;
+  box-shadow: var(--shadow-lg);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  animation: slideDown 0.3s ease both;
+}
+
+@keyframes slideDown {
+  from { opacity: 0; transform: translateY(-12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+.head {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 6px;
+}
+
+.kind {
+  font-family: var(--font-nav);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: var(--crit);
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+
+.dismiss {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 16px;
+  line-height: 1;
+  transition: color var(--transition-fast);
+}
+.dismiss:hover {
+  color: var(--text);
+}
+
+.title {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 13.5px;
+  margin-bottom: 6px;
+}
+
+.rule {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.5;
+  margin-bottom: 6px;
+}
+
+.llm {
+  font-size: 12px;
+  line-height: 1.6;
+  color: var(--text);
+  animation: fadeIn 0.5s ease both;
+  padding-top: 6px;
+  border-top: 1px solid var(--soft-border);
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.llmLoading {
+  font-size: 11px;
+  color: var(--text-dim);
+  font-style: italic;
+  padding-top: 6px;
+  border-top: 1px solid var(--soft-border);
+}

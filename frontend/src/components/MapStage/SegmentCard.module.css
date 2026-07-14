@@ -1,0 +1,110 @@
+.card {
+  position: absolute;
+  top: 16px;
+  right: 16px;
+  width: 260px;
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-lg);
+  padding: 16px;
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+  z-index: 5;
+}
+
+.header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 10px;
+}
+
+.name {
+  font-family: var(--font-display);
+  font-weight: 500;
+  font-size: 15px;
+}
+
+.close {
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  font-size: 18px;
+  line-height: 1;
+  padding: 0 4px;
+  transition: color var(--transition-fast);
+}
+.close:hover {
+  color: var(--text);
+}
+
+.row {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 6px 0;
+  font-size: 12.5px;
+  border-bottom: 1px solid var(--soft-border);
+}
+.row:last-of-type {
+  border-bottom: none;
+}
+
+.label {
+  color: var(--text-dim);
+}
+
+.mono {
+  font-family: var(--font-mono);
+}
+
+.tierBadge {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  border: 1px solid transparent;
+}
+.tierNormal {
+  color: var(--ok);
+  background: color-mix(in srgb, var(--ok), transparent 88%);
+  border-color: color-mix(in srgb, var(--ok), transparent 70%);
+}
+.tierB {
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn), transparent 88%);
+  border-color: color-mix(in srgb, var(--warn), transparent 70%);
+}
+.tierA {
+  color: var(--crit);
+  background: color-mix(in srgb, var(--crit), transparent 88%);
+  border-color: color-mix(in srgb, var(--crit), transparent 70%);
+}
+
+.tag {
+  margin-top: 8px;
+  font-family: var(--font-nav);
+  font-size: 11px;
+  text-align: center;
+  padding: 5px 8px;
+  border-radius: var(--radius-sm);
+  background: var(--panel-2);
+  border: 1px solid var(--soft-border);
+  color: var(--text-dim);
+}
+.tagMain {
+  background: color-mix(in srgb, var(--cyan), transparent 86%);
+  border-color: color-mix(in srgb, var(--cyan), transparent 65%);
+  color: var(--cyan);
+}
+.tagSecondary {
+  background: color-mix(in srgb, var(--warn), transparent 88%);
+  border-color: color-mix(in srgb, var(--warn), transparent 70%);
+  color: var(--warn);
+}
+.tagCrit {
+  background: color-mix(in srgb, var(--crit), transparent 86%);
+  border-color: color-mix(in srgb, var(--crit), transparent 65%);
+  color: var(--crit);
+}

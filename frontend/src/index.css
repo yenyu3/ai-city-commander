@@ -1,0 +1,173 @@
+@import url("https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500;700&family=Montserrat:wght@300;400;500;600;700&family=Poppins:wght@400;500;600&display=swap");
+
+:root {
+  --bg: #0f1012;
+  --panel: #181a1f;
+  --panel-2: #202329;
+  --border: rgba(255, 255, 255, 0.12);
+  --soft-border: rgba(255, 255, 255, 0.08);
+  --text: #f4f5f7;
+  --text-dim: #a7abb2;
+  --amber: #e5e7eb;
+  --ok: #51b887;
+  --warn: #d8a13f;
+  --crit: #e15b68;
+  --cyan: #6aa9bc;
+  --map-base: #090d12;
+  --map-grid: rgba(255, 255, 255, 0.055);
+  --map-road: #333b47;
+  --map-road-shadow: rgba(0, 0, 0, 0.64);
+  --map-water: #121d29;
+  --map-label: rgba(244, 245, 247, 0.58);
+  --map-building: #2b3037;
+  --map-building-hi: #444a54;
+  --map-building-side: #1c2026;
+  --map-building-roof: #505761;
+  --map-building-line: rgba(255, 255, 255, 0.08);
+  --map-heat: rgba(196, 143, 214, 0.56);
+
+  --font-display: "Montserrat", "Segoe UI", system-ui, sans-serif;
+  --font-body: "Roboto", "Segoe UI", system-ui, sans-serif;
+  --font-nav: "Poppins", "Segoe UI", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, Consolas, monospace;
+
+  --radius-sm: 4px;
+  --radius-md: 6px;
+  --radius-lg: 8px;
+  --radius-xl: 8px;
+
+  --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.04);
+  --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.08);
+  --shadow-lg: 0 18px 50px rgba(0, 0, 0, 0.12);
+
+  --transition-fast: 0.2s ease;
+  --transition-med: 0.3s ease;
+
+  color-scheme: dark;
+  color: var(--text);
+  background: var(--bg);
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0f1012;
+  --panel: #181a1f;
+  --panel-2: #202329;
+  --border: rgba(255, 255, 255, 0.12);
+  --soft-border: rgba(255, 255, 255, 0.08);
+  --text: #f4f5f7;
+  --text-dim: #a7abb2;
+  --amber: #e5e7eb;
+  --ok: #51b887;
+  --warn: #d8a13f;
+  --crit: #e15b68;
+  --cyan: #6aa9bc;
+  --map-base: #090d12;
+  --map-grid: rgba(255, 255, 255, 0.055);
+  --map-road: #333b47;
+  --map-road-shadow: rgba(0, 0, 0, 0.64);
+  --map-water: #121d29;
+  --map-label: rgba(244, 245, 247, 0.58);
+  --map-building: #2b3037;
+  --map-building-hi: #444a54;
+  --map-building-side: #1c2026;
+  --map-building-roof: #505761;
+  --map-building-line: rgba(255, 255, 255, 0.08);
+  --map-heat: rgba(196, 143, 214, 0.56);
+}
+
+:root[data-theme="light"] {
+  color-scheme: light;
+  --bg: #f7f7f7;
+  --panel: #ffffff;
+  --panel-2: #f4f4f4;
+  --border: color-mix(in srgb, #666666, transparent 84%);
+  --soft-border: color-mix(in srgb, #666666, transparent 90%);
+  --text: #111111;
+  --text-dim: #737373;
+  --amber: #2f2f2f;
+  --ok: #1f8f62;
+  --warn: #b7791f;
+  --crit: #c43d4b;
+  --cyan: #2f6f88;
+  --map-base: #e8eaed;
+  --map-grid: rgba(0, 0, 0, 0.06);
+  --map-road: #d5d9de;
+  --map-road-shadow: rgba(0, 0, 0, 0.16);
+  --map-water: #cfdbe3;
+  --map-label: rgba(17, 17, 17, 0.56);
+  --map-building: #c9ced4;
+  --map-building-hi: #eef0f2;
+  --map-building-side: #aeb5be;
+  --map-building-roof: #f5f6f7;
+  --map-building-line: rgba(0, 0, 0, 0.08);
+  --map-heat: rgba(128, 84, 150, 0.28);
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body {
+  margin: 0;
+  height: 100%;
+}
+
+body {
+  font-family: var(--font-body);
+  font-size: 15px;
+  line-height: 1.6;
+  background: var(--bg);
+  color: var(--text);
+  overflow: hidden;
+  transition:
+    background-color var(--transition-med),
+    color var(--transition-med);
+}
+
+#root {
+  height: 100vh;
+  width: 100vw;
+}
+
+h1,
+h2,
+h3 {
+  font-family: var(--font-display);
+  font-weight: 400;
+  line-height: 1.3;
+  margin: 0;
+  color: var(--text);
+}
+
+p {
+  margin: 0;
+}
+
+button,
+input {
+  font: inherit;
+}
+
+button {
+  cursor: pointer;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+::-webkit-scrollbar-thumb {
+  background: color-mix(in srgb, var(--text-dim), transparent 70%);
+  border-radius: 4px;
+}
