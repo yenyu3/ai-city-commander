@@ -232,6 +232,7 @@ export default function NetworkGraph({
   viewerMode,
   language,
 }: NetworkGraphProps) {
+  const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
   const [activeProbe, setActiveProbe] = useState<FlowProbe | null>(null);
@@ -260,6 +261,20 @@ export default function NetworkGraph({
       duration: 900,
     });
   }, [cameraMode, mapCenter]);
+
+  useEffect(() => {
+    const node = containerRef.current;
+    if (!node) return;
+
+    const resize = () => {
+      window.requestAnimationFrame(() => mapRef.current?.getMap().resize());
+    };
+    resize();
+
+    const observer = new ResizeObserver(resize);
+    observer.observe(node);
+    return () => observer.disconnect();
+  }, []);
 
   const handleLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
@@ -523,7 +538,7 @@ export default function NetworkGraph({
   }
 
   return (
-    <div className={styles.mapShell}>
+    <div className={styles.mapShell} ref={containerRef}>
       <Map
         ref={mapRef}
         mapboxAccessToken={MAPBOX_TOKEN}

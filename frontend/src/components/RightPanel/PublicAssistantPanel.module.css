@@ -1,39 +1,27 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
   background: var(--panel);
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
-  padding: 16px;
+  padding: 14px;
   box-shadow: var(--shadow-sm);
 }
 
 .hero {
-  display: grid;
-  grid-template-columns: 44px 1fr;
-  gap: 12px;
-  align-items: center;
-  padding-bottom: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding-bottom: 12px;
   border-bottom: 1px solid var(--soft-border);
 }
 
-.icon {
-  width: 44px;
-  height: 44px;
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--ok), transparent 82%);
-  color: var(--ok);
-}
-
-.hero p {
-  margin: 0 0 4px;
+.eyebrow {
+  margin: 0;
   font-family: var(--font-nav);
   font-size: 11px;
   font-weight: 700;
@@ -50,12 +38,13 @@
 }
 
 .hero h2 {
-  font-size: 19px;
-  line-height: 1.2;
+  font-size: 18px;
+  line-height: 1.25;
 }
 
 .card,
-.notice {
+.notice,
+.promptsCard {
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-sm);
   background: color-mix(in srgb, var(--panel), var(--bg) 28%);
@@ -65,7 +54,11 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  padding: 13px;
+  padding: 12px;
+}
+
+.promptsCard {
+  padding: 12px;
 }
 
 .cardTitle {
@@ -76,7 +69,7 @@
 }
 
 .cardTitle h3 {
-  font-size: 15px;
+  font-size: 14px;
 }
 
 .card p,

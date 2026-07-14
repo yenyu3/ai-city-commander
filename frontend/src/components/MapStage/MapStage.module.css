@@ -1,7 +1,7 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 10px;
   height: 100%;
   padding: 0;
 }
@@ -173,8 +173,8 @@
   right: 18px;
   bottom: 18px;
   z-index: 6;
-  width: min(320px, calc(100% - 190px));
-  padding: 13px 15px;
+  width: min(300px, calc(100% - 190px));
+  padding: 12px 14px;
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
   background: color-mix(in srgb, var(--panel), transparent 10%);
@@ -197,7 +197,7 @@
   display: block;
   color: var(--text);
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: 15px;
   font-weight: 500;
 }
 
@@ -206,6 +206,10 @@
   color: var(--text-dim);
   font-size: 12px;
   line-height: 1.45;
+  display: -webkit-box;
+  overflow: hidden;
+  -webkit-line-clamp: 3;
+  -webkit-box-orient: vertical;
 }
 
 .controls {
@@ -215,7 +219,7 @@
   background: var(--panel);
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
-  padding: 14px 16px;
+  padding: 10px 12px;
   box-shadow: var(--shadow-sm);
 }
 

@@ -18,6 +18,7 @@ function App() {
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
   const advanceTime = useAppStore((s) => s.advanceTime);
   const focusZone = useAppStore((s) => s.focusZone);
+  const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
 
@@ -48,20 +49,24 @@ function App() {
   return (
     <div className={styles.app}>
       <Header />
-      <div className={styles.body} data-focus={focusZone ?? undefined}>
+      <div className={styles.body} data-focus={focusZone ?? undefined} data-mode={viewerMode}>
         <div className={styles.left}>
           <LeftPanel />
         </div>
         <div className={styles.center}>
-          <MapStage />
-          <AlertOverlay />
+          <div className={styles.mapShell}>
+            <MapStage />
+            <AlertOverlay />
+          </div>
+          {viewerMode === "government" && (
+            <div className={styles.bottom} data-focus={focusZone === "bottom" ? "active" : undefined}>
+              <BottomBar />
+            </div>
+          )}
         </div>
         <div className={styles.right}>
           <RightPanel />
         </div>
-      </div>
-      <div className={styles.bottom} data-focus={focusZone === "bottom" ? "active" : undefined}>
-        <BottomBar />
       </div>
     </div>
   );

@@ -1,8 +1,9 @@
 import { useMemo, useState } from "react";
-import { LayoutDashboard, Users } from "lucide-react";
+import { Clock3, LayoutDashboard, Users } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
+import PublicUpdateBar from "../BottomBar/PublicUpdateBar";
 import Legend from "./Legend";
 import OverviewTab from "./OverviewTab";
 import PublicStatusPanel from "./PublicStatusPanel";
@@ -56,6 +57,13 @@ export default function LeftPanel() {
       <div className={styles.wrap}>
         <PanelHeader icon={Users} title={pick(language, "市民狀態摘要", "Public Status")} zone="left" />
         <PublicStatusPanel />
+        <section className={styles.publicUpdates}>
+          <div className={styles.inlineTitle}>
+            <Clock3 size={13} aria-hidden="true" />
+            <span>{pick(language, "最新公開更新", "Latest Public Updates")}</span>
+          </div>
+          <PublicUpdateBar variant="panel" />
+        </section>
       </div>
     );
   }

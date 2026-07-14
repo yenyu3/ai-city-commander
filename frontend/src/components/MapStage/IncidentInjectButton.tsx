@@ -1,6 +1,7 @@
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { reformatEmbeddedTimestamp } from "../../utils/timeUtils";
+import CollapsibleSection from "../common/CollapsibleSection";
 import styles from "./IncidentInjectButton.module.css";
 
 export default function IncidentInjectButton() {
@@ -11,10 +12,10 @@ export default function IncidentInjectButton() {
   const { language } = useLanguage();
 
   return (
-    <div className={styles.wrap}>
-      <span className={styles.title}>
-        {pick(language, "事件注入（Demo 控制）", "Incident Injection (Demo)")}
-      </span>
+    <CollapsibleSection
+      storageKey="incident-inject"
+      title={pick(language, "事件注入（Demo 控制）", "Incident Injection (Demo)")}
+    >
       <div className={styles.buttons}>
         {allIncidents.map((incident) => {
           const injected = injectedIncidentIds.has(incident.eventId);
@@ -32,6 +33,6 @@ export default function IncidentInjectButton() {
           );
         })}
       </div>
-    </div>
+    </CollapsibleSection>
   );
 }

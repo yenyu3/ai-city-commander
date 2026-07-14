@@ -1,4 +1,4 @@
-import { Clock3, Info, MapPinned } from "lucide-react";
+import { Clock3, MapPinned } from "lucide-react";
 import { useMemo } from "react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
@@ -6,7 +6,7 @@ import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import { getPublicAlertText } from "../../utils/publicView";
 import styles from "./PublicUpdateBar.module.css";
 
-export default function PublicUpdateBar() {
+export default function PublicUpdateBar({ variant = "bar" }: { variant?: "bar" | "panel" }) {
   const { language } = useLanguage();
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
@@ -15,7 +15,7 @@ export default function PublicUpdateBar() {
 
   const publicUpdates = useMemo(
     () =>
-      alerts.slice(0, 4).map((alert) => ({
+      alerts.slice(0, 3).map((alert) => ({
         id: alert.id,
         title: getPublicAlertText(alert, language),
         timestamp: alert.timestamp,
@@ -24,17 +24,7 @@ export default function PublicUpdateBar() {
   );
 
   return (
-    <div className={styles.wrap}>
-      <div className={styles.heading}>
-        <Info size={17} aria-hidden="true" />
-        <div>
-          <p>{pick(language, "官方公告", "Official Notices")}</p>
-          <span>
-            {pick(language, "更新時間", "Updated")} {formatDisplayTimestamp(currentTime, timeOffsetMs)}
-          </span>
-        </div>
-      </div>
-
+    <div className={styles.wrap} data-variant={variant}>
       <div className={styles.updates}>
         {publicUpdates.length === 0 ? (
           <article className={styles.update}>
@@ -60,7 +50,8 @@ export default function PublicUpdateBar() {
       <div className={styles.incidentPill}>
         <MapPinned size={15} aria-hidden="true" />
         <span>
-          {pick(language, "處理中事件", "Active incidents")} {activeIncidents.length}
+          {pick(language, "更新", "Updated")} {formatDisplayTimestamp(currentTime, timeOffsetMs)} ·{" "}
+          {pick(language, "事件", "Incidents")} {activeIncidents.length}
         </span>
       </div>
     </div>

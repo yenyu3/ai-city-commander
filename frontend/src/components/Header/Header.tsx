@@ -17,9 +17,6 @@ const modeOptions: { mode: ViewerMode; icon: typeof Users }[] = [
 
 export default function Header() {
   const segments = useAppStore((s) => s.segments);
-  const alerts = useAppStore((s) => s.alerts);
-  const activeIncidents = useAppStore((s) => s.activeIncidents);
-  const incidentEte = useAppStore((s) => s.incidentEte);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const viewerMode = useAppStore((s) => s.viewerMode);
@@ -39,10 +36,8 @@ export default function Header() {
   const counts = useMemo(() => {
     const list = Object.values(segments);
     return {
-      normal: list.filter((s) => s.tier === "Normal").length,
       b: list.filter((s) => s.tier === "B").length,
       a: list.filter((s) => s.tier === "A").length,
-      affected: list.filter((s) => s.tier !== "Normal" || s.isIncidentSource).length,
     };
   }, [segments]);
 
@@ -57,19 +52,6 @@ export default function Header() {
     elevated: pick(language, "注意", "Advisory"),
     critical: pick(language, "緊急", "Emergency"),
   }[riskLevel];
-
-  const maxEte = useMemo(() => {
-    const values = Object.values(incidentEte);
-    return values.length > 0 ? Math.max(...values) : null;
-  }, [incidentEte]);
-
-  const activeSopRefs = useMemo(() => {
-    const set = new Set<string>();
-    for (const alert of alerts) {
-      if (alert.sopRef) set.add(alert.sopRef);
-    }
-    return Array.from(set);
-  }, [alerts]);
 
   return (
     <header className={styles.header}>
@@ -93,57 +75,6 @@ export default function Header() {
           <span className={styles.tierStat}>
             {pick(language, "現在", "Now")} {formatDisplayTimestamp(currentTime, timeOffsetMs)}
           </span>
-          {viewerMode === "public" ? (
-            <>
-              <span className={styles.tierStat}>
-                {pick(language, "影響區域", "Affected Areas")} {counts.affected}
-              </span>
-              <span className={styles.tierStat}>
-                {pick(language, "事件", "Incidents")} {activeIncidents.length}
-              </span>
-              {maxEte !== null && (
-                <span className={styles.tierStat}>
-                  {pick(language, "預估恢復", "Est. Recovery")} {maxEte} {pick(language, "分鐘", "min")}
-                </span>
-              )}
-            </>
-          ) : (
-            <>
-              <span className={styles.tierStat}>
-                <span className={`${styles.dot} ${styles.dotWarn}`} />
-                {pick(language, "Tier B", "Tier B")} {counts.b}
-              </span>
-              <span className={styles.tierStat}>
-                <span className={`${styles.dot} ${styles.dotCrit}`} />
-                {pick(language, "Tier A", "Tier A")} {counts.a}
-              </span>
-              <span className={styles.tierStat}>
-                {pick(language, "Active Incidents", "Active Incidents")} {activeIncidents.length}
-              </span>
-              {maxEte !== null && (
-                <span className={styles.tierStat}>
-                  {pick(language, "Max ETE", "Max ETE")} {maxEte} {pick(language, "分鐘", "min")}
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        <div className={styles.sopTags}>
-          {viewerMode === "public" ? (
-            <span className={styles.sopEmpty}>
-              {pick(language, "公開資訊已過濾內部決策細節", "Public view hides internal response details")}
-            </span>
-          ) : activeSopRefs.length === 0 ? (
-            <span className={styles.sopEmpty}>{pick(language, "未觸發 SOP", "No SOP clause triggered")}</span>
-          ) : (
-            activeSopRefs.map((ref, i) => (
-              <span key={ref} className={styles.sopTag}>
-                {i > 0 && <span className={styles.sopDivider}>/</span>}
-                {ref}
-              </span>
-            ))
-          )}
         </div>
 
         <div className={styles.right}>

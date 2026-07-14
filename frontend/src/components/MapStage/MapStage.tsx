@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Box, Layers, Maximize2, Minimize2, RotateCcw, RotateCw, Route } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
@@ -27,6 +27,11 @@ export default function MapStage() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
 
+  useEffect(() => {
+    setDisplayMode(viewerMode === "public" ? "risk" : "flow");
+    setSelectedId(null);
+  }, [viewerMode]);
+
   const segmentList = Object.values(segments);
   const selected = selectedId ? segments[selectedId] : null;
   const criticalCount = segmentList.filter((segment) => segment.tier === "A").length;
@@ -53,8 +58,8 @@ export default function MapStage() {
             {isFocused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
           <div className={styles.stats}>
-            <span>{segmentList.length} roads</span>
-            <span>{viewerMode === "public" ? `${criticalCount} advisories` : `${criticalCount} critical`}</span>
+            <span>{viewerMode === "public" ? `${segmentList.length} routes` : `${segmentList.length} roads`}</span>
+            <span>{viewerMode === "public" ? `${criticalCount} avoid` : `${criticalCount} critical`}</span>
             {viewerMode === "government" && <span>{flowCount.toLocaleString()} vehicles</span>}
           </div>
         </div>
@@ -116,14 +121,14 @@ export default function MapStage() {
             className={displayMode === "flow" ? styles.activeMode : styles.mode}
             onClick={() => setDisplayMode("flow")}
           >
-            Flow
+            {viewerMode === "public" ? "Routes" : "Flow"}
           </button>
           <button
             type="button"
             className={displayMode === "risk" ? styles.activeMode : styles.mode}
             onClick={() => setDisplayMode("risk")}
           >
-            Risk
+            {viewerMode === "public" ? "Advisory" : "Risk"}
           </button>
         </div>
 
@@ -165,7 +170,7 @@ export default function MapStage() {
           <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />
         )}
       </div>
-      {viewerMode === "government" && (
+      {viewerMode === "government" && !isFocused && (
         <div className={styles.controls}>
           <IncidentInjectButton />
         </div>

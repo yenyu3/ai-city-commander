@@ -1,14 +1,22 @@
 .wrap {
-  display: grid;
-  grid-template-columns: minmax(180px, 260px) 1fr auto;
-  align-items: stretch;
-  gap: 14px;
-  width: min(100%, 1780px);
-  margin: 0 auto;
-  padding: 10px 16px 16px;
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 0;
+  padding: 8px 12px 12px;
+  overflow: hidden;
 }
 
-.heading,
+.wrap[data-variant="panel"] {
+  flex: 0 0 auto;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  padding: 0;
+  overflow: visible;
+}
+
 .incidentPill,
 .update {
   border: 1px solid var(--soft-border);
@@ -16,22 +24,6 @@
   background: color-mix(in srgb, var(--panel), var(--bg) 28%);
 }
 
-.heading {
-  display: grid;
-  grid-template-columns: 20px 1fr;
-  gap: 9px;
-  align-items: center;
-  padding: 12px;
-}
-
-.heading p {
-  margin: 0 0 4px;
-  font-family: var(--font-display);
-  font-size: 15px;
-  font-weight: 600;
-}
-
-.heading span,
 .update span,
 .incidentPill span {
   font-size: 11.5px;
@@ -39,19 +31,36 @@
 }
 
 .updates {
-  display: grid;
-  grid-template-columns: repeat(4, minmax(0, 1fr));
-  gap: 10px;
+  flex: 1;
   min-width: 0;
+  display: flex;
+  gap: 8px;
+  overflow: hidden;
+}
+
+.wrap[data-variant="panel"] .updates {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: visible;
 }
 
 .update {
+  flex: 1 1 0;
   display: grid;
   grid-template-columns: 18px 1fr;
   gap: 8px;
-  align-items: flex-start;
+  align-items: center;
   min-width: 0;
-  padding: 12px;
+  height: 58px;
+  padding: 8px 10px;
+}
+
+.wrap[data-variant="panel"] .update {
+  flex: 0 0 auto;
+  height: auto;
+  min-height: 56px;
 }
 
 .update strong {
@@ -62,25 +71,50 @@
   font-size: 12.5px;
   font-weight: 600;
   line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+}
+
+.update span {
+  display: block;
+  overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
 }
 
 .incidentPill {
+  flex: 0 0 auto;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 7px;
-  min-width: 132px;
-  padding: 0 14px;
+  max-width: 240px;
+  min-height: 58px;
+  padding: 0 12px;
+  white-space: nowrap;
+}
+
+.wrap[data-variant="panel"] .incidentPill {
+  justify-content: flex-start;
+  max-width: none;
+  min-height: 38px;
+}
+
+.incidentPill span {
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 @media (max-width: 1100px) {
   .wrap {
-    grid-template-columns: 1fr;
+    flex-direction: column;
+    align-items: stretch;
+    height: auto;
   }
 
   .updates {
+    display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
 

@@ -3,12 +3,14 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import type { AlertRecord } from "../../types";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
+import { getPublicAlertText } from "../../utils/publicView";
 import styles from "./AlertOverlay.module.css";
 
 const DISPLAY_MS = 9000;
 
 export default function AlertOverlay() {
   const alerts = useAppStore((s) => s.alerts);
+  const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
   const [toastIds, setToastIds] = useState<string[]>([]);
   const seen = useRef(new Set<string>());
@@ -46,12 +48,18 @@ export default function AlertOverlay() {
               ×
             </button>
           </div>
-          <div className={styles.title}>{alert.title}</div>
-          <div className={styles.rule}>{alert.ruleSummary}</div>
-          {alert.llmText ? (
-            <div className={styles.llm}>{alert.llmText}</div>
+          {viewerMode === "public" ? (
+            <div className={styles.llm}>{getPublicAlertText(alert, language)}</div>
           ) : (
-            <div className={styles.llmLoading}>{pick(language, "AI 摘要生成中…", "Generating AI summary…")}</div>
+            <>
+              <div className={styles.title}>{alert.title}</div>
+              <div className={styles.rule}>{alert.ruleSummary}</div>
+              {alert.llmText ? (
+                <div className={styles.llm}>{alert.llmText}</div>
+              ) : (
+                <div className={styles.llmLoading}>{pick(language, "AI 摘要生成中…", "Generating AI summary…")}</div>
+              )}
+            </>
           )}
         </div>
       ))}

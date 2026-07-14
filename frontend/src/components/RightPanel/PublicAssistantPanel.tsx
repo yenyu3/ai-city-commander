@@ -1,7 +1,8 @@
-import { MessageCircle, Route, ShieldCheck, Sparkles } from "lucide-react";
+import { MessageCircle, Route } from "lucide-react";
 import { useMemo } from "react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import CollapsibleSection from "../common/CollapsibleSection";
 import styles from "./PublicAssistantPanel.module.css";
 
 export default function PublicAssistantPanel() {
@@ -34,13 +35,8 @@ export default function PublicAssistantPanel() {
   return (
     <div className={styles.wrap}>
       <section className={styles.hero}>
-        <div className={styles.icon}>
-          <ShieldCheck size={22} aria-hidden="true" />
-        </div>
-        <div>
-          <p>{pick(language, "市民助手", "Public Assistant")}</p>
-          <h2>{pick(language, "取得安全、路線與人潮建議", "Safety, route, and crowd guidance")}</h2>
-        </div>
+        <p className={styles.eyebrow}>{pick(language, "市民助手", "Public Assistant")}</p>
+        <h2>{pick(language, "取得安全、路線與人潮建議", "Safety, route, and crowd guidance")}</h2>
       </section>
 
       <section className={styles.card}>
@@ -57,17 +53,17 @@ export default function PublicAssistantPanel() {
         )}
       </section>
 
-      <section className={styles.card}>
-        <div className={styles.cardTitle}>
-          <Sparkles size={16} aria-hidden="true" />
-          <h3>{pick(language, "可詢問的問題", "Suggested Questions")}</h3>
-        </div>
+      <CollapsibleSection
+        storageKey="public-prompts"
+        className={styles.promptsCard}
+        title={pick(language, "可詢問的問題", "Suggested Questions")}
+      >
         <div className={styles.prompts}>
           <span>{pick(language, "我要去小巨蛋，現在適合嗎？", "Is it okay to go to Taipei Arena now?")}</span>
           <span>{pick(language, "哪幾個區域建議避開？", "Which areas should I avoid?")}</span>
           <span>{pick(language, "請幫我產生英文旅客提醒。", "Create an English visitor notice.")}</span>
         </div>
-      </section>
+      </CollapsibleSection>
 
       <section className={styles.notice}>
         <MessageCircle size={16} aria-hidden="true" />
