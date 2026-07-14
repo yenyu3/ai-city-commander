@@ -1,14 +1,27 @@
 .header {
+  position: relative;
   display: grid;
   grid-template-columns: auto auto 1fr auto;
   align-items: center;
   gap: 30px;
   height: 72px;
   padding: 0 28px;
-  background: color-mix(in srgb, var(--panel), transparent 12%);
-  border-bottom: 1px solid var(--soft-border);
+  border-bottom: 1px solid transparent;
+  background: transparent;
+  box-shadow: 0 8px 28px rgba(0, 0, 0, 0.04);
+  isolation: isolate;
+}
+
+.header::before {
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  content: "";
+  background: var(--header-background-color);
   backdrop-filter: blur(12px);
   -webkit-backdrop-filter: blur(12px);
+  opacity: 1;
+  pointer-events: none;
 }
 
 .brand {
@@ -83,17 +96,6 @@
   gap: 16px;
 }
 
-.clock {
-  font-family: var(--font-mono);
-  font-size: 14px;
-  color: var(--text);
-  background: transparent;
-  border: 1px solid var(--soft-border);
-  border-radius: 999px;
-  padding: 5px 13px;
-  white-space: nowrap;
-}
-
 .actions {
   display: flex;
   align-items: center;
@@ -107,10 +109,11 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--soft-border);
+  border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
   border-radius: 50%;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel), transparent 18%);
   color: var(--text-dim);
+  box-shadow: none;
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),
@@ -130,13 +133,14 @@
   gap: 5px;
   height: 32px;
   padding: 0 11px;
-  border: 1px solid var(--soft-border);
+  border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
   border-radius: 999px;
-  background: var(--panel);
+  background: color-mix(in srgb, var(--panel), transparent 18%);
   color: var(--text-dim);
   font-family: var(--font-nav);
   font-size: 11.5px;
   font-weight: 600;
+  box-shadow: none;
   transition:
     background var(--transition-fast),
     border-color var(--transition-fast),

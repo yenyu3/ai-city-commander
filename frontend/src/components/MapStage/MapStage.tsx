@@ -37,10 +37,6 @@ export default function MapStage() {
     <div className={styles.wrap}>
       <div className={styles.graphArea}>
         <div className={styles.stageHeader}>
-          <div>
-            <span className={styles.eyebrow}>Live Operations Layer</span>
-            <h2>Xin-Yi Emergency Mobility Twin</h2>
-          </div>
           <div className={styles.stats}>
             <span>{segmentList.length} roads</span>
             <span>{criticalCount} critical</span>

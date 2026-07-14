@@ -1,32 +1,51 @@
-# AI City Commander
+## 環境需求
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+- Node.js 20 以上
+- npm
+- Mapbox access token
 
-Currently, two official plugins are available:
+## 啟動方式
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+1. 安裝套件
 
-## React Compiler
-
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
-
-## Expanding the Oxlint configuration
-
-If you are developing a production application, we recommend enabling type-aware lint rules by installing `oxlint-tsgolint` and editing `.oxlintrc.json`:
-
-```json
-{
-  "$schema": "./node_modules/oxlint/configuration_schema.json",
-  "plugins": ["react", "typescript", "oxc"],
-  "options": {
-    "typeAware": true
-  },
-  "rules": {
-    "react/rules-of-hooks": "error",
-    "react/only-export-components": ["warn", { "allowConstantExport": true }]
-  }
-}
+```bash
+npm install
 ```
 
-See the [Oxlint rules documentation](https://oxc.rs/docs/guide/usage/linter/rules) for the full list of rules and categories.
+2. 建立環境檔
+
+PowerShell:
+
+```powershell
+Copy-Item .env.example .env.local
+```
+
+macOS / Linux:
+
+```bash
+cp .env.example .env.local
+```
+
+將 `.env.local` 裡的 `VITE_MAPBOX_TOKEN` 換成你的 Mapbox token。
+
+3. 啟動開發伺服器
+
+```bash
+npm run dev
+```
+
+啟動後依照 Vite 終端機顯示的網址開啟，通常是 `http://localhost:5173/`。
+
+## 常用指令
+
+```bash
+npm run dev        # 開發模式
+npm run build      # 產生正式版 build
+npm run preview    # 預覽正式版 build
+npm run test       # 執行測試
+npm run lint       # 執行 lint
+```
+
+## Demo 資料
+
+Demo 資料位於 `public/data/`，包含道路網路、車流、人流、事件與 SOP 規則文字。

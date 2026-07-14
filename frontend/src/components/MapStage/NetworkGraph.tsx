@@ -58,16 +58,17 @@ interface StationPoint {
   roamingPct: number;
 }
 
-interface AgentPoint {
+interface FlowProbe {
   id: string;
+  segmentId: string;
+  roadName: string;
   position: Position;
   tone: "cyan" | "white" | "blue";
-  age: number;
-  education: string;
-  occupation: string;
-  income: string;
-  mobility: string;
-  activity: string;
+  role: string;
+  status: string;
+  action: string;
+  vehicleCount: number;
+  saturation: number;
 }
 
 interface HeatPoint {
@@ -136,24 +137,39 @@ function samplePath(path: Position[], count: number): Position[] {
   return points;
 }
 
-function makeAgents(roads: RoadPath[]): AgentPoint[] {
+function makeFlowProbes(roads: RoadPath[]): FlowProbe[] {
   return roads.flatMap((road, roadIndex) =>
     samplePath(road.path, 4).map((position, pointIndex) => ({
-      id: `${road.segmentId}-agent-${pointIndex}`,
+      id: `${road.segmentId}-probe-${pointIndex}`,
+      segmentId: road.segmentId,
+      roadName: road.name,
       position: [
         position[0] + Math.sin((roadIndex + pointIndex) * 1.7) * 0.00022,
         position[1] + Math.cos((roadIndex + pointIndex) * 1.3) * 0.00018,
         34 + pointIndex * 3,
       ],
       tone: pointIndex % 5 === 0 ? "white" : pointIndex % 3 === 0 ? "cyan" : "blue",
-      age: 24 + ((roadIndex * 5 + pointIndex * 3) % 35),
-      education: pointIndex % 2 === 0 ? "Bachelor" : "Master / Ph.D",
-      occupation: pointIndex % 3 === 0 ? "Responder" : "Commuter",
-      income: pointIndex % 2 === 0 ? "NT$ 60,000+" : "NT$ 35,000-60,000",
-      mobility: road.isEvacuationMain ? "Shuttle, walk" : "Metro, walk",
-      activity: road.isIncidentSource
-        ? "Avoiding the incident segment and waiting for reroute guidance."
-        : "Moving through the emergency mobility network.",
+      role: road.isIncidentSource
+        ? "Incident response node"
+        : road.isEvacuationMain
+          ? "Primary evacuation flow"
+          : road.isEvacuationSecondary
+            ? "Secondary diversion flow"
+            : "Traffic sensing node",
+      status: road.isIncidentSource
+        ? "Critical segment under control"
+        : road.saturation >= 0.9
+          ? "Congestion pressure rising"
+          : "Live flow monitored",
+      action: road.isIncidentSource
+        ? "Close affected lane and route vehicles to alternatives."
+        : road.isEvacuationMain
+          ? "Keep main dispersal route clear for crowd release."
+          : road.isEvacuationSecondary
+            ? "Absorb overflow when the primary route reaches threshold."
+            : "Continue monitoring speed, volume, and saturation.",
+      vehicleCount: road.vehicleCount,
+      saturation: road.saturation,
     })),
   );
 }
@@ -202,7 +218,7 @@ export default function NetworkGraph({
 }: NetworkGraphProps) {
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
-  const [activeAgent, setActiveAgent] = useState<AgentPoint | null>(null);
+  const [activeProbe, setActiveProbe] = useState<FlowProbe | null>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -275,7 +291,7 @@ export default function NetworkGraph({
     [stations, stationCoords],
   );
 
-  const agents = useMemo(() => makeAgents(roads), [roads]);
+  const flowProbes = useMemo(() => makeFlowProbes(roads), [roads]);
 
   const heatPoints = useMemo<HeatPoint[]>(
     () => [
@@ -414,26 +430,26 @@ export default function NetworkGraph({
 
     if (cameraMode === "street" || displayMode === "flow") {
       routeLayers.push(
-        new ScatterplotLayer<AgentPoint>({
-          id: "agent-density",
-          data: agents,
-          getFillColor: (agent) =>
-            agent.tone === "white"
+        new ScatterplotLayer<FlowProbe>({
+          id: "flow-probes",
+          data: flowProbes,
+          getFillColor: (probe) =>
+            probe.tone === "white"
               ? [255, 255, 255, 220]
-              : agent.tone === "cyan"
+              : probe.tone === "cyan"
                 ? [170, 255, 245, 175]
                 : [126, 178, 255, 150],
           getLineColor: [255, 255, 255, 64],
           getLineWidth: 1,
-          getPosition: (agent) => agent.position,
-          getRadius: (agent) => (agent.tone === "white" ? 42 : 34),
+          getPosition: (probe) => probe.position,
+          getRadius: (probe) => (probe.tone === "white" ? 42 : 34),
           opacity: 0.86,
           pickable: true,
           radiusMinPixels: 5,
           radiusMaxPixels: 18,
           stroked: true,
           onClick: ({ object }) => {
-            if (object) setActiveAgent(object);
+            if (object) setActiveProbe(object);
           },
         }),
       );
@@ -441,10 +457,10 @@ export default function NetworkGraph({
 
     return routeLayers;
   }, [
-    agents,
     cameraMode,
     currentTime,
     displayMode,
+    flowProbes,
     heatPoints,
     maxVehicleCount,
     onSegmentClick,
@@ -504,7 +520,7 @@ export default function NetworkGraph({
           layers={layers}
           getTooltip={tooltip}
           onClick={(info: PickingInfo) => {
-            if (!info.object) setActiveAgent(null);
+            if (!info.object) setActiveProbe(null);
           }}
         />
       </Map>
@@ -514,31 +530,35 @@ export default function NetworkGraph({
         <i />
         <span>High</span>
       </div>
-      {activeAgent && (
+      {activeProbe && (
         <div className={styles.agentPopup}>
           <div className={styles.agentHeader}>
-            <span className={styles.avatar}>A</span>
+            <span className={styles.avatar}>S</span>
             <div>
-              <strong>{activeAgent.occupation}</strong>
-              <p>{activeAgent.activity}</p>
+              <strong>{activeProbe.role}</strong>
+              <p>{activeProbe.action}</p>
             </div>
           </div>
           <dl>
             <div>
-              <dt>Age</dt>
-              <dd>{activeAgent.age}</dd>
+              <dt>Road</dt>
+              <dd>{activeProbe.roadName}</dd>
             </div>
             <div>
-              <dt>Education</dt>
-              <dd>{activeAgent.education}</dd>
+              <dt>Segment</dt>
+              <dd>{activeProbe.segmentId}</dd>
             </div>
             <div>
-              <dt>Income</dt>
-              <dd>{activeAgent.income}</dd>
+              <dt>Status</dt>
+              <dd>{activeProbe.status}</dd>
             </div>
             <div>
-              <dt>Mobility</dt>
-              <dd>{activeAgent.mobility}</dd>
+              <dt>Saturation</dt>
+              <dd>{activeProbe.saturation.toFixed(2)}</dd>
+            </div>
+            <div>
+              <dt>Vehicles</dt>
+              <dd>{activeProbe.vehicleCount.toLocaleString()}</dd>
             </div>
           </dl>
         </div>

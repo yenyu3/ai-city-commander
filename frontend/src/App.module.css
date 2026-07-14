@@ -11,11 +11,11 @@
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(230px, 0.78fr) minmax(520px, 1.8fr) minmax(300px, 0.95fr);
-  gap: 20px;
-  width: min(100%, 1560px);
+  grid-template-columns: minmax(210px, 0.62fr) minmax(680px, 2.45fr) minmax(270px, 0.78fr);
+  gap: 16px;
+  width: min(100%, 1780px);
   margin: 0 auto;
-  padding: 18px 22px 0;
+  padding: 14px 16px 0;
 }
 
 .left {
@@ -47,7 +47,7 @@
 
 @media (max-width: 1180px) {
   .body {
-    grid-template-columns: minmax(220px, 0.8fr) minmax(420px, 1.5fr);
+    grid-template-columns: minmax(210px, 0.65fr) minmax(520px, 1.9fr);
   }
 
   .right {

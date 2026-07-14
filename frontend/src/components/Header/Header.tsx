@@ -9,7 +9,6 @@ type Theme = "dark" | "light";
 export default function Header() {
   const segments = useAppStore((s) => s.segments);
   const alerts = useAppStore((s) => s.alerts);
-  const currentTime = useAppStore((s) => s.currentTime);
   const { language, toggleLanguage } = useLanguage();
 
   const [theme, setTheme] = useState<Theme>(() => {
@@ -75,7 +74,6 @@ export default function Header() {
       </div>
 
       <div className={styles.right}>
-        <div className={styles.clock}>{currentTime || "--:--"}</div>
         <div className={styles.actions}>
           <button
             type="button"
