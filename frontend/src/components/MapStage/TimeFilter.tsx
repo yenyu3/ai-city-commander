@@ -1,5 +1,6 @@
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import styles from "./TimeFilter.module.css";
 
 const SPEEDS = [
@@ -17,6 +18,7 @@ export default function TimeFilter() {
   const pause = useAppStore((s) => s.pause);
   const seekTime = useAppStore((s) => s.seekTime);
   const setPlaybackSpeed = useAppStore((s) => s.setPlaybackSpeed);
+  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
 
   if (ticks.length === 0) return null;
@@ -37,7 +39,7 @@ export default function TimeFilter() {
         onChange={(e) => seekTime(ticks[Number(e.target.value)])}
         className={styles.slider}
       />
-      <span className={styles.time}>{ticks[tickIndex]}</span>
+      <span className={styles.time}>{formatDisplayTimestamp(ticks[tickIndex], timeOffsetMs)}</span>
       <div className={styles.speedGroup}>
         {SPEEDS.map((s) => (
           <button

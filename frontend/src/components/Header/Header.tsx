@@ -1,14 +1,29 @@
 import { useEffect, useMemo, useState } from "react";
-import { Languages, Moon, Sun } from "lucide-react";
+import { Building2, Languages, Moon, Sun, Users } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { formatDisplayTimestamp } from "../../utils/timeUtils";
+import type { ViewerMode } from "../../types";
+import TimeFilter from "../MapStage/TimeFilter";
 import styles from "./Header.module.css";
 
 type Theme = "dark" | "light";
+type RiskLevel = "normal" | "elevated" | "critical";
+
+const modeOptions: { mode: ViewerMode; icon: typeof Users }[] = [
+  { mode: "public", icon: Users },
+  { mode: "government", icon: Building2 },
+];
 
 export default function Header() {
   const segments = useAppStore((s) => s.segments);
   const alerts = useAppStore((s) => s.alerts);
+  const activeIncidents = useAppStore((s) => s.activeIncidents);
+  const incidentEte = useAppStore((s) => s.incidentEte);
+  const currentTime = useAppStore((s) => s.currentTime);
+  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const viewerMode = useAppStore((s) => s.viewerMode);
+  const setViewerMode = useAppStore((s) => s.setViewerMode);
   const { language, toggleLanguage } = useLanguage();
 
   const [theme, setTheme] = useState<Theme>(() => {
@@ -24,77 +39,158 @@ export default function Header() {
   const counts = useMemo(() => {
     const list = Object.values(segments);
     return {
-      Normal: list.filter((s) => s.tier === "Normal").length,
-      B: list.filter((s) => s.tier === "B").length,
-      A: list.filter((s) => s.tier === "A").length,
+      normal: list.filter((s) => s.tier === "Normal").length,
+      b: list.filter((s) => s.tier === "B").length,
+      a: list.filter((s) => s.tier === "A").length,
+      affected: list.filter((s) => s.tier !== "Normal" || s.isIncidentSource).length,
     };
   }, [segments]);
 
+  const riskLevel: RiskLevel = counts.a > 0 ? "critical" : counts.b > 0 ? "elevated" : "normal";
+  const governmentRiskLabel = {
+    normal: pick(language, "正常", "Normal"),
+    elevated: pick(language, "升高", "Elevated"),
+    critical: pick(language, "嚴重", "Critical"),
+  }[riskLevel];
+  const publicRiskLabel = {
+    normal: pick(language, "正常", "Normal"),
+    elevated: pick(language, "注意", "Advisory"),
+    critical: pick(language, "緊急", "Emergency"),
+  }[riskLevel];
+
+  const maxEte = useMemo(() => {
+    const values = Object.values(incidentEte);
+    return values.length > 0 ? Math.max(...values) : null;
+  }, [incidentEte]);
+
   const activeSopRefs = useMemo(() => {
     const set = new Set<string>();
-    for (const a of alerts) if (a.sopRef) set.add(a.sopRef);
+    for (const alert of alerts) {
+      if (alert.sopRef) set.add(alert.sopRef);
+    }
     return Array.from(set);
   }, [alerts]);
 
   return (
     <header className={styles.header}>
-      <div className={styles.brand}>
-        <span className={styles.brandAmber}>{pick(language, "城市應變", "AI City Commander")}</span>
-        <span>{pick(language, "指揮官 AI Agent", "AI Agent")}</span>
-      </div>
-
-      <div className={styles.tiers}>
-        <span className={styles.tierStat}>
-          <span className={`${styles.dot} ${styles.dotOk}`} />
-          {pick(language, "正常", "Normal")} {counts.Normal}
-        </span>
-        <span className={styles.tierStat}>
-          <span className={`${styles.dot} ${styles.dotWarn}`} />
-          {pick(language, "B 級", "Tier B")} {counts.B}
-        </span>
-        <span className={styles.tierStat}>
-          <span className={`${styles.dot} ${styles.dotCrit}`} />
-          {pick(language, "A 級", "Tier A")} {counts.A}
-        </span>
-      </div>
-
-      <div className={styles.sopTags}>
-        {activeSopRefs.length === 0 ? (
-          <span className={styles.sopEmpty}>
-            {pick(language, "尚無 SOP 條款啟動", "No SOP clause triggered")}
+      <div className={styles.topRow}>
+        <div className={styles.brand}>
+          <span className={styles.brandAmber}>{pick(language, "AI 城市指揮官", "AI City Commander")}</span>
+          <span>
+            {viewerMode === "public"
+              ? pick(language, "市民資訊", "Public View")
+              : pick(language, "AI Agent", "AI Agent")}
           </span>
-        ) : (
-          activeSopRefs.map((ref, i) => (
-            <span key={ref} className={styles.sopTag}>
-              {i > 0 && <span className={styles.sopDivider}>·</span>}
-              {ref}
+        </div>
+
+        <div className={styles.stats}>
+          <span className={styles.riskBadge} data-risk={riskLevel}>
+            <span className={styles.dot} />
+            {viewerMode === "public"
+              ? `${pick(language, "城市狀態", "City Status")}: ${publicRiskLabel}`
+              : `${pick(language, "城市風險", "City Risk")}: ${governmentRiskLabel}`}
+          </span>
+          <span className={styles.tierStat}>
+            {pick(language, "現在", "Now")} {formatDisplayTimestamp(currentTime, timeOffsetMs)}
+          </span>
+          {viewerMode === "public" ? (
+            <>
+              <span className={styles.tierStat}>
+                {pick(language, "影響區域", "Affected Areas")} {counts.affected}
+              </span>
+              <span className={styles.tierStat}>
+                {pick(language, "事件", "Incidents")} {activeIncidents.length}
+              </span>
+              {maxEte !== null && (
+                <span className={styles.tierStat}>
+                  {pick(language, "預估恢復", "Est. Recovery")} {maxEte} {pick(language, "分鐘", "min")}
+                </span>
+              )}
+            </>
+          ) : (
+            <>
+              <span className={styles.tierStat}>
+                <span className={`${styles.dot} ${styles.dotWarn}`} />
+                {pick(language, "Tier B", "Tier B")} {counts.b}
+              </span>
+              <span className={styles.tierStat}>
+                <span className={`${styles.dot} ${styles.dotCrit}`} />
+                {pick(language, "Tier A", "Tier A")} {counts.a}
+              </span>
+              <span className={styles.tierStat}>
+                {pick(language, "Active Incidents", "Active Incidents")} {activeIncidents.length}
+              </span>
+              {maxEte !== null && (
+                <span className={styles.tierStat}>
+                  {pick(language, "Max ETE", "Max ETE")} {maxEte} {pick(language, "分鐘", "min")}
+                </span>
+              )}
+            </>
+          )}
+        </div>
+
+        <div className={styles.sopTags}>
+          {viewerMode === "public" ? (
+            <span className={styles.sopEmpty}>
+              {pick(language, "公開資訊已過濾內部決策細節", "Public view hides internal response details")}
             </span>
-          ))
-        )}
+          ) : activeSopRefs.length === 0 ? (
+            <span className={styles.sopEmpty}>{pick(language, "未觸發 SOP", "No SOP clause triggered")}</span>
+          ) : (
+            activeSopRefs.map((ref, i) => (
+              <span key={ref} className={styles.sopTag}>
+                {i > 0 && <span className={styles.sopDivider}>/</span>}
+                {ref}
+              </span>
+            ))
+          )}
+        </div>
+
+        <div className={styles.right}>
+          <div className={styles.actions}>
+            <div className={styles.modeSwitch} role="group" aria-label={pick(language, "切換檢視模式", "Switch viewer mode")}>
+              {modeOptions.map(({ mode, icon: Icon }) => {
+                const active = viewerMode === mode;
+                return (
+                  <button
+                    key={mode}
+                    type="button"
+                    className={active ? styles.modeBtnActive : styles.modeBtn}
+                    aria-pressed={active}
+                    title={mode === "public" ? pick(language, "一般民眾", "Public") : pick(language, "政府單位", "Government")}
+                    onClick={() => setViewerMode(mode)}
+                  >
+                    <Icon size={14} aria-hidden="true" />
+                    <span>{mode === "public" ? pick(language, "民眾", "Public") : pick(language, "政府", "Gov")}</span>
+                  </button>
+                );
+              })}
+            </div>
+            <button
+              type="button"
+              className={styles.iconBtn}
+              aria-label={pick(language, "切換主題", `Switch to ${theme === "dark" ? "light" : "dark"} mode`)}
+              title={pick(language, "切換主題", `Switch to ${theme === "dark" ? "light" : "dark"} mode`)}
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            >
+              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+            </button>
+            <button
+              type="button"
+              className={styles.langBtn}
+              aria-label={pick(language, "切換語言", "Switch language")}
+              title={pick(language, "切換語言", "Switch language")}
+              onClick={toggleLanguage}
+            >
+              <Languages size={14} aria-hidden="true" />
+              <span>{language === "zh" ? "EN" : "中"}</span>
+            </button>
+          </div>
+        </div>
       </div>
 
-      <div className={styles.right}>
-        <div className={styles.actions}>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            aria-label={pick(language, `切換為${theme === "dark" ? "淺色" : "深色"}模式`, `Switch to ${theme === "dark" ? "light" : "dark"} mode`)}
-            title={pick(language, `切換為${theme === "dark" ? "淺色" : "深色"}模式`, `Switch to ${theme === "dark" ? "light" : "dark"} mode`)}
-            onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-          >
-            {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-          </button>
-          <button
-            type="button"
-            className={styles.langBtn}
-            aria-label={pick(language, "切換為英文", "Switch to Chinese")}
-            title={pick(language, "切換為英文", "Switch to Chinese")}
-            onClick={toggleLanguage}
-          >
-            <Languages size={14} aria-hidden="true" />
-            <span>{language === "zh" ? "EN" : "中"}</span>
-          </button>
-        </div>
+      <div className={styles.bottomRow}>
+        <TimeFilter />
       </div>
     </header>
   );

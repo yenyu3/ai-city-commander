@@ -18,7 +18,15 @@ export default function SegmentList() {
       </div>
       <div className={styles.list}>
         {list.map((seg) => (
-          <div key={seg.segmentId} className={styles.row}>
+          <div
+            key={seg.segmentId}
+            className={styles.row}
+            title={pick(
+              language,
+              `車道狀態：${seg.laneStatus}`,
+              `Lane status: ${seg.laneStatus}`,
+            )}
+          >
             <span className={`${styles.dot} ${styles[`dot${seg.tier}`]}`} />
             <span className={styles.name}>
               {seg.name}
@@ -26,6 +34,7 @@ export default function SegmentList() {
             </span>
             <span className={styles.sat}>{seg.saturation.toFixed(2)}</span>
             <span className={styles.speed}>{seg.avgSpeed}km/h</span>
+            <span className={styles.vehicles}>{seg.vehicleCount.toLocaleString()}</span>
           </div>
         ))}
       </div>

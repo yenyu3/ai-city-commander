@@ -17,7 +17,8 @@ import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
 import { withElevation } from "./geometry";
 import type { SegmentRuntimeState, StationRuntimeState } from "../../store/appStore";
-import type { RoadPathDef } from "../../types";
+import type { RoadPathDef, ViewerMode } from "../../types";
+import { pick, type Language } from "../../i18n";
 import styles from "./NetworkGraph.module.css";
 
 type CameraMode = "top" | "tilt" | "street";
@@ -33,6 +34,19 @@ export interface NetworkGraphProps {
   roadPaths: Map<string, RoadPathDef>;
   stationCoords: Record<string, [number, number]>;
   mapCenter: [number, number];
+  viewerMode: ViewerMode;
+  language: Language;
+}
+
+function roadRiskLabel(tier: string, language: Language): string {
+  if (tier === "A") return pick(language, "建議避開", "Avoid");
+  if (tier === "B") return pick(language, "可能延誤", "Expect delay");
+  return pick(language, "暢通", "Open");
+}
+
+function crowdLabel(userCount: number, language: Language): string {
+  if (userCount >= 20000) return pick(language, "人潮較多", "Busy");
+  return pick(language, "人潮正常", "Normal");
 }
 
 interface RoadPath {
@@ -215,6 +229,8 @@ export default function NetworkGraph({
   roadPaths,
   stationCoords,
   mapCenter,
+  viewerMode,
+  language,
 }: NetworkGraphProps) {
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
@@ -386,6 +402,8 @@ export default function NetworkGraph({
       new TextLayer<RoadPath | StationPoint>({
         id: "map-labels",
         data: [...roads.filter((road) => road.isCityTrigger || road.isIncidentSource), ...stationPoints],
+        characterSet: "auto",
+        fontFamily: "'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif",
         getColor: [230, 238, 245, 150],
         getPosition: (item) => ("path" in item ? item.path[Math.floor(item.path.length / 2)] : item.position),
         getSize: (item) => ("path" in item ? 11 : 12),
@@ -428,7 +446,7 @@ export default function NetworkGraph({
       );
     }
 
-    if (cameraMode === "street" || displayMode === "flow") {
+    if (viewerMode === "government" && (cameraMode === "street" || displayMode === "flow")) {
       routeLayers.push(
         new ScatterplotLayer<FlowProbe>({
           id: "flow-probes",
@@ -467,18 +485,25 @@ export default function NetworkGraph({
     roads,
     selectedSegmentId,
     stationPoints,
+    viewerMode,
   ]);
 
   const tooltip = ({ object, layer }: PickingInfo) => {
     if (!object || !layer) return null;
     if (layer.id === "selected-and-status-routes") {
       const road = object as RoadPath;
+      if (viewerMode === "public") {
+        return { text: `${road.name}\n${roadRiskLabel(road.tier, language)}` };
+      }
       return {
         text: `${road.name}\nSaturation ${road.saturation.toFixed(2)}\n${road.vehicleCount.toLocaleString()} vehicles`,
       };
     }
     if (layer.id === "station-glow") {
       const station = object as StationPoint;
+      if (viewerMode === "public") {
+        return { text: `${station.name}\n${crowdLabel(station.userCount, language)}` };
+      }
       return {
         text: `${station.name}\n${station.userCount.toLocaleString()} users\nGrowth ${(station.growthRate * 100).toFixed(0)}%`,
       };

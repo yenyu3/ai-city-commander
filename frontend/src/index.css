@@ -27,6 +27,12 @@
   --map-heat: rgba(196, 143, 214, 0.56);
   --header-background-color: rgba(15, 16, 18, 0.78);
 
+  --chart-1: #6aa9bc;
+  --chart-2: #9085e9;
+  --chart-3: #d55181;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-axis: rgba(255, 255, 255, 0.32);
+
   --font-display: "Montserrat", sans-serif;
   --font-body: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
   --font-nav: "Poppins", sans-serif;
@@ -80,6 +86,12 @@
   --map-building-line: rgba(255, 255, 255, 0.08);
   --map-heat: rgba(196, 143, 214, 0.56);
   --header-background-color: rgba(15, 16, 18, 0.78);
+
+  --chart-1: #6aa9bc;
+  --chart-2: #9085e9;
+  --chart-3: #d55181;
+  --chart-grid: rgba(255, 255, 255, 0.08);
+  --chart-axis: rgba(255, 255, 255, 0.32);
 }
 
 :root[data-theme="light"] {
@@ -109,6 +121,12 @@
   --map-building-line: rgba(0, 0, 0, 0.08);
   --map-heat: rgba(128, 84, 150, 0.28);
   --header-background-color: rgba(255, 255, 255, 0.72);
+
+  --chart-1: #2f6f88;
+  --chart-2: #4a3aa7;
+  --chart-3: #b23763;
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-axis: rgba(0, 0, 0, 0.32);
 }
 
 * {

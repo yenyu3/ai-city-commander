@@ -1,9 +1,11 @@
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import styles from "./ExportReportButton.module.css";
 
 export default function ExportReportButton() {
   const alerts = useAppStore((s) => s.alerts);
+  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
 
   function exportJson() {
@@ -11,7 +13,7 @@ export default function ExportReportButton() {
       .slice()
       .reverse()
       .map((a) => ({
-        時間: a.timestamp,
+        時間: formatDisplayTimestamp(a.timestamp, timeOffsetMs),
         事件: a.title,
         觸發條款: a.sopRef,
         決策: a.ruleSummary,

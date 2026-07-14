@@ -39,12 +39,40 @@ export default function ETEBreakdownCard() {
   const finalStep = latest.reasoningSteps?.find((s) => s.status === "final");
   const congestionWarning = latest.ruleSummary.includes("併行大眾運輸") || finalStep?.detail.includes("congestion");
 
+  const base = latest.eteBase ?? 0;
+  const penalty = latest.etePenalty ?? 0;
+  const total = base + penalty || 1;
+  const basePct = (base / total) * 100;
+  const penaltyPct = (penalty / total) * 100;
+
   return (
     <div className={styles.card}>
       <div className={styles.title}>{pick(language, "預計恢復時間 ETE", "Estimated Time to Ease (ETE)")}</div>
       <div className={styles.bigNumber}>
         {displayEte} <span className={styles.unit}>{pick(language, "分鐘", "min")}</span>
       </div>
+
+      {latest.eteBase !== undefined && (
+        <div className={styles.breakdown}>
+          <div className={styles.bar}>
+            <span className={styles.barBase} style={{ width: `${basePct}%` }} />
+            <span className={styles.barPenalty} style={{ width: `${penaltyPct}%` }} />
+          </div>
+          <div className={styles.breakdownLegend}>
+            <span className={styles.legendItem}>
+              <span className={`${styles.legendDot} ${styles.dotBase}`} />
+              {pick(language, "基礎清空時間", "Base clearance")} {base}
+              {pick(language, "分", "m")}
+            </span>
+            <span className={styles.legendItem}>
+              <span className={`${styles.legendDot} ${styles.dotPenalty}`} />
+              {pick(language, "壅塞加成", "Congestion penalty")} {penalty.toFixed(1)}
+              {pick(language, "分", "m")}
+            </span>
+          </div>
+        </div>
+      )}
+
       {finalStep && <div className={styles.formula}>{finalStep.detail}</div>}
       {congestionWarning && (
         <div className={styles.warning}>

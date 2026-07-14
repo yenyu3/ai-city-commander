@@ -2,16 +2,8 @@ import { useEffect, useRef, useState } from "react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import type { AlertRecord } from "../../types";
+import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import styles from "./AlertOverlay.module.css";
-
-const KIND_LABEL: Record<AlertRecord["kind"], { zh: string; en: string }> = {
-  city_response: { zh: "壅塞分級", en: "Congestion Tier" },
-  accident: { zh: "車禍/事件應變", en: "Accident Response" },
-  mrt_diversion: { zh: "捷運分流", en: "MRT Diversion" },
-  dome_dispersal: { zh: "大巨蛋散場", en: "Dome Egress" },
-  signal_failure: { zh: "號誌故障", en: "Signal Failure" },
-  multilingual: { zh: "多語通報", en: "Multilingual Alert" },
-};
 
 const DISPLAY_MS = 9000;
 
@@ -46,7 +38,7 @@ export default function AlertOverlay() {
       {toasts.map((alert) => (
         <div key={alert.id} className={styles.card}>
           <div className={styles.head}>
-            <span className={styles.kind}>{pick(language, KIND_LABEL[alert.kind].zh, KIND_LABEL[alert.kind].en)}</span>
+            <span className={styles.kind}>{pick(language, ALERT_KIND_LABEL[alert.kind].zh, ALERT_KIND_LABEL[alert.kind].en)}</span>
             <button
               className={styles.dismiss}
               onClick={() => setToastIds((ids) => ids.filter((id) => id !== alert.id))}

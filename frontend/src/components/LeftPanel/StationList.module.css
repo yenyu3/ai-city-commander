@@ -24,9 +24,9 @@
 
 .row {
   display: grid;
-  grid-template-columns: 1fr 64px 40px;
+  grid-template-columns: minmax(0, 1fr) 46px 40px 38px;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-height: 34px;
   padding: 7px 4px;
   font-size: 12px;
@@ -47,13 +47,26 @@
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 10.5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
+
+.growth {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 10.5px;
+}
+.growthUp { color: var(--warn); }
+.growthDown { color: var(--cyan); }
 
 .roaming {
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
+  font-size: 11px;
 }
 .roamingHot {
   color: var(--cyan);

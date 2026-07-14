@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { useAppStore } from "./store/appStore";
 import { pick, useLanguage } from "./i18n";
 import Header from "./components/Header/Header";
@@ -7,6 +7,7 @@ import MapStage from "./components/MapStage/MapStage";
 import RightPanel from "./components/RightPanel/RightPanel";
 import BottomBar from "./components/BottomBar/BottomBar";
 import AlertOverlay from "./components/AlertOverlay/AlertOverlay";
+import LoadingScreen from "./components/LoadingScreen/LoadingScreen";
 import styles from "./App.module.css";
 
 function App() {
@@ -16,11 +17,18 @@ function App() {
   const isPlaying = useAppStore((s) => s.isPlaying);
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
   const advanceTime = useAppStore((s) => s.advanceTime);
+  const focusZone = useAppStore((s) => s.focusZone);
   const { language } = useLanguage();
+  const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
 
   useEffect(() => {
     init();
     // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setTimeout(() => setMinimumLoadingDone(true), 800);
+    return () => window.clearTimeout(timer);
   }, []);
 
   useEffect(() => {
@@ -29,22 +37,18 @@ function App() {
     return () => clearInterval(id);
   }, [isPlaying, playbackSpeed, advanceTime]);
 
-  if (isLoading) {
-    return <div className={styles.loading}>{pick(language, "載入城市即時資料中…", "Loading live city data…")}</div>;
+  if (isLoading || !minimumLoadingDone) {
+    return <LoadingScreen />;
   }
+
   if (loadError) {
-    return (
-      <div className={styles.loading}>
-        {pick(language, "資料載入失敗：", "Failed to load data: ")}
-        {loadError}
-      </div>
-    );
+    return <LoadingScreen error={`${pick(language, "資料載入失敗：", "Failed to load data: ")}${loadError}`} />;
   }
 
   return (
     <div className={styles.app}>
       <Header />
-      <div className={styles.body}>
+      <div className={styles.body} data-focus={focusZone ?? undefined}>
         <div className={styles.left}>
           <LeftPanel />
         </div>
@@ -56,7 +60,9 @@ function App() {
           <RightPanel />
         </div>
       </div>
-      <BottomBar />
+      <div className={styles.bottom} data-focus={focusZone === "bottom" ? "active" : undefined}>
+        <BottomBar />
+      </div>
     </div>
   );
 }

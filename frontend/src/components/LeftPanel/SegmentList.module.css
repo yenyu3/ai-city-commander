@@ -24,9 +24,9 @@
 
 .row {
   display: grid;
-  grid-template-columns: 10px 1fr 44px 56px;
+  grid-template-columns: 9px minmax(0, 1fr) 34px 44px 40px;
   align-items: center;
-  gap: 10px;
+  gap: 6px;
   min-height: 34px;
   padding: 7px 4px;
   font-size: 12.5px;
@@ -63,11 +63,19 @@
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
+  font-size: 11px;
 }
 
 .speed {
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: 10.5px;
+}
+
+.vehicles {
+  font-family: var(--font-mono);
+  text-align: right;
+  color: var(--text-dim);
+  font-size: 10.5px;
 }

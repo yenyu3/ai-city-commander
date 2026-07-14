@@ -4,12 +4,14 @@ import type {
   AlertRecord,
   ChatMessage,
   CrowdSnapshot,
+  FocusZone,
   LiveIncident,
   ReasoningStep,
   RoadPathDef,
   RoadSegment,
   Tier,
   TrafficSnapshot,
+  ViewerMode,
 } from "../types";
 import { getTier, checkCityResponse, CITY_TRIGGER_SEGMENTS } from "../engine/congestionTier";
 import {
@@ -23,6 +25,7 @@ import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
 import { llmAdapter, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
+import { computeTimeOffsetMs, reformatEmbeddedTimestamp } from "../utils/timeUtils";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -70,15 +73,25 @@ function nextId(prefix: string): string {
   return `${prefix}_${idCounter}`;
 }
 
+function getInitialViewerMode(): ViewerMode {
+  if (typeof window === "undefined") return "government";
+  const saved = window.localStorage.getItem("viewerMode");
+  return saved === "public" || saved === "government" ? saved : "government";
+}
+
 interface AppState {
   isLoading: boolean;
   loadError: string | null;
+  viewerMode: ViewerMode;
+  focusZone: FocusZone | null;
 
   ticks: string[];
   tickIndex: number;
   currentTime: string;
   isPlaying: boolean;
   playbackSpeed: number; // ms per tick
+  /** ms added to every raw scenario timestamp so the timeline reads as starting "now" (Taipei time). */
+  timeOffsetMs: number;
 
   traffic: TrafficSnapshot[];
   crowd: CrowdSnapshot[];
@@ -107,6 +120,8 @@ interface AppState {
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string): void;
   sendChatMessage(question: string): void;
+  setViewerMode(mode: ViewerMode): void;
+  toggleFocusZone(zone: FocusZone): void;
 }
 
 function computeSegmentState(
@@ -163,6 +178,7 @@ function buildAccidentAlert(
   timestamp: string,
   segmentDefs: Map<string, RoadSegment>,
   segmentSaturation: Map<string, number>,
+  timeOffsetMs: number,
 ): { alert: AlertRecord; mainRoute: string | null; secondaryRoutes: string[] } {
   const route = selectEvacuationRoute(
     incident.affectedSegment,
@@ -181,7 +197,7 @@ function buildAccidentAlert(
     ? (segmentSaturation.get(route.mainRoute) ?? 0)
     : incidentSat;
   const avgSaturation = route.mainRoute ? (incidentSat + mainSat) / 2 : incidentSat;
-  const { ete, breakdown } = calcETE(incident.severity, avgSaturation);
+  const { ete, base, penalty, breakdown } = calcETE(incident.severity, avgSaturation);
 
   const steps: ReasoningStep[] = [];
   let order = 1;
@@ -239,6 +255,8 @@ function buildAccidentAlert(
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
     sopRef: "SOP §2 / §7",
     ete,
+    eteBase: base,
+    etePenalty: penalty,
     reasoningSteps: steps,
   };
 
@@ -247,7 +265,7 @@ function buildAccidentAlert(
     title: alert.title,
     data: {
       segmentName: incidentSegName,
-      incidentDesc: incident.description,
+      incidentDesc: reformatEmbeddedTimestamp(incident.description, incident.timestamp, timeOffsetMs),
       statusLabel: incident.status === "Closed" ? "全線封鎖" : incident.status,
       severity: incident.severity,
       mainRoute: mainRouteName,
@@ -276,12 +294,15 @@ function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
 export const useAppStore = create<AppState>((set, get) => ({
   isLoading: true,
   loadError: null,
+  viewerMode: getInitialViewerMode(),
+  focusZone: null,
 
   ticks: [],
   tickIndex: 0,
   currentTime: "",
   isPlaying: false,
   playbackSpeed: 1500,
+  timeOffsetMs: 0,
 
   traffic: [],
   crowd: [],
@@ -321,6 +342,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ticks,
         tickIndex: 0,
         currentTime: firstTime,
+        timeOffsetMs: computeTimeOffsetMs(firstTime),
         segments: computeSegmentState(data.segments, data.traffic, firstTime),
         stations: computeStationState(data.crowd, firstTime),
         roadPaths: data.roadPaths,
@@ -563,6 +585,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().currentTime,
         segmentDefs,
         saturationMap,
+        get().timeOffsetMs,
       );
       pushAlert(alert, alert.reasoningSteps);
       set((s) => ({
@@ -678,5 +701,16 @@ export const useAppStore = create<AppState>((set, get) => ({
         ),
       }));
     });
+  },
+
+  setViewerMode(mode) {
+    if (typeof window !== "undefined") {
+      window.localStorage.setItem("viewerMode", mode);
+    }
+    set({ viewerMode: mode });
+  },
+
+  toggleFocusZone(zone) {
+    set((s) => ({ focusZone: s.focusZone === zone ? null : zone }));
   },
 }));

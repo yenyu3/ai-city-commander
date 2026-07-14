@@ -66,6 +66,10 @@ export interface LiveIncident {
 
 export type Tier = "Normal" | "B" | "A";
 
+export type ViewerMode = "public" | "government";
+
+export type FocusZone = "left" | "center" | "right" | "bottom";
+
 export interface CityResponseResult {
   segmentId: string;
   tier: Tier;
@@ -87,6 +91,8 @@ export interface EvacuationRouteResult {
 
 export interface EteResult {
   ete: number;
+  base: number;
+  penalty: number;
   breakdown: string;
 }
 
@@ -113,6 +119,8 @@ export interface AlertRecord {
   llmText?: string;
   sopRef?: string;
   ete?: number;
+  eteBase?: number;
+  etePenalty?: number;
   reasoningSteps?: ReasoningStep[];
 }
 

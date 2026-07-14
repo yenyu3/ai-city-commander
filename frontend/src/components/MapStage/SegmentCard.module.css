@@ -1,8 +1,10 @@
 .card {
   position: absolute;
-  top: 16px;
+  top: 244px;
   right: 16px;
   width: 260px;
+  max-height: calc(100% - 262px);
+  overflow-y: auto;
   background: color-mix(in srgb, var(--panel), transparent 4%);
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);

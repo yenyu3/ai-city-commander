@@ -1,11 +1,13 @@
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { reformatEmbeddedTimestamp } from "../../utils/timeUtils";
 import styles from "./IncidentInjectButton.module.css";
 
 export default function IncidentInjectButton() {
   const allIncidents = useAppStore((s) => s.allIncidents);
   const injectedIncidentIds = useAppStore((s) => s.injectedIncidentIds);
   const injectIncident = useAppStore((s) => s.injectIncident);
+  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
 
   return (
@@ -22,7 +24,7 @@ export default function IncidentInjectButton() {
               className={`${styles.btn} ${injected ? styles.injected : ""}`}
               disabled={injected}
               onClick={() => injectIncident(incident.eventId)}
-              title={incident.description}
+              title={reformatEmbeddedTimestamp(incident.description, incident.timestamp, timeOffsetMs)}
             >
               {injected ? "✓ " : "⚠ "}
               {incident.location}

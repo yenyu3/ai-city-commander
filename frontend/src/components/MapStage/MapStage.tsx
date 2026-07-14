@@ -1,9 +1,10 @@
 import { useState } from "react";
-import { Box, Layers, RotateCcw, RotateCw, Route } from "lucide-react";
+import { Box, Layers, Maximize2, Minimize2, RotateCcw, RotateCw, Route } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { pick, useLanguage } from "../../i18n";
+import { getPublicAlertText } from "../../utils/publicView";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
-import TimeFilter from "./TimeFilter";
 import IncidentInjectButton from "./IncidentInjectButton";
 import styles from "./MapStage.module.css";
 
@@ -14,9 +15,14 @@ export default function MapStage() {
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
   const alerts = useAppStore((s) => s.alerts);
+  const viewerMode = useAppStore((s) => s.viewerMode);
   const roadPaths = useAppStore((s) => s.roadPaths);
   const stationCoords = useAppStore((s) => s.stationCoords);
   const mapCenter = useAppStore((s) => s.mapCenter);
+  const focusZone = useAppStore((s) => s.focusZone);
+  const toggleFocusZone = useAppStore((s) => s.toggleFocusZone);
+  const { language } = useLanguage();
+  const isFocused = focusZone === "center";
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
@@ -37,10 +43,19 @@ export default function MapStage() {
     <div className={styles.wrap}>
       <div className={styles.graphArea}>
         <div className={styles.stageHeader}>
+          <button
+            type="button"
+            className={`${styles.iconBtn} ${styles.expandBtn}`}
+            aria-pressed={isFocused}
+            title={isFocused ? pick(language, "還原版面", "Restore layout") : pick(language, "放大地圖區域", "Expand map")}
+            onClick={() => toggleFocusZone("center")}
+          >
+            {isFocused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
+          </button>
           <div className={styles.stats}>
             <span>{segmentList.length} roads</span>
-            <span>{criticalCount} critical</span>
-            <span>{flowCount.toLocaleString()} vehicles</span>
+            <span>{viewerMode === "public" ? `${criticalCount} advisories` : `${criticalCount} critical`}</span>
+            {viewerMode === "government" && <span>{flowCount.toLocaleString()} vehicles</span>}
           </div>
         </div>
 
@@ -123,23 +138,38 @@ export default function MapStage() {
             roadPaths={roadPaths}
             stationCoords={stationCoords}
             mapCenter={mapCenter}
+            viewerMode={viewerMode}
+            language={language}
           />
         </div>
 
         <div className={styles.storyBadge}>
-          <span>Active SOP</span>
-          <strong>{alerts[0]?.sopRef ?? "Monitoring"}</strong>
-          <p>{alerts[0]?.title ?? "No emergency clause triggered"}</p>
+          <span>{viewerMode === "public" ? "Public advisory" : "Active SOP"}</span>
+          <strong>
+            {viewerMode === "public"
+              ? alerts[0]
+                ? pick(language, "路況提醒", "Traffic advisory")
+                : "Monitoring"
+              : alerts[0]?.sopRef ?? "Monitoring"}
+          </strong>
+          <p>
+            {viewerMode === "public"
+              ? alerts[0]
+                ? getPublicAlertText(alerts[0], language)
+                : "Follow official routing and avoid highlighted areas when possible."
+              : alerts[0]?.title ?? "No emergency clause triggered"}
+          </p>
         </div>
 
-        {selected && (
+        {viewerMode === "government" && selected && (
           <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />
         )}
       </div>
-      <div className={styles.controls}>
-        <IncidentInjectButton />
-        <TimeFilter />
-      </div>
+      {viewerMode === "government" && (
+        <div className={styles.controls}>
+          <IncidentInjectButton />
+        </div>
+      )}
     </div>
   );
 }
