@@ -4,7 +4,6 @@ import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { calcETE } from "../../engine/ete";
 import { llmAdapter } from "../../services/llmAdapter";
 import { pick, useLanguage } from "../../i18n";
-import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import styles from "./MultilingualPreview.module.css";
 
 const LANGS: { code: "zh" | "en" | "ja" | "ko"; label: string }[] = [
@@ -17,7 +16,6 @@ const LANGS: { code: "zh" | "en" | "ja" | "ko"; label: string }[] = [
 export default function MultilingualPreview() {
   const stations = useAppStore((s) => s.stations);
   const currentTime = useAppStore((s) => s.currentTime);
-  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const triggered = checkMultilingualNeeded(
     Object.values(stations).map((st) => ({
       timestamp: currentTime,
@@ -71,9 +69,7 @@ export default function MultilingualPreview() {
         ))}
       </div>
       <div className={styles.meta}>
-        {pick(language, "漫遊用戶佔比", "Roaming share")}：{(current.roamingPct * 100).toFixed(0)}%
-        {" ｜ "}
-        {pick(language, "時間", "Time")}：{formatDisplayTimestamp(currentTime, timeOffsetMs)}
+        {pick(language, "漫遊比例", "Roaming share")}: {(current.roamingPct * 100).toFixed(0)}%
       </div>
       <div className={styles.langTabs}>
         {LANGS.map((l) => (

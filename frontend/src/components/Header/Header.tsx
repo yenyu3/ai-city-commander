@@ -2,7 +2,6 @@ import { useEffect, useMemo, useState } from "react";
 import { Building2, Languages, Moon, Sun, Users } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
-import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import type { ViewerMode } from "../../types";
 import TimeFilter from "../MapStage/TimeFilter";
 import styles from "./Header.module.css";
@@ -17,8 +16,6 @@ const modeOptions: { mode: ViewerMode; icon: typeof Users }[] = [
 
 export default function Header() {
   const segments = useAppStore((s) => s.segments);
-  const currentTime = useAppStore((s) => s.currentTime);
-  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const setViewerMode = useAppStore((s) => s.setViewerMode);
   const { language, toggleLanguage } = useLanguage();
@@ -71,9 +68,6 @@ export default function Header() {
             {viewerMode === "public"
               ? `${pick(language, "城市狀態", "City Status")}: ${publicRiskLabel}`
               : `${pick(language, "城市風險", "City Risk")}: ${governmentRiskLabel}`}
-          </span>
-          <span className={styles.tierStat}>
-            {pick(language, "現在", "Now")} {formatDisplayTimestamp(currentTime, timeOffsetMs)}
           </span>
         </div>
 
