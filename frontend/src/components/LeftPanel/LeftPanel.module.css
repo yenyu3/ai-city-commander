@@ -54,27 +54,3 @@
   gap: 16px;
 }
 
-.publicUpdates {
-  flex-shrink: 0;
-  display: flex;
-  flex-direction: column;
-  gap: 8px;
-  min-height: 0;
-  background: var(--panel);
-  border: 1px solid var(--soft-border);
-  border-radius: var(--radius-lg);
-  padding: 12px;
-  box-shadow: var(--shadow-sm);
-}
-
-.inlineTitle {
-  display: flex;
-  align-items: center;
-  gap: 6px;
-  font-family: var(--font-nav);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
-}

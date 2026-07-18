@@ -1,5 +1,5 @@
-import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import styles from "./TimeFilter.module.css";
 
@@ -29,7 +29,9 @@ export default function TimeFilter() {
         className={styles.playBtn}
         onClick={() => (isPlaying ? pause() : play())}
       >
-        {isPlaying ? pick(language, "❚❚ 暫停", "❚❚ Pause") : pick(language, "▶ 播放", "▶ Play")}
+        {isPlaying
+          ? pick(language, "❚❚ 暫停", "❚❚ Pause")
+          : pick(language, "▶ 播放", "▶ Play")}
       </button>
       <input
         type="range"
@@ -39,7 +41,9 @@ export default function TimeFilter() {
         onChange={(e) => seekTime(ticks[Number(e.target.value)])}
         className={styles.slider}
       />
-      <span className={styles.time}>{formatDisplayTimestamp(ticks[tickIndex], timeOffsetMs)}</span>
+      <span className={styles.time}>
+        {formatDisplayTimestamp(ticks[tickIndex], timeOffsetMs)}
+      </span>
       <div className={styles.speedGroup}>
         {SPEEDS.map((s) => (
           <button

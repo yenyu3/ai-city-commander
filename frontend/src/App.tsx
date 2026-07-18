@@ -50,9 +50,11 @@ function App() {
     <div className={styles.app}>
       <Header />
       <div className={styles.body} data-focus={focusZone ?? undefined} data-mode={viewerMode}>
-        <div className={styles.left}>
-          <LeftPanel />
-        </div>
+        {viewerMode === "government" && (
+          <div className={styles.left}>
+            <LeftPanel />
+          </div>
+        )}
         <div className={styles.center}>
           <div className={styles.mapShell}>
             <MapStage />

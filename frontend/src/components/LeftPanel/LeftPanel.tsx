@@ -1,12 +1,10 @@
 import { useMemo, useState } from "react";
-import { Clock3, LayoutDashboard, Users } from "lucide-react";
+import { LayoutDashboard } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
-import PublicUpdateBar from "../BottomBar/PublicUpdateBar";
 import Legend from "./Legend";
 import OverviewTab from "./OverviewTab";
-import PublicStatusPanel from "./PublicStatusPanel";
 import SegmentList from "./SegmentList";
 import StationList from "./StationList";
 import SaturationTrendChart from "../charts/SaturationTrendChart";
@@ -20,7 +18,6 @@ export default function LeftPanel() {
   const [tab, setTab] = useState<TabKey>("overview");
   const { language } = useLanguage();
   const segments = useAppStore((s) => s.segments);
-  const viewerMode = useAppStore((s) => s.viewerMode);
   const stations = useAppStore((s) => s.stations);
   const traffic = useAppStore((s) => s.traffic);
   const crowd = useAppStore((s) => s.crowd);
@@ -51,22 +48,6 @@ export default function LeftPanel() {
     { key: "roads", label: pick(language, "路段", "Roads") },
     { key: "crowd", label: pick(language, "人流", "Crowd") },
   ];
-
-  if (viewerMode === "public") {
-    return (
-      <div className={styles.wrap}>
-        <PanelHeader icon={Users} title={pick(language, "市民狀態摘要", "Public Status")} zone="left" />
-        <PublicStatusPanel />
-        <section className={styles.publicUpdates}>
-          <div className={styles.inlineTitle}>
-            <Clock3 size={13} aria-hidden="true" />
-            <span>{pick(language, "最新公開更新", "Latest Public Updates")}</span>
-          </div>
-          <PublicUpdateBar variant="panel" />
-        </section>
-      </div>
-    );
-  }
 
   return (
     <div className={styles.wrap}>
