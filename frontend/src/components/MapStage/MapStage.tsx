@@ -115,23 +115,6 @@ export default function MapStage() {
           </button>
         </div>
 
-        <div className={styles.displayToggle} aria-label="Display mode">
-          <button
-            type="button"
-            className={displayMode === "flow" ? styles.activeMode : styles.mode}
-            onClick={() => setDisplayMode("flow")}
-          >
-            {viewerMode === "public" ? "Routes" : "Flow"}
-          </button>
-          <button
-            type="button"
-            className={displayMode === "risk" ? styles.activeMode : styles.mode}
-            onClick={() => setDisplayMode("risk")}
-          >
-            {viewerMode === "public" ? "Advisory" : "Risk"}
-          </button>
-        </div>
-
         <div className={`${styles.camera} ${cameraClass}`}>
           <NetworkGraph
             segments={segmentList}
@@ -148,22 +131,41 @@ export default function MapStage() {
           />
         </div>
 
-        <div className={styles.storyBadge}>
-          <span>{viewerMode === "public" ? "Public advisory" : "Active SOP"}</span>
-          <strong>
-            {viewerMode === "public"
-              ? alerts[0]
-                ? pick(language, "路況提醒", "Traffic advisory")
-                : "Monitoring"
-              : alerts[0]?.sopRef ?? "Monitoring"}
-          </strong>
-          <p>
-            {viewerMode === "public"
-              ? alerts[0]
-                ? getPublicAlertText(alerts[0], language)
-                : "Follow official routing and avoid highlighted areas when possible."
-              : alerts[0]?.title ?? "No emergency clause triggered"}
-          </p>
+        <div className={styles.bottomOverlay}>
+          <div className={styles.displayToggle} aria-label="Display mode">
+            <button
+              type="button"
+              className={displayMode === "flow" ? styles.activeMode : styles.mode}
+              onClick={() => setDisplayMode("flow")}
+            >
+              {viewerMode === "public" ? "Routes" : "Flow"}
+            </button>
+            <button
+              type="button"
+              className={displayMode === "risk" ? styles.activeMode : styles.mode}
+              onClick={() => setDisplayMode("risk")}
+            >
+              {viewerMode === "public" ? "Advisory" : "Risk"}
+            </button>
+          </div>
+
+          <div className={styles.storyBadge}>
+            <span>{viewerMode === "public" ? "Public advisory" : "Active SOP"}</span>
+            <strong>
+              {viewerMode === "public"
+                ? alerts[0]
+                  ? pick(language, "路況提醒", "Traffic advisory")
+                  : "Monitoring"
+                : alerts[0]?.sopRef ?? "Monitoring"}
+            </strong>
+            <p>
+              {viewerMode === "public"
+                ? alerts[0]
+                  ? getPublicAlertText(alerts[0], language)
+                  : "Follow official routing and avoid highlighted areas when possible."
+                : alerts[0]?.title ?? "No emergency clause triggered"}
+            </p>
+          </div>
         </div>
 
         {viewerMode === "government" && selected && (

@@ -85,8 +85,7 @@
 }
 
 .layerControls,
-.rotateControls,
-.displayToggle {
+.rotateControls {
   position: absolute;
   z-index: 7;
   display: flex;
@@ -105,9 +104,27 @@
   flex-direction: column;
 }
 
-.displayToggle {
+.bottomOverlay {
+  position: absolute;
   left: 18px;
+  right: 18px;
   bottom: 18px;
+  z-index: 7;
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  pointer-events: none;
+}
+
+.bottomOverlay > * {
+  pointer-events: auto;
+}
+
+.displayToggle {
+  flex-shrink: 0;
+  display: flex;
+  gap: 8px;
   padding: 4px;
   border: 1px solid var(--soft-border);
   border-radius: 999px;
@@ -169,11 +186,10 @@
 }
 
 .storyBadge {
-  position: absolute;
-  right: 18px;
-  bottom: 18px;
-  z-index: 6;
-  width: min(300px, calc(100% - 190px));
+  flex: 1 1 auto;
+  min-width: 0;
+  max-width: 300px;
+  margin-left: auto;
   padding: 12px 14px;
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
@@ -237,14 +253,19 @@
     justify-content: flex-start;
   }
 
+  .cameraTop,
   .cameraTilt,
   .cameraStreet {
     inset: 126px 12px 18px;
   }
 
+  .bottomOverlay {
+    flex-direction: column-reverse;
+    align-items: stretch;
+  }
+
   .storyBadge {
-    width: calc(100% - 36px);
-    right: 18px;
-    bottom: 68px;
+    max-width: none;
+    margin-left: 0;
   }
 }
