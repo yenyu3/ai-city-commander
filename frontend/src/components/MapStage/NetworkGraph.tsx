@@ -552,7 +552,6 @@ export default function NetworkGraph({
         mapStyle={MAP_STYLE}
         onLoad={handleLoad}
         attributionControl={false}
-        cooperativeGestures
       >
         <AttributionControl compact position="bottom-right" />
         <DeckGLOverlay
