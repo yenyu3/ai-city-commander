@@ -239,13 +239,14 @@
   box-shadow: var(--shadow-sm);
 }
 
+/* Mobile tier — see breakpoint legend in src/index.css */
 @media (max-width: 820px) {
   .graphArea {
     min-height: 620px;
   }
 
   .stageHeader {
-    right: 18px;
+    right: 62px;
     flex-direction: column;
   }
 
@@ -264,8 +265,49 @@
     align-items: stretch;
   }
 
+  .displayToggle {
+    align-self: flex-start;
+  }
+
   .storyBadge {
     max-width: none;
     margin-left: 0;
+  }
+}
+
+/* Phone tier — see breakpoint legend in src/index.css */
+@media (max-width: 480px) {
+  .stageHeader {
+    right: 56px;
+    gap: 10px;
+  }
+
+  .stageHeader h2 {
+    font-size: 16px;
+  }
+
+  .layerControls,
+  .rotateControls {
+    right: 12px;
+  }
+
+  .iconBtn,
+  .activeIconBtn {
+    width: 32px;
+    height: 32px;
+  }
+
+  .rotateControls {
+    top: 138px;
+  }
+
+  .bottomOverlay {
+    left: 12px;
+    right: 12px;
+    bottom: 12px;
+  }
+
+  .storyBadge {
+    padding: 10px 12px;
   }
 }

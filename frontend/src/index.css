@@ -1,5 +1,41 @@
 @import url("https://fonts.googleapis.com/css2?family=Roboto:ital,wght@0,100;0,300;0,400;0,500;0,700;0,900;1,100;1,300;1,400;1,500;1,700;1,900&family=Montserrat:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&family=Poppins:ital,wght@0,100;0,200;0,300;0,400;0,500;0,600;0,700;0,800;0,900;1,100;1,200;1,300;1,400;1,500;1,600;1,700;1,800;1,900&display=swap");
 
+/*
+  Responsive breakpoints — plain CSS Modules only (no preprocessor), so
+  these are documented literal values, not custom properties: CSS custom
+  properties cannot be used inside @media conditions in standard CSS.
+
+  Canonical tiers. Align new/edited @media rules to these values unless
+  the file is listed as an intentional exception below.
+
+    max-width: 1180px   Desktop -> Tablet   3-col grid becomes 2-col + a
+                                             full-width overflow row
+                                             (src/App.module.css)
+    max-width: 820px    Tablet -> Mobile    grid becomes a single-column
+                                             stack; page becomes scrollable
+                                             (App.module.css, BottomBar.module.css,
+                                             MapStage.module.css,
+                                             NetworkGraph.module.css,
+                                             AlertLogList.module.css)
+    max-width: 480px    Mobile -> Phone     compacts MapStage/NetworkGraph's
+                                             absolutely-positioned overlay
+                                             clusters to avoid collisions
+
+  Known intentional exceptions (component-local micro-tiers — do not
+  align to the canonical set above):
+
+    720px   Header.module.css — mode-switch button labels hide before the
+            general mobile tier, purely so the header's single row doesn't
+            wrap early. This is a header-internal space budget, unrelated
+            to the body grid tiers above.
+
+    1100px, 640px   BottomBar/PublicUpdateBar.module.css — PublicUpdateBar
+            is currently unused/unmounted (not imported by App.tsx or any
+            active component; PublicStatusPanel.tsx is similarly orphaned).
+            Breakpoints left as authored with no functional effect today;
+            revisit if this component is wired into the public-mode UI.
+*/
+
 :root {
   --bg: #0f1012;
   --panel: #181a1f;

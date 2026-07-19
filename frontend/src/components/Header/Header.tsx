@@ -34,11 +34,6 @@ export default function Header() {
           <span className={styles.brandAmber}>
             {pick(language, "AI 城市指揮官", "AI City Commander")}
           </span>
-          <span>
-            {viewerMode === "public"
-              ? pick(language, "市民資訊", "Public View")
-              : pick(language, "AI Agent", "AI Agent")}
-          </span>
         </div>
 
         <div className={styles.right}>
@@ -56,6 +51,11 @@ export default function Header() {
                     type="button"
                     className={active ? styles.modeBtnActive : styles.modeBtn}
                     aria-pressed={active}
+                    aria-label={
+                      mode === "public"
+                        ? pick(language, "一般民眾", "Public")
+                        : pick(language, "政府單位", "Government")
+                    }
                     title={
                       mode === "public"
                         ? pick(language, "一般民眾", "Public")

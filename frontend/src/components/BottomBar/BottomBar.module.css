@@ -39,6 +39,7 @@
   padding-left: 14px;
 }
 
+/* Mobile tier — see breakpoint legend in src/index.css */
 @media (max-width: 820px) {
   .outer {
     height: auto;

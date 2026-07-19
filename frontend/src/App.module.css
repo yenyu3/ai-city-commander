@@ -12,6 +12,7 @@
   min-height: 0;
   display: grid;
   grid-template-columns: minmax(250px, 300px) minmax(760px, 1fr) minmax(270px, 320px);
+  grid-template-areas: "left center right";
   gap: 14px;
   width: min(100%, 2200px);
   margin: 0 auto;
@@ -21,22 +22,39 @@
 
 .body[data-mode="public"] {
   grid-template-columns: minmax(760px, 1fr) minmax(270px, 320px);
+  grid-template-areas: "center right";
 }
 
 .body[data-focus="left"] {
   grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr) minmax(240px, 0.55fr);
+  grid-template-areas: "left center right";
 }
 
 .body[data-focus="center"] {
   grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "center";
 }
 
 .body[data-focus="right"] {
   grid-template-columns: minmax(240px, 0.55fr) minmax(560px, 1.1fr) minmax(420px, 0.9fr);
+  grid-template-areas: "left center right";
 }
 
 .body[data-focus="bottom"] {
   grid-template-columns: minmax(240px, 0.55fr) minmax(760px, 1.6fr) minmax(240px, 0.55fr);
+  grid-template-areas: "left center right";
+}
+
+/* Public mode has no .left; without this, focus="right" fell through to
+   the government 3-column formula above and wasted a grid track. */
+.body[data-mode="public"][data-focus="right"] {
+  grid-template-columns: minmax(480px, 1fr) minmax(360px, 0.85fr);
+  grid-template-areas: "center right";
+}
+
+.body[data-mode="public"][data-focus="center"] {
+  grid-template-columns: minmax(0, 1fr);
+  grid-template-areas: "center";
 }
 
 .left,
@@ -46,6 +64,10 @@
   overflow: hidden;
   transition: opacity var(--transition-med);
 }
+
+.left { grid-area: left; }
+.center { grid-area: center; }
+.right { grid-area: right; }
 
 .center {
   position: relative;
@@ -109,13 +131,57 @@
   background: var(--bg);
 }
 
+/* Tablet tier — see breakpoint legend in src/index.css */
 @media (max-width: 1180px) {
+  /* .app must stay height-capped (not auto) so it is the element that
+     actually scrolls — with height:auto its box just grows to fit content
+     and the overflow spills into #root/body, whose overflow:hidden
+     (index.css) then silently blocks real wheel/touch scroll input even
+     though programmatic scrollTo() still appears to work. */
+  .app {
+    height: 100vh;
+    overflow-y: auto;
+    overflow-x: hidden;
+  }
+}
+
+/* Tablet tier — see breakpoint legend in src/index.css */
+@media (max-width: 1180px) and (min-width: 821px) {
+  /* Row 1 needs an explicit minmax floor: .left/.center keep overflow:hidden
+     (see the unconditional rule above), and a grid item with a non-visible
+     overflow contributes 0 to its row's automatic (content-based) minimum
+     size — so with only implicit "auto" rows, row 1 collapses to whatever
+     scraps are left after row 2, instead of sizing to fit the map. */
   .body {
-    grid-template-columns: minmax(250px, 300px) minmax(540px, 1fr);
+    grid-template-columns: minmax(250px, 300px) minmax(470px, 1fr);
+    grid-template-rows: minmax(670px, 1fr) auto;
+    grid-template-areas:
+      "left   center"
+      "right  right";
   }
 
-  .right {
-    display: none;
+  .body:not([data-mode="public"]) .right {
+    overflow: visible;
+  }
+
+  .body[data-focus="left"],
+  .body[data-focus="right"],
+  .body[data-focus="bottom"] {
+    grid-template-columns: minmax(250px, 300px) minmax(470px, 1fr);
+    grid-template-rows: minmax(670px, 1fr) auto;
+    grid-template-areas:
+      "left   center"
+      "right  right";
+  }
+
+  .body[data-mode="public"] {
+    grid-template-columns: minmax(460px, 1fr) minmax(230px, 300px);
+    grid-template-areas: "center right";
+  }
+
+  .body[data-mode="public"][data-focus="right"] {
+    grid-template-columns: minmax(460px, 1fr) minmax(230px, 300px);
+    grid-template-areas: "center right";
   }
 }
 
@@ -130,16 +196,39 @@
   }
 }
 
+/* Mobile tier — see breakpoint legend in src/index.css */
 @media (max-width: 820px) {
-  .app {
-    height: auto;
-    min-height: 100vh;
-    overflow: auto;
-  }
-
   .body {
     grid-template-columns: 1fr;
+    grid-template-areas:
+      "left"
+      "center"
+      "right";
     padding: 14px;
+  }
+
+  .body[data-mode="public"] {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "center"
+      "right";
+  }
+
+  .body[data-focus="left"],
+  .body[data-focus="right"],
+  .body[data-focus="bottom"] {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "left"
+      "center"
+      "right";
+  }
+
+  .body[data-mode="public"][data-focus="right"] {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "center"
+      "right";
   }
 
   .left,

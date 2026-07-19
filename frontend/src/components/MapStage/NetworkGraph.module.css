@@ -185,13 +185,40 @@
   overflow-wrap: anywhere;
 }
 
+/* Mobile tier — see breakpoint legend in src/index.css */
 @media (max-width: 820px) {
   .legend {
-    display: none;
+    left: 12px;
+    bottom: 210px;
+    padding: 5px 7px;
+    font-size: 9px;
   }
 
   .agentPopup {
     bottom: 180px;
     max-height: calc(100% - 200px);
+  }
+}
+
+/* Phone tier — see breakpoint legend in src/index.css */
+@media (max-width: 480px) {
+  .legend {
+    grid-template-columns: auto 56px auto;
+  }
+
+  .agentPopup {
+    width: calc(100% - 24px);
+    padding: 14px 16px;
+    bottom: 176px;
+  }
+
+  .agentHeader {
+    grid-template-columns: 40px 1fr;
+    gap: 10px;
+  }
+
+  .agentPopup dl div {
+    grid-template-columns: 96px 1fr;
+    gap: 10px;
   }
 }

@@ -106,6 +106,7 @@
   text-overflow: ellipsis;
 }
 
+/* Intentional micro-tier exception — see src/index.css breakpoint legend */
 @media (max-width: 1100px) {
   .wrap {
     flex-direction: column;
@@ -123,6 +124,7 @@
   }
 }
 
+/* Intentional micro-tier exception — see src/index.css breakpoint legend */
 @media (max-width: 640px) {
   .updates {
     grid-template-columns: 1fr;

@@ -156,6 +156,7 @@
   transform: translateY(-1px);
 }
 
+/* Intentional micro-tier exception — see src/index.css breakpoint legend */
 @media (max-width: 720px) {
   .header {
     padding: 10px 14px;
