@@ -8,7 +8,6 @@ import styles from "./PublicUpdateBar.module.css";
 
 export default function PublicUpdateBar({ variant = "bar" }: { variant?: "bar" | "panel" }) {
   const { language } = useLanguage();
-  const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const alerts = useAppStore((s) => s.alerts);
   const activeIncidents = useAppStore((s) => s.activeIncidents);
@@ -49,10 +48,7 @@ export default function PublicUpdateBar({ variant = "bar" }: { variant?: "bar" |
 
       <div className={styles.incidentPill}>
         <MapPinned size={15} aria-hidden="true" />
-        <span>
-          {pick(language, "更新", "Updated")} {formatDisplayTimestamp(currentTime, timeOffsetMs)} ·{" "}
-          {pick(language, "事件", "Incidents")} {activeIncidents.length}
-        </span>
+        <span>{pick(language, "事件", "Incidents")} {activeIncidents.length}</span>
       </div>
     </div>
   );
