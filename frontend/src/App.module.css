@@ -72,7 +72,7 @@
 .center {
   position: relative;
   display: grid;
-  grid-template-rows: minmax(520px, 1fr) 128px;
+  grid-template-rows: minmax(520px, 1fr) var(--bottom-panel-height, 128px);
   gap: 14px;
 }
 
@@ -95,6 +95,11 @@
   opacity: 0.72;
 }
 
+.body[data-focus="bottom"] .center {
+  --bottom-panel-height: clamp(320px, 38vh, 430px);
+  grid-template-rows: minmax(260px, 1fr) var(--bottom-panel-height);
+}
+
 .body[data-focus="center"] .left,
 .body[data-focus="center"] .right {
   display: none;
@@ -109,15 +114,15 @@
 }
 
 .bottom {
-  height: 128px;
-  min-height: 128px;
+  height: var(--bottom-panel-height, 128px);
+  min-height: var(--bottom-panel-height, 128px);
   overflow: hidden;
   transition: min-height var(--transition-med), opacity var(--transition-med);
 }
 
 .bottom[data-focus="active"] {
-  height: 260px;
-  min-height: 260px;
+  height: var(--bottom-panel-height, 260px);
+  min-height: var(--bottom-panel-height, 260px);
 }
 
 .loading {
@@ -187,12 +192,17 @@
 
 @media (max-height: 820px) and (min-width: 821px) {
   .center {
-    grid-template-rows: minmax(420px, 1fr) 112px;
+    grid-template-rows: minmax(420px, 1fr) var(--bottom-panel-height, 112px);
+  }
+
+  .body[data-focus="bottom"] .center {
+    --bottom-panel-height: clamp(300px, 42vh, 360px);
+    grid-template-rows: minmax(220px, 1fr) var(--bottom-panel-height);
   }
 
   .bottom {
-    height: 112px;
-    min-height: 112px;
+    height: var(--bottom-panel-height, 112px);
+    min-height: var(--bottom-panel-height, 112px);
   }
 }
 

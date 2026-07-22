@@ -4,6 +4,9 @@
 }
 
 .btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
   background: transparent;
   border: 1px solid var(--soft-border);
   color: var(--text-dim);
@@ -22,4 +25,10 @@
 .btn:disabled {
   opacity: 0.4;
   cursor: default;
+}
+
+.icon {
+  width: 14px;
+  height: 14px;
+  flex: 0 0 auto;
 }

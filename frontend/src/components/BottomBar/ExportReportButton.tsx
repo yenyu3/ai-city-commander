@@ -1,3 +1,4 @@
+import { Download } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { formatDisplayTimestamp } from "../../utils/timeUtils";
@@ -34,10 +35,8 @@ export default function ExportReportButton() {
   return (
     <div className={styles.wrap}>
       <button className={styles.btn} onClick={exportJson} disabled={alerts.length === 0}>
-        ⬇ {pick(language, "匯出事後報告 (JSON)", "Export After-Action Report (JSON)")}
-      </button>
-      <button className={styles.btn} onClick={() => window.print()} disabled={alerts.length === 0}>
-        🖨 {pick(language, "列印報告", "Print Report")}
+        <Download className={styles.icon} aria-hidden="true" />
+        {pick(language, "匯出報告", "Export Report")}
       </button>
     </div>
   );
