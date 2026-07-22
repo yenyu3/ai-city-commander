@@ -31,9 +31,9 @@
 
     1100px, 640px   BottomBar/PublicUpdateBar.module.css — PublicUpdateBar
             is currently unused/unmounted (not imported by App.tsx or any
-            active component; PublicStatusPanel.tsx is similarly orphaned).
-            Breakpoints left as authored with no functional effect today;
-            revisit if this component is wired into the public-mode UI.
+            active component). Breakpoints left as authored with no
+            functional effect today; revisit if this component is wired
+            into the public-mode UI.
 */
 
 :root {
@@ -78,6 +78,13 @@
   --radius-md: 6px;
   --radius-lg: 8px;
   --radius-xl: 8px;
+
+  /* Circular icon-button scale — same "round icon toggle" affordance at
+     three deliberate sizes: compact panel chrome (PanelHeader), global
+     header controls (Header), and floating map overlay controls (MapStage). */
+  --icon-btn-sm: 24px;
+  --icon-btn-md: 32px;
+  --icon-btn-lg: 36px;
 
   --shadow-sm: 0 2px 12px rgba(0, 0, 0, 0.04);
   --shadow-md: 0 12px 30px rgba(0, 0, 0, 0.08);

@@ -107,11 +107,11 @@
   max-height: calc(100% - 170px);
   overflow-y: auto;
   padding: 18px 20px;
-  border: 1px solid rgba(255, 255, 255, 0.24);
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
-  background: linear-gradient(160deg, rgba(247, 250, 252, 0.98), rgba(222, 231, 239, 0.96));
-  box-shadow: 0 22px 60px rgba(0, 0, 0, 0.42), 0 0 0 1px rgba(10, 14, 18, 0.08);
-  color: #15191f;
+  background: linear-gradient(160deg, color-mix(in srgb, var(--panel), white 6%), var(--panel));
+  box-shadow: var(--shadow-lg), 0 0 0 1px rgba(10, 14, 18, 0.08);
+  color: var(--text);
   transform: translateX(-50%);
   backdrop-filter: blur(22px);
 }
@@ -122,7 +122,7 @@
   gap: 14px;
   align-items: start;
   padding-bottom: 14px;
-  border-bottom: 1px solid rgba(24, 33, 43, 0.16);
+  border-bottom: 1px solid var(--soft-border);
 }
 
 .avatar {
@@ -131,17 +131,17 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 2px solid rgba(255, 255, 255, 0.72);
+  border: 2px solid color-mix(in srgb, var(--text), transparent 28%);
   border-radius: 50%;
-  background: radial-gradient(circle at 35% 30%, #ffffff, #9adfff 36%, #2a4b69 100%);
-  color: #101216;
+  background: radial-gradient(circle at 35% 30%, #ffffff, var(--cyan) 36%, color-mix(in srgb, var(--cyan), black 45%) 100%);
+  color: var(--bg);
   font-family: var(--font-nav);
   font-size: 14px;
   font-weight: 700;
 }
 
 .agentHeader strong {
-  color: #111418;
+  color: var(--text);
   font-family: var(--font-display);
   font-size: 18px;
   font-weight: 600;
@@ -149,7 +149,7 @@
 
 .agentHeader p {
   margin-top: 6px;
-  color: #4d5964;
+  color: var(--text-dim);
   font-size: 14px;
   line-height: 1.5;
 }
@@ -174,12 +174,12 @@
 }
 
 .agentPopup dt {
-  color: #5d6874;
+  color: var(--text-dim);
   font-weight: 600;
 }
 
 .agentPopup dd {
-  color: #111418;
+  color: var(--text);
   font-family: var(--font-mono);
   font-weight: 600;
   overflow-wrap: anywhere;

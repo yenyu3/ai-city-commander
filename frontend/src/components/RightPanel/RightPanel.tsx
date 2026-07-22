@@ -4,6 +4,7 @@ import { useAppStore } from "../../store/appStore";
 import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
+import TabBar from "../common/TabBar";
 import DecisionSummary from "./DecisionSummary";
 import PublicAssistantPanel from "./PublicAssistantPanel";
 import ReasoningChain from "./ReasoningChain";
@@ -60,19 +61,7 @@ export default function RightPanel() {
         <ETEBreakdownCard />
       </div>
       <div className={styles.bottom}>
-        <div className={styles.tabBar} role="tablist">
-          {TABS.map((t) => (
-            <button
-              key={t.key}
-              role="tab"
-              aria-selected={tab === t.key}
-              className={tab === t.key ? styles.tabActive : styles.tab}
-              onClick={() => setTab(t.key)}
-            >
-              {t.label}
-            </button>
-          ))}
-        </div>
+        <TabBar tabs={TABS} active={tab} onChange={setTab} className={styles.tabBarInset} />
         <div className={styles.tabContent}>
           {tab === "whatif" && <ChatPanel />}
           {tab === "multilingual" && <MultilingualPreview />}

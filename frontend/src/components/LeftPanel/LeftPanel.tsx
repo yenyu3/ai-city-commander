@@ -3,6 +3,7 @@ import { LayoutDashboard } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
+import TabBar from "../common/TabBar";
 import Legend from "./Legend";
 import OverviewTab from "./OverviewTab";
 import SegmentList from "./SegmentList";
@@ -53,19 +54,7 @@ export default function LeftPanel() {
     <div className={styles.wrap}>
       <PanelHeader icon={LayoutDashboard} title={pick(language, "情境總覽", "Situation Panel")} zone="left" />
       <Legend />
-      <div className={styles.tabBar} role="tablist">
-        {TABS.map((t) => (
-          <button
-            key={t.key}
-            role="tab"
-            aria-selected={tab === t.key}
-            className={tab === t.key ? styles.tabActive : styles.tab}
-            onClick={() => setTab(t.key)}
-          >
-            {t.label}
-          </button>
-        ))}
-      </div>
+      <TabBar tabs={TABS} active={tab} onChange={setTab} />
       <div className={styles.tabContent}>
         {tab === "overview" && <OverviewTab />}
         {tab === "roads" && (

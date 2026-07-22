@@ -1,15 +1,12 @@
 .wrap {
+  composes: card from "../common/shared.module.css";
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  background: var(--panel);
-  border: 1px solid var(--soft-border);
-  border-radius: var(--radius-lg);
   padding: 14px;
-  box-shadow: var(--shadow-sm);
 }
 
 .hero {
@@ -21,12 +18,8 @@
 }
 
 .eyebrow {
+  composes: panelLabel from "../common/shared.module.css";
   margin: 0;
-  font-family: var(--font-nav);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  color: var(--text-dim);
 }
 
 .hero h2,

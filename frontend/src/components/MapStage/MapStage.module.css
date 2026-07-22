@@ -138,8 +138,8 @@
 
 .iconBtn,
 .activeIconBtn {
-  width: 36px;
-  height: 36px;
+  width: var(--icon-btn-lg);
+  height: var(--icon-btn-lg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
@@ -229,14 +229,11 @@
 }
 
 .controls {
+  composes: card from "../common/shared.module.css";
   display: flex;
   flex-direction: column;
   gap: 12px;
-  background: var(--panel);
-  border: 1px solid var(--soft-border);
-  border-radius: var(--radius-lg);
   padding: 10px 12px;
-  box-shadow: var(--shadow-sm);
 }
 
 /* Mobile tier — see breakpoint legend in src/index.css */
@@ -287,8 +284,8 @@
 
   .iconBtn,
   .activeIconBtn {
-    width: 32px;
-    height: 32px;
+    width: var(--icon-btn-md);
+    height: var(--icon-btn-md);
   }
 
   .rotateControls {

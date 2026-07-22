@@ -105,8 +105,8 @@
 }
 
 .iconBtn {
-  width: 32px;
-  height: 32px;
+  width: var(--icon-btn-md);
+  height: var(--icon-btn-md);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;

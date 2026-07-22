@@ -6,15 +6,10 @@
 }
 
 .title {
+  composes: panelLabel from "./shared.module.css";
   display: flex;
   align-items: center;
   gap: 6px;
-  font-family: var(--font-nav);
-  font-size: 11px;
-  font-weight: 700;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  color: var(--text-dim);
   min-width: 0;
 }
 
@@ -25,8 +20,8 @@
 }
 
 .btn {
-  width: 24px;
-  height: 24px;
+  width: var(--icon-btn-sm);
+  height: var(--icon-btn-sm);
   flex-shrink: 0;
   display: inline-flex;
   align-items: center;
