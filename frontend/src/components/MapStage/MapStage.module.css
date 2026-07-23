@@ -103,7 +103,9 @@
 }
 
 .iconBtn,
-.activeIconBtn {
+.activeIconBtn,
+.pegmanBtn,
+.activePegmanBtn {
   width: var(--icon-btn-lg);
   height: var(--icon-btn-lg);
   display: inline-flex;
@@ -123,11 +125,41 @@
 
 .iconBtn:hover,
 .iconBtn[aria-pressed="true"],
-.activeIconBtn {
+.activeIconBtn,
+.pegmanBtn:hover,
+.activePegmanBtn {
   color: var(--bg);
   background: var(--text);
   border-color: var(--text);
   transform: translateY(-1px);
+}
+
+.pegmanBtn,
+.activePegmanBtn {
+  margin-top: 10px;
+  touch-action: none;
+  cursor: grab;
+}
+
+.activePegmanBtn {
+  cursor: grabbing;
+}
+
+.dragGhost {
+  position: fixed;
+  z-index: 60;
+  width: 48px;
+  height: 48px;
+  display: grid;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--text), transparent 24%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  color: var(--text);
+  box-shadow: var(--shadow-lg);
+  pointer-events: none;
+  transform: translate(-50%, -50%);
+  backdrop-filter: blur(12px);
 }
 
 .mode,
@@ -193,7 +225,9 @@
   }
 
   .iconBtn,
-  .activeIconBtn {
+  .activeIconBtn,
+  .pegmanBtn,
+  .activePegmanBtn {
     width: var(--icon-btn-md);
     height: var(--icon-btn-md);
   }

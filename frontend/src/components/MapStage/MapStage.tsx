@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { Box, Layers, Maximize2, Minimize2 } from "lucide-react";
+import { Box, Layers, Maximize2, Minimize2, PersonStanding } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import NetworkGraph from "./NetworkGraph";
@@ -24,6 +24,7 @@ export default function MapStage() {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
+  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setDisplayMode(viewerMode === "public" ? "risk" : "flow");
@@ -33,6 +34,30 @@ export default function MapStage() {
   const segmentList = Object.values(segments);
   const selected = selectedId ? segments[selectedId] : null;
   const cameraClass = cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
+
+  useEffect(() => {
+    if (!dragPoint) return;
+
+    const handlePointerMove = (event: PointerEvent) => {
+      setDragPoint({ x: event.clientX, y: event.clientY });
+    };
+
+    const handlePointerUp = (event: PointerEvent) => {
+      setDragPoint(null);
+      window.dispatchEvent(
+        new CustomEvent("field-inspection-drop", {
+          detail: { clientX: event.clientX, clientY: event.clientY },
+        }),
+      );
+    };
+
+    window.addEventListener("pointermove", handlePointerMove);
+    window.addEventListener("pointerup", handlePointerUp, { once: true });
+    return () => {
+      window.removeEventListener("pointermove", handlePointerMove);
+      window.removeEventListener("pointerup", handlePointerUp);
+    };
+  }, [dragPoint]);
 
   return (
     <div className={styles.wrap}>
@@ -68,7 +93,29 @@ export default function MapStage() {
           >
             <Box size={17} />
           </button>
+          <button
+            type="button"
+            className={dragPoint ? styles.activePegmanBtn : styles.pegmanBtn}
+            title="Drag field inspector to map"
+            aria-label="Drag field inspector to map"
+            onPointerDown={(event) => {
+              event.preventDefault();
+              setDragPoint({ x: event.clientX, y: event.clientY });
+            }}
+          >
+            <PersonStanding size={19} />
+          </button>
         </div>
+
+        {dragPoint && (
+          <div
+            className={styles.dragGhost}
+            style={{ left: dragPoint.x, top: dragPoint.y }}
+            aria-hidden="true"
+          >
+            <PersonStanding size={28} />
+          </div>
+        )}
 
         <div className={`${styles.camera} ${cameraClass}`}>
           <NetworkGraph

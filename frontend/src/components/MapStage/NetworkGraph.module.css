@@ -69,3 +69,120 @@
     radial-gradient(circle at 50% 44%, transparent 0, transparent 46%, rgba(0, 0, 0, 0.18) 82%),
     linear-gradient(to bottom, rgba(255, 255, 255, 0.025), transparent 24%, rgba(0, 0, 0, 0.16));
 }
+
+.inspectionMarker {
+  position: relative;
+  width: 38px;
+  height: 38px;
+  display: grid;
+  place-items: center;
+  border: 2px solid color-mix(in srgb, var(--text), transparent 18%);
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  color: var(--text);
+  box-shadow:
+    0 10px 22px rgba(0, 0, 0, 0.36),
+    0 0 0 5px rgba(232, 91, 108, 0.18);
+  transform: translateY(-2px);
+}
+
+.inspectionMarker::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  bottom: -9px;
+  width: 12px;
+  height: 12px;
+  border-right: 2px solid color-mix(in srgb, var(--text), transparent 18%);
+  border-bottom: 2px solid color-mix(in srgb, var(--text), transparent 18%);
+  background: color-mix(in srgb, var(--panel), transparent 4%);
+  transform: translateX(-50%) rotate(45deg);
+}
+
+.inspectionPanel {
+  position: absolute;
+  top: 178px;
+  right: 18px;
+  z-index: 5;
+  width: min(280px, calc(100% - 36px));
+  padding: 13px 14px;
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--panel), transparent 8%);
+  color: var(--text);
+  box-shadow: var(--shadow-md);
+  backdrop-filter: blur(16px);
+}
+
+.inspectionHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding-bottom: 9px;
+  border-bottom: 1px solid var(--soft-border);
+}
+
+.inspectionHeader strong {
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 600;
+}
+
+.inspectionHeader button {
+  width: var(--icon-btn-sm);
+  height: var(--icon-btn-sm);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--soft-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  transition:
+    color var(--transition-fast),
+    border-color var(--transition-fast);
+}
+
+.inspectionHeader button:hover {
+  color: var(--text);
+  border-color: var(--text);
+}
+
+.inspectionPanel dl {
+  display: grid;
+  gap: 8px;
+  margin: 10px 0 0;
+}
+
+.inspectionPanel dl div {
+  display: grid;
+  grid-template-columns: 84px 1fr;
+  gap: 10px;
+}
+
+.inspectionPanel dt,
+.inspectionPanel dd {
+  margin: 0;
+  font-size: 12px;
+  line-height: 1.35;
+}
+
+.inspectionPanel dt {
+  color: var(--text-dim);
+  font-weight: 600;
+}
+
+.inspectionPanel dd {
+  color: var(--text);
+  font-family: var(--font-mono);
+  overflow-wrap: anywhere;
+}
+
+@media (max-width: 480px) {
+  .inspectionPanel {
+    top: 142px;
+    right: 12px;
+    width: min(260px, calc(100% - 24px));
+  }
+}

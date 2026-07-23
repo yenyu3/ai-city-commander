@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { AttributionControl, Map, useControl, type MapRef } from "react-map-gl/mapbox";
+import { AttributionControl, Map, Marker, useControl, type MapRef } from "react-map-gl/mapbox";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Map as MapboxMap } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
@@ -15,6 +15,7 @@ import {
 import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
+import { PersonStanding, X } from "lucide-react";
 import { withElevation } from "./geometry";
 import type { SegmentRuntimeState, StationRuntimeState } from "../../store/appStore";
 import type { RoadPathDef, ViewerMode } from "../../types";
@@ -75,6 +76,11 @@ interface StationPoint {
 interface HeatPoint {
   position: Position;
   weight: number;
+}
+
+interface InspectionPoint {
+  position: Position;
+  nearestRoad: RoadPath | null;
 }
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
@@ -143,6 +149,27 @@ function DeckGLOverlay(props: ConstructorParameters<typeof MapboxOverlay>[0]) {
   return null;
 }
 
+function positionDistance(a: Position, b: Position): number {
+  return Math.hypot(a[0] - b[0], a[1] - b[1]);
+}
+
+function findNearestRoad(position: Position, roads: RoadPath[]): RoadPath | null {
+  let nearest: RoadPath | null = null;
+  let nearestDistance = Number.POSITIVE_INFINITY;
+
+  for (const road of roads) {
+    for (const sample of samplePath(road.path, 12)) {
+      const distance = positionDistance(position, sample);
+      if (distance < nearestDistance) {
+        nearest = road;
+        nearestDistance = distance;
+      }
+    }
+  }
+
+  return nearest;
+}
+
 function addBuildingLayer(map: MapboxMap) {
   if (map.getLayer("3d-buildings")) return;
   const styleLayers = map.getStyle()?.layers ?? [];
@@ -184,6 +211,7 @@ export default function NetworkGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
+  const [inspectionPoint, setInspectionPoint] = useState<InspectionPoint | null>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -287,6 +315,35 @@ export default function NetworkGraph({
   );
 
   const maxVehicleCount = Math.max(1, ...roads.map((road) => road.vehicleCount));
+
+  useEffect(() => {
+    const handleInspectionDrop = (event: Event) => {
+      const detail = (event as CustomEvent<{ clientX: number; clientY: number }>).detail;
+      const map = mapRef.current?.getMap();
+      const canvas = map?.getCanvas();
+      if (!detail || !map || !canvas) return;
+
+      const rect = canvas.getBoundingClientRect();
+      if (
+        detail.clientX < rect.left ||
+        detail.clientX > rect.right ||
+        detail.clientY < rect.top ||
+        detail.clientY > rect.bottom
+      ) {
+        return;
+      }
+
+      const lngLat = map.unproject([detail.clientX - rect.left, detail.clientY - rect.top]);
+      const position: Position = [lngLat.lng, lngLat.lat, 58];
+      setInspectionPoint({
+        position,
+        nearestRoad: findNearestRoad(position, roads),
+      });
+    };
+
+    window.addEventListener("field-inspection-drop", handleInspectionDrop);
+    return () => window.removeEventListener("field-inspection-drop", handleInspectionDrop);
+  }, [roads]);
 
   const layers = useMemo<Layer[]>(() => {
     const routeLayers: Layer[] = [
@@ -477,8 +534,53 @@ export default function NetworkGraph({
           layers={layers}
           getTooltip={tooltip}
         />
+        {inspectionPoint && (
+          <Marker
+            longitude={inspectionPoint.position[0]}
+            latitude={inspectionPoint.position[1]}
+            anchor="bottom"
+          >
+            <div className={styles.inspectionMarker} aria-label="Field inspection position">
+              <PersonStanding size={24} />
+            </div>
+          </Marker>
+        )}
       </Map>
       <div className={styles.vignette} />
+      {inspectionPoint && (
+        <div className={styles.inspectionPanel}>
+          <div className={styles.inspectionHeader}>
+            <strong>Field inspection</strong>
+            <button type="button" onClick={() => setInspectionPoint(null)} aria-label="Clear field inspection">
+              <X size={14} />
+            </button>
+          </div>
+          <dl>
+            <div>
+              <dt>Position</dt>
+              <dd>
+                {inspectionPoint.position[1].toFixed(5)}, {inspectionPoint.position[0].toFixed(5)}
+              </dd>
+            </div>
+            <div>
+              <dt>Nearest road</dt>
+              <dd>{inspectionPoint.nearestRoad?.name ?? "No road nearby"}</dd>
+            </div>
+            <div>
+              <dt>Traffic</dt>
+              <dd>
+                {inspectionPoint.nearestRoad
+                  ? `${inspectionPoint.nearestRoad.tier} tier · ${inspectionPoint.nearestRoad.vehicleCount.toLocaleString()} vehicles`
+                  : "Awaiting signal"}
+              </dd>
+            </div>
+            <div>
+              <dt>Fire context</dt>
+              <dd>{inspectionPoint.nearestRoad?.isIncidentSource ? "Incident source nearby" : "Ready for fire report"}</dd>
+            </div>
+          </dl>
+        </div>
+      )}
     </div>
   );
 }
