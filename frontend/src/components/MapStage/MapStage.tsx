@@ -4,7 +4,6 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
-import IncidentInjectButton from "./IncidentInjectButton";
 import styles from "./MapStage.module.css";
 
 type CameraMode = "top" | "tilt";
@@ -154,11 +153,6 @@ export default function MapStage() {
 
         {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />}
       </div>
-      {viewerMode === "government" && !isFocused && (
-        <div className={styles.controls}>
-          <IncidentInjectButton />
-        </div>
-      )}
     </div>
   );
 }
