@@ -1,20 +1,18 @@
 import { useEffect, useState } from "react";
-import { Box, Layers, Maximize2, Minimize2, RotateCcw, RotateCw, Route } from "lucide-react";
+import { Box, Layers, Maximize2, Minimize2 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
-import { getPublicAlertText } from "../../utils/publicView";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
 import IncidentInjectButton from "./IncidentInjectButton";
 import styles from "./MapStage.module.css";
 
-type CameraMode = "top" | "tilt" | "street";
+type CameraMode = "top" | "tilt";
 type DisplayMode = "flow" | "risk";
 
 export default function MapStage() {
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
-  const alerts = useAppStore((s) => s.alerts);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const roadPaths = useAppStore((s) => s.roadPaths);
   const stationCoords = useAppStore((s) => s.stationCoords);
@@ -34,15 +32,7 @@ export default function MapStage() {
 
   const segmentList = Object.values(segments);
   const selected = selectedId ? segments[selectedId] : null;
-  const criticalCount = segmentList.filter((segment) => segment.tier === "A").length;
-  const flowCount = segmentList.reduce((sum, segment) => sum + segment.vehicleCount, 0);
-
-  const cameraClass =
-    cameraMode === "street"
-      ? styles.cameraStreet
-      : cameraMode === "top"
-        ? styles.cameraTop
-        : styles.cameraTilt;
+  const cameraClass = cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
 
   return (
     <div className={styles.wrap}>
@@ -57,11 +47,6 @@ export default function MapStage() {
           >
             {isFocused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
           </button>
-          <div className={styles.stats}>
-            <span>{viewerMode === "public" ? `${segmentList.length} routes` : `${segmentList.length} roads`}</span>
-            <span>{viewerMode === "public" ? `${criticalCount} avoid` : `${criticalCount} critical`}</span>
-            {viewerMode === "government" && <span>{flowCount.toLocaleString()} vehicles</span>}
-          </div>
         </div>
 
         <div className={styles.layerControls} aria-label="Map view controls">
@@ -82,36 +67,6 @@ export default function MapStage() {
             onClick={() => setCameraMode("tilt")}
           >
             <Box size={17} />
-          </button>
-          <button
-            type="button"
-            className={cameraMode === "street" ? styles.activeIconBtn : styles.iconBtn}
-            title="Street-level angle"
-            aria-label="Street-level angle"
-            onClick={() => setCameraMode("street")}
-          >
-            <Route size={17} />
-          </button>
-        </div>
-
-        <div className={styles.rotateControls} aria-label="Map rotation controls">
-          <button
-            type="button"
-            className={styles.iconBtn}
-            title="Rotate counterclockwise"
-            aria-label="Rotate counterclockwise"
-            onClick={() => setCameraMode(cameraMode === "street" ? "tilt" : "street")}
-          >
-            <RotateCcw size={17} />
-          </button>
-          <button
-            type="button"
-            className={styles.iconBtn}
-            title="Rotate clockwise"
-            aria-label="Rotate clockwise"
-            onClick={() => setCameraMode(cameraMode === "top" ? "tilt" : "top")}
-          >
-            <RotateCw size={17} />
           </button>
         </div>
 
@@ -148,29 +103,9 @@ export default function MapStage() {
               {viewerMode === "public" ? "Advisory" : "Risk"}
             </button>
           </div>
-
-          <div className={styles.storyBadge}>
-            <span>{viewerMode === "public" ? "Public advisory" : "Active SOP"}</span>
-            <strong>
-              {viewerMode === "public"
-                ? alerts[0]
-                  ? pick(language, "路況提醒", "Traffic advisory")
-                  : "Monitoring"
-                : alerts[0]?.sopRef ?? "Monitoring"}
-            </strong>
-            <p>
-              {viewerMode === "public"
-                ? alerts[0]
-                  ? getPublicAlertText(alerts[0], language)
-                  : "Follow official routing and avoid highlighted areas when possible."
-                : alerts[0]?.title ?? "No emergency clause triggered"}
-            </p>
-          </div>
         </div>
 
-        {viewerMode === "government" && selected && (
-          <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />
-        )}
+        {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />}
       </div>
       {viewerMode === "government" && !isFocused && (
         <div className={styles.controls}>

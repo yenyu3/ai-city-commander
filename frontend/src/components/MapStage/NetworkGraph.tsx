@@ -21,7 +21,7 @@ import type { RoadPathDef, ViewerMode } from "../../types";
 import { pick, type Language } from "../../i18n";
 import styles from "./NetworkGraph.module.css";
 
-type CameraMode = "top" | "tilt" | "street";
+type CameraMode = "top" | "tilt";
 type DisplayMode = "flow" | "risk";
 
 export interface NetworkGraphProps {
@@ -72,19 +72,6 @@ interface StationPoint {
   roamingPct: number;
 }
 
-interface FlowProbe {
-  id: string;
-  segmentId: string;
-  roadName: string;
-  position: Position;
-  tone: "cyan" | "white" | "blue";
-  role: string;
-  status: string;
-  action: string;
-  vehicleCount: number;
-  saturation: number;
-}
-
 interface HeatPoint {
   position: Position;
   weight: number;
@@ -96,7 +83,6 @@ const MAP_STYLE = "mapbox://styles/mapbox/dark-v11";
 const VIEWS: Record<CameraMode, { pitch: number; bearing: number; zoom: number }> = {
   top: { pitch: 0, bearing: 0, zoom: 15.4 },
   tilt: { pitch: 55, bearing: -22, zoom: 16.2 },
-  street: { pitch: 72, bearing: 28, zoom: 17 },
 };
 
 const ambientLight = new AmbientLight({
@@ -151,43 +137,6 @@ function samplePath(path: Position[], count: number): Position[] {
   return points;
 }
 
-function makeFlowProbes(roads: RoadPath[]): FlowProbe[] {
-  return roads.flatMap((road, roadIndex) =>
-    samplePath(road.path, 4).map((position, pointIndex) => ({
-      id: `${road.segmentId}-probe-${pointIndex}`,
-      segmentId: road.segmentId,
-      roadName: road.name,
-      position: [
-        position[0] + Math.sin((roadIndex + pointIndex) * 1.7) * 0.00022,
-        position[1] + Math.cos((roadIndex + pointIndex) * 1.3) * 0.00018,
-        34 + pointIndex * 3,
-      ],
-      tone: pointIndex % 5 === 0 ? "white" : pointIndex % 3 === 0 ? "cyan" : "blue",
-      role: road.isIncidentSource
-        ? "Incident response node"
-        : road.isEvacuationMain
-          ? "Primary evacuation flow"
-          : road.isEvacuationSecondary
-            ? "Secondary diversion flow"
-            : "Traffic sensing node",
-      status: road.isIncidentSource
-        ? "Critical segment under control"
-        : road.saturation >= 0.9
-          ? "Congestion pressure rising"
-          : "Live flow monitored",
-      action: road.isIncidentSource
-        ? "Close affected lane and route vehicles to alternatives."
-        : road.isEvacuationMain
-          ? "Keep main dispersal route clear for crowd release."
-          : road.isEvacuationSecondary
-            ? "Absorb overflow when the primary route reaches threshold."
-            : "Continue monitoring speed, volume, and saturation.",
-      vehicleCount: road.vehicleCount,
-      saturation: road.saturation,
-    })),
-  );
-}
-
 function DeckGLOverlay(props: ConstructorParameters<typeof MapboxOverlay>[0]) {
   const overlay = useControl<MapboxOverlay>(() => new MapboxOverlay(props));
   overlay.setProps(props);
@@ -235,7 +184,6 @@ export default function NetworkGraph({
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
-  const [activeProbe, setActiveProbe] = useState<FlowProbe | null>(null);
 
   useEffect(() => {
     let frame = 0;
@@ -321,8 +269,6 @@ export default function NetworkGraph({
       }),
     [stations, stationCoords],
   );
-
-  const flowProbes = useMemo(() => makeFlowProbes(roads), [roads]);
 
   const heatPoints = useMemo<HeatPoint[]>(
     () => [
@@ -414,15 +360,15 @@ export default function NetworkGraph({
         radiusMinPixels: 10,
         stroked: true,
       }),
-      new TextLayer<RoadPath | StationPoint>({
+      new TextLayer<RoadPath>({
         id: "map-labels",
-        data: [...roads.filter((road) => road.isCityTrigger || road.isIncidentSource), ...stationPoints],
+        data: roads.filter((road) => road.isCityTrigger || road.isIncidentSource),
         characterSet: "auto",
         fontFamily: "'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif",
-        getColor: [230, 238, 245, 150],
-        getPosition: (item) => ("path" in item ? item.path[Math.floor(item.path.length / 2)] : item.position),
-        getSize: (item) => ("path" in item ? 11 : 12),
-        getText: (item) => item.name,
+        getColor: [230, 238, 245, 170],
+        getPosition: (road) => road.path[Math.floor(road.path.length / 2)],
+        getSize: 11,
+        getText: (road) => road.name,
         getTextAnchor: "middle",
         getAlignmentBaseline: "center",
         background: true,
@@ -461,46 +407,17 @@ export default function NetworkGraph({
       );
     }
 
-    if (viewerMode === "government" && (cameraMode === "street" || displayMode === "flow")) {
-      routeLayers.push(
-        new ScatterplotLayer<FlowProbe>({
-          id: "flow-probes",
-          data: flowProbes,
-          getFillColor: (probe) =>
-            probe.tone === "white"
-              ? [255, 255, 255, 220]
-              : probe.tone === "cyan"
-                ? [170, 255, 245, 175]
-                : [126, 178, 255, 150],
-          getLineColor: [255, 255, 255, 64],
-          getLineWidth: 1,
-          getPosition: (probe) => probe.position,
-          getRadius: (probe) => (probe.tone === "white" ? 42 : 34),
-          opacity: 0.86,
-          pickable: true,
-          radiusMinPixels: 5,
-          radiusMaxPixels: 18,
-          stroked: true,
-          onClick: ({ object }) => {
-            if (object) setActiveProbe(object);
-          },
-        }),
-      );
-    }
-
     return routeLayers;
   }, [
     cameraMode,
     currentTime,
     displayMode,
-    flowProbes,
     heatPoints,
     maxVehicleCount,
     onSegmentClick,
     roads,
     selectedSegmentId,
     stationPoints,
-    viewerMode,
   ]);
 
   const tooltip = ({ object, layer }: PickingInfo) => {
@@ -559,50 +476,9 @@ export default function NetworkGraph({
           effects={[lightingEffect]}
           layers={layers}
           getTooltip={tooltip}
-          onClick={(info: PickingInfo) => {
-            if (!info.object) setActiveProbe(null);
-          }}
         />
       </Map>
       <div className={styles.vignette} />
-      <div className={styles.legend} aria-hidden="true">
-        <span>Low</span>
-        <i />
-        <span>High</span>
-      </div>
-      {activeProbe && (
-        <div className={styles.agentPopup}>
-          <div className={styles.agentHeader}>
-            <span className={styles.avatar}>S</span>
-            <div>
-              <strong>{activeProbe.role}</strong>
-              <p>{activeProbe.action}</p>
-            </div>
-          </div>
-          <dl>
-            <div>
-              <dt>Road</dt>
-              <dd>{activeProbe.roadName}</dd>
-            </div>
-            <div>
-              <dt>Segment</dt>
-              <dd>{activeProbe.segmentId}</dd>
-            </div>
-            <div>
-              <dt>Status</dt>
-              <dd>{activeProbe.status}</dd>
-            </div>
-            <div>
-              <dt>Saturation</dt>
-              <dd>{activeProbe.saturation.toFixed(2)}</dd>
-            </div>
-            <div>
-              <dt>Vehicles</dt>
-              <dd>{activeProbe.vehicleCount.toLocaleString()}</dd>
-            </div>
-          </dl>
-        </div>
-      )}
     </div>
   );
 }
