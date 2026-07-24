@@ -4,6 +4,8 @@ import styles from "./StationList.module.css";
 
 export default function StationList() {
   const stations = useAppStore((s) => s.stations);
+  const selectedStationId = useAppStore((s) => s.selectedStationId);
+  const setSelectedStation = useAppStore((s) => s.setSelectedStation);
   const { language } = useLanguage();
   const list = Object.values(stations).sort((a, b) => b.roamingPct - a.roamingPct);
 
@@ -14,7 +16,22 @@ export default function StationList() {
       </div>
       <div className={styles.list}>
         {list.map((st) => (
-          <div key={st.stationId} className={styles.row}>
+          <div
+            key={st.stationId}
+            className={`${styles.row} ${st.stationId === selectedStationId ? styles.selected : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={st.stationId === selectedStationId}
+            onClick={() =>
+              setSelectedStation(st.stationId === selectedStationId ? null : st.stationId)
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSelectedStation(st.stationId === selectedStationId ? null : st.stationId);
+              }
+            }}
+          >
             <span className={styles.name}>{st.name}</span>
             <span className={styles.count} title={pick(language, `${st.userCount.toLocaleString()} 人`, `${st.userCount.toLocaleString()} users`)}>
               {st.userCount >= 1000 ? `${(st.userCount / 1000).toFixed(1)}k` : st.userCount}

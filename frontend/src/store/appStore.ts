@@ -84,6 +84,8 @@ interface AppState {
   loadError: string | null;
   viewerMode: ViewerMode;
   focusZone: FocusZone | null;
+  selectedSegmentId: string | null;
+  selectedStationId: string | null;
 
   ticks: string[];
   tickIndex: number;
@@ -122,6 +124,8 @@ interface AppState {
   sendChatMessage(question: string): void;
   setViewerMode(mode: ViewerMode): void;
   toggleFocusZone(zone: FocusZone): void;
+  setSelectedSegment(id: string | null): void;
+  setSelectedStation(id: string | null): void;
 }
 
 function computeSegmentState(
@@ -296,6 +300,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   loadError: null,
   viewerMode: getInitialViewerMode(),
   focusZone: null,
+  selectedSegmentId: null,
+  selectedStationId: null,
 
   ticks: [],
   tickIndex: 0,
@@ -712,5 +718,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   toggleFocusZone(zone) {
     set((s) => ({ focusZone: s.focusZone === zone ? null : zone }));
+  },
+
+  setSelectedSegment(id) {
+    set({ selectedSegmentId: id, selectedStationId: null });
+  },
+
+  setSelectedStation(id) {
+    set({ selectedStationId: id, selectedSegmentId: null });
   },
 }));

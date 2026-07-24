@@ -29,7 +29,9 @@ export interface NetworkGraphProps {
   segments: SegmentRuntimeState[];
   stations: StationRuntimeState[];
   onSegmentClick: (segmentId: string) => void;
+  onStationClick?: (stationId: string) => void;
   selectedSegmentId?: string | null;
+  selectedStationId?: string | null;
   displayMode?: DisplayMode;
   cameraMode?: CameraMode;
   roadPaths: Map<string, RoadPathDef>;
@@ -199,7 +201,9 @@ export default function NetworkGraph({
   segments,
   stations,
   onSegmentClick,
+  onStationClick,
   selectedSegmentId,
+  selectedStationId,
   displayMode = "flow",
   cameraMode = "tilt",
   roadPaths,
@@ -237,6 +241,23 @@ export default function NetworkGraph({
       duration: 900,
     });
   }, [cameraMode, mapCenter]);
+
+  useEffect(() => {
+    if (!selectedSegmentId) return;
+    const map = mapRef.current?.getMap();
+    const def = roadPaths.get(selectedSegmentId);
+    if (!map || !def || def.path.length === 0) return;
+    const mid = def.path[Math.floor(def.path.length / 2)];
+    map.easeTo({ center: [mid[0], mid[1]], duration: 700 });
+  }, [selectedSegmentId, roadPaths]);
+
+  useEffect(() => {
+    if (!selectedStationId) return;
+    const map = mapRef.current?.getMap();
+    const coord = stationCoords[selectedStationId];
+    if (!map || !coord) return;
+    map.easeTo({ center: [coord[0], coord[1]], duration: 700 });
+  }, [selectedStationId, stationCoords]);
 
   useEffect(() => {
     const node = containerRef.current;
@@ -406,16 +427,31 @@ export default function NetworkGraph({
         id: "station-glow",
         data: stationPoints,
         getFillColor: (station) =>
-          station.roamingPct >= 0.3 ? [180, 255, 244, 132] : [138, 205, 255, 104],
-        getLineColor: [255, 255, 255, 145],
-        getLineWidth: 2,
+          station.stationId === selectedStationId
+            ? [255, 255, 255, 200]
+            : station.roamingPct >= 0.3
+              ? [180, 255, 244, 132]
+              : [138, 205, 255, 104],
+        getLineColor: (station) =>
+          station.stationId === selectedStationId ? [255, 255, 255, 255] : [255, 255, 255, 145],
+        getLineWidth: (station) => (station.stationId === selectedStationId ? 4 : 2),
         getPosition: (station) => station.position,
-        getRadius: (station) => 58 + Math.min(130, station.userCount / 165),
+        getRadius: (station) =>
+          (station.stationId === selectedStationId ? 96 : 58) + Math.min(130, station.userCount / 165),
         lineWidthMinPixels: 1,
         opacity: 0.75,
         pickable: true,
         radiusMinPixels: 10,
         stroked: true,
+        updateTriggers: {
+          getFillColor: selectedStationId,
+          getLineColor: selectedStationId,
+          getLineWidth: selectedStationId,
+          getRadius: selectedStationId,
+        },
+        onClick: ({ object }) => {
+          if (object && onStationClick) onStationClick(object.stationId);
+        },
       }),
       new TextLayer<RoadPath>({
         id: "map-labels",
@@ -472,8 +508,10 @@ export default function NetworkGraph({
     heatPoints,
     maxVehicleCount,
     onSegmentClick,
+    onStationClick,
     roads,
     selectedSegmentId,
+    selectedStationId,
     stationPoints,
   ]);
 

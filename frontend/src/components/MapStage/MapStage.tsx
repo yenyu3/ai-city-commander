@@ -18,17 +18,20 @@ export default function MapStage() {
   const mapCenter = useAppStore((s) => s.mapCenter);
   const focusZone = useAppStore((s) => s.focusZone);
   const toggleFocusZone = useAppStore((s) => s.toggleFocusZone);
+  const selectedId = useAppStore((s) => s.selectedSegmentId);
+  const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
+  const selectedStationId = useAppStore((s) => s.selectedStationId);
+  const setSelectedStation = useAppStore((s) => s.setSelectedStation);
   const { language } = useLanguage();
   const isFocused = focusZone === "center";
-  const [selectedId, setSelectedId] = useState<string | null>(null);
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
 
   useEffect(() => {
     setDisplayMode(viewerMode === "public" ? "risk" : "flow");
-    setSelectedId(null);
-  }, [viewerMode]);
+    setSelectedSegment(null);
+  }, [viewerMode, setSelectedSegment]);
 
   const segmentList = Object.values(segments);
   const selected = selectedId ? segments[selectedId] : null;
@@ -120,8 +123,10 @@ export default function MapStage() {
           <NetworkGraph
             segments={segmentList}
             stations={Object.values(stations)}
-            onSegmentClick={(id) => setSelectedId(id === selectedId ? null : id)}
+            onSegmentClick={(id) => setSelectedSegment(id === selectedId ? null : id)}
+            onStationClick={(id) => setSelectedStation(id === selectedStationId ? null : id)}
             selectedSegmentId={selectedId}
+            selectedStationId={selectedStationId}
             displayMode={displayMode}
             cameraMode={cameraMode}
             roadPaths={roadPaths}
@@ -151,7 +156,7 @@ export default function MapStage() {
           </div>
         </div>
 
-        {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedId(null)} />}
+        {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedSegment(null)} />}
       </div>
     </div>
   );
