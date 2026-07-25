@@ -5,18 +5,6 @@
   position: relative;
 }
 
-.headRow {
-  display: flex;
-  align-items: baseline;
-  justify-content: flex-end;
-}
-
-.range {
-  font-family: var(--font-mono);
-  font-size: var(--text-sm);
-  color: var(--text-dim);
-}
-
 .track {
   position: relative;
   height: 40px;

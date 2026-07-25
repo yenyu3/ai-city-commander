@@ -8,6 +8,6 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: 30px;
   min-height: 0;
 }

@@ -49,12 +49,6 @@ export default function IncidentTimeline() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.headRow}>
-        <span className={styles.range}>
-          {formatDisplayShortTime(start, timeOffsetMs)} – {formatDisplayShortTime(end, timeOffsetMs)}
-        </span>
-      </div>
-
       <div className={styles.track} ref={trackRef} onClick={handleTrackClick}>
         {hourMarks.map((t) => (
           <div key={t} className={styles.hourMark} style={{ left: `${timePct(t, start, end)}%` }}>
