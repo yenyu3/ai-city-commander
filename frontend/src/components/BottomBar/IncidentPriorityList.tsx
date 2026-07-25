@@ -4,7 +4,7 @@ import styles from "./IncidentPriorityList.module.css";
 
 const SEVERITY_RANK: Record<string, number> = { Critical: 0, High: 1, Medium: 2 };
 
-export default function IncidentPriorityList() {
+export default function IncidentPriorityList({ limit }: { limit?: number }) {
   const activeIncidents = useAppStore((s) => s.activeIncidents);
   const incidentEte = useAppStore((s) => s.incidentEte);
   const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
@@ -28,7 +28,7 @@ export default function IncidentPriorityList() {
     const affectedB = (b.affectedSegment ? 1 : 0) + (b.affectedRoad ? 1 : 0);
     if (affectedB !== affectedA) return affectedB - affectedA;
     return (incidentEte[b.eventId] ?? 0) - (incidentEte[a.eventId] ?? 0);
-  });
+  }).slice(0, limit);
 
   return (
     <div className={styles.wrap}>

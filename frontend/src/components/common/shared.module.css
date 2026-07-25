@@ -3,41 +3,44 @@
   `composes: x from "../common/shared.module.css";` rather than copied.
 
   Two label tiers exist by design — keep them distinct, don't merge:
-    .panelLabel    top-of-panel / hero eyebrow text (PanelHeader,
-                   CollapsibleSection, hero eyebrows) — 11px / 0.08em
+    .panelLabel    PanelHeader ONLY — the single biggest heading inside a
+                   region (e.g. "城市情報室", "事件時間軸"). Uses --text-panel,
+                   the largest non-hero tier, so each region's title is
+                   unmistakably the top of that region's hierarchy.
     .sectionLabel  sub-section headers inside a panel (list titles,
-                   card titles, mini stat labels) — 10.5px / 0.16em
+                   card titles, CollapsibleSection titles, mini stat
+                   labels) — --text-sm, one tier above meta/xs text.
 */
 
 .panelLabel {
   font-family: var(--font-nav);
-  font-size: 11px;
+  font-size: var(--text-panel);
   font-weight: 700;
-  letter-spacing: 0.08em;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
 
 .sectionLabel {
   font-family: var(--font-nav);
-  font-size: 10.5px;
+  font-size: var(--text-sm);
   font-weight: 600;
-  letter-spacing: 0.16em;
+  letter-spacing: 0.14em;
   text-transform: uppercase;
   color: var(--text-dim);
 }
 
 .card {
-  background: var(--panel);
+  background: transparent;
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-sm);
+  box-shadow: none;
 }
 
 .emptyState {
   margin: 0;
   padding: 8px 4px;
-  font-size: 12px;
+  font-size: var(--text-base);
   line-height: 1.6;
   color: var(--text-dim);
 }

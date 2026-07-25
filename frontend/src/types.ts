@@ -68,8 +68,6 @@ export type Tier = "Normal" | "B" | "A";
 
 export type ViewerMode = "public" | "government";
 
-export type FocusZone = "left" | "center" | "right" | "bottom";
-
 export interface CityResponseResult {
   segmentId: string;
   tier: Tier;

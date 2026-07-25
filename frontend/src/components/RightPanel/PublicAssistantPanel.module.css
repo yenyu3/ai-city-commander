@@ -1,12 +1,11 @@
 .wrap {
-  composes: card from "../common/shared.module.css";
   display: flex;
   flex-direction: column;
   gap: 12px;
   flex: 1;
   min-height: 0;
   overflow-y: auto;
-  padding: 14px;
+  padding-right: 6px;
 }
 
 .hero {
@@ -15,11 +14,6 @@
   gap: 4px;
   padding-bottom: 12px;
   border-bottom: 1px solid var(--soft-border);
-}
-
-.eyebrow {
-  composes: panelLabel from "../common/shared.module.css";
-  margin: 0;
 }
 
 .hero h2,
@@ -31,16 +25,16 @@
 }
 
 .hero h2 {
-  font-size: 18px;
+  font-size: var(--text-title);
   line-height: 1.25;
 }
 
 .card,
 .notice,
 .promptsCard {
-  border: 1px solid var(--soft-border);
+  border: 0;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--panel), var(--bg) 28%);
+  background: color-mix(in srgb, var(--text), transparent 95%);
 }
 
 .card {
@@ -62,13 +56,14 @@
 }
 
 .cardTitle h3 {
-  font-size: 14px;
+  font-size: var(--text-lead);
+  line-height: 1.3;
 }
 
 .card p,
 .notice p {
   margin: 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   line-height: 1.55;
   color: var(--text-dim);
 }
@@ -86,10 +81,10 @@
 .prompts span {
   display: block;
   padding: 9px 10px;
-  border: 1px solid var(--soft-border);
+  border: 0;
   border-radius: var(--radius-sm);
   color: var(--text);
-  font-size: 12px;
+  font-size: var(--text-base);
   line-height: 1.4;
 }
 

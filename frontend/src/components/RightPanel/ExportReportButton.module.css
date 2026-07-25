@@ -1,0 +1,7 @@
+.btn {
+  composes: actionBtn from "../common/PanelHeader.module.css";
+}
+.btn:disabled {
+  opacity: 0.4;
+  cursor: default;
+}

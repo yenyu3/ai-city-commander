@@ -1,71 +1,54 @@
 import { useState } from "react";
-import { Bot, ShieldCheck } from "lucide-react";
+import { Bot, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
-import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
 import TabBar from "../common/TabBar";
-import DecisionSummary from "./DecisionSummary";
 import PublicAssistantPanel from "./PublicAssistantPanel";
-import ReasoningChain from "./ReasoningChain";
-import ETEBreakdownCard from "./ETEBreakdownCard";
-import ChatPanel from "./ChatPanel";
-import MultilingualPreview from "./MultilingualPreview";
+import SituationTab from "../LeftPanel/LeftPanel";
+import DecisionTab from "./DecisionTab";
+import InjectIncidentButton from "./InjectIncidentButton";
+import ExportReportButton from "./ExportReportButton";
 import styles from "./RightPanel.module.css";
 
-type TabKey = "whatif" | "multilingual";
+type TabKey = "situation" | "decision";
 
 export default function RightPanel() {
-  const [tab, setTab] = useState<TabKey>("whatif");
+  const [tab, setTab] = useState<TabKey>("situation");
   const { language } = useLanguage();
   const viewerMode = useAppStore((s) => s.viewerMode);
-  const stations = useAppStore((s) => s.stations);
-  const currentTime = useAppStore((s) => s.currentTime);
-
-  const multilingualCount = checkMultilingualNeeded(
-    Object.values(stations).map((st) => ({
-      timestamp: currentTime,
-      stationId: st.stationId,
-      locationName: st.name,
-      userCount: st.userCount,
-      stayTimeAvg: st.stayTimeAvg,
-      growthRate: st.growthRate,
-      roamingPct: st.roamingPct,
-    })),
-  ).length;
-
-  const TABS: { key: TabKey; label: string }[] = [
-    { key: "whatif", label: pick(language, "What-if 問答", "What-if Q&A") },
-    {
-      key: "multilingual",
-      label:
-        pick(language, "多語警示", "Multilingual") + (multilingualCount > 0 ? ` (${multilingualCount})` : ""),
-    },
-  ];
+  const roomTitle = pick(language, "城市情報室", "City Intelligence Room");
 
   if (viewerMode === "public") {
     return (
-      <div className={styles.wrap}>
-        <PanelHeader icon={ShieldCheck} title={pick(language, "市民助手", "Public Assistant")} zone="right" />
+      <div className={styles.tabWrap}>
+        <PanelHeader icon={ShieldCheck} title={pick(language, "民眾助手", "Public Assistant")} />
         <PublicAssistantPanel />
       </div>
     );
   }
 
+  const TABS: { key: TabKey; label: string }[] = [
+    { key: "situation", label: pick(language, "情境總覽", "Situation") },
+    { key: "decision", label: pick(language, "AI 決策", "AI Decision") },
+  ];
+
   return (
-    <div className={styles.wrap}>
-      <PanelHeader icon={Bot} title={pick(language, "AI 決策面板", "AI Decision Panel")} zone="right" />
-      <div className={styles.top}>
-        <DecisionSummary />
-        <ReasoningChain />
-        <ETEBreakdownCard />
-      </div>
-      <div className={styles.bottom}>
-        <TabBar tabs={TABS} active={tab} onChange={setTab} className={styles.tabBarInset} />
-        <div className={styles.tabContent}>
-          {tab === "whatif" && <ChatPanel />}
-          {tab === "multilingual" && <MultilingualPreview />}
-        </div>
+    <div className={styles.tabWrap}>
+      <PanelHeader
+        icon={tab === "situation" ? LayoutDashboard : Bot}
+        title={roomTitle}
+        actions={
+          <>
+            <InjectIncidentButton />
+            <ExportReportButton />
+          </>
+        }
+      />
+      <TabBar tabs={TABS} active={tab} onChange={setTab} className={styles.tabBar} />
+      <div className={styles.tabContent}>
+        {tab === "situation" && <SituationTab />}
+        {tab === "decision" && <DecisionTab />}
       </div>
     </div>
   );

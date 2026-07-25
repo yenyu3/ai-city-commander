@@ -33,11 +33,15 @@ export default function ExportReportButton() {
   }
 
   return (
-    <div className={styles.wrap}>
-      <button className={styles.btn} onClick={exportJson} disabled={alerts.length === 0}>
-        <Download className={styles.icon} aria-hidden="true" />
-        {pick(language, "匯出報告", "Export Report")}
-      </button>
-    </div>
+    <button
+      type="button"
+      className={styles.btn}
+      onClick={exportJson}
+      disabled={alerts.length === 0}
+      aria-label={pick(language, "匯出報告", "Export Report")}
+      title={pick(language, "匯出報告", "Export Report")}
+    >
+      <Download size={16} aria-hidden="true" />
+    </button>
   );
 }

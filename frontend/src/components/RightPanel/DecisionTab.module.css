@@ -1,0 +1,10 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.collapsible {
+  padding-top: 0;
+  border-top: 0;
+}

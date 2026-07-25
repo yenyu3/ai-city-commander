@@ -36,7 +36,6 @@ export default function MultilingualPreview() {
   if (triggered.length === 0) {
     return (
       <div className={styles.wrap}>
-        <div className={styles.title}>{pick(language, "多語告警預覽", "Multilingual Alert Preview")}</div>
         <div className={styles.empty}>
           {pick(language, "目前尚無站點漫遊比例達 30% 門檻", "No station has yet reached the 30% roaming threshold")}
         </div>
@@ -56,7 +55,6 @@ export default function MultilingualPreview() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.title}>{pick(language, "多語告警預覽", "Multilingual Alert Preview")}</div>
       <div className={styles.stationTabs}>
         {triggered.map((st) => (
           <button

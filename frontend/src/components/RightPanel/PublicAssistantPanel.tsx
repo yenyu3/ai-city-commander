@@ -35,7 +35,6 @@ export default function PublicAssistantPanel() {
   return (
     <div className={styles.wrap}>
       <section className={styles.hero}>
-        <p className={styles.eyebrow}>{pick(language, "市民助手", "Public Assistant")}</p>
         <h2>{pick(language, "取得安全、路線與人潮建議", "Safety, route, and crowd guidance")}</h2>
       </section>
 

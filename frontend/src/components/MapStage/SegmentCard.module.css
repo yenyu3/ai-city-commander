@@ -25,7 +25,8 @@
 .name {
   font-family: var(--font-display);
   font-weight: 500;
-  font-size: 15px;
+  font-size: var(--text-lead);
+  line-height: 1.25;
 }
 
 .close {
@@ -46,7 +47,7 @@
   justify-content: space-between;
   align-items: center;
   padding: 6px 0;
-  font-size: 12.5px;
+  font-size: var(--text-base);
   border-bottom: 1px solid var(--soft-border);
 }
 .row:last-of-type {
@@ -63,7 +64,7 @@
 
 .tierBadge {
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
   padding: 2px 8px;
   border-radius: 999px;
   border: 1px solid transparent;
@@ -87,7 +88,7 @@
 .tag {
   margin-top: 8px;
   font-family: var(--font-nav);
-  font-size: 11px;
+  font-size: var(--text-sm);
   text-align: center;
   padding: 5px 8px;
   border-radius: var(--radius-sm);

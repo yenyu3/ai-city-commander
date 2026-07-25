@@ -50,7 +50,6 @@ export default function IncidentTimeline() {
   return (
     <div className={styles.wrap}>
       <div className={styles.headRow}>
-        <span className={styles.title}>{pick(language, "時間軸", "Timeline")}</span>
         <span className={styles.range}>
           {formatDisplayShortTime(start, timeOffsetMs)} – {formatDisplayShortTime(end, timeOffsetMs)}
         </span>

@@ -10,6 +10,12 @@
 .mapShell :global(.mapboxgl-map) {
   width: 100%;
   height: 100%;
+  background: var(--map-base);
+}
+
+.mapShell :global(.mapboxgl-canvas),
+.mapShell :global(.mapboxgl-canvas-container) {
+  background: var(--map-base);
 }
 
 .mapShell :global(.mapboxgl-ctrl-attrib) {
@@ -39,13 +45,13 @@
 .tokenMissing strong {
   color: var(--text);
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: var(--text-title);
   font-weight: 500;
 }
 
 .tokenMissing p {
   max-width: 380px;
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -55,7 +61,7 @@
   background: rgba(12, 14, 18, 0.86);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.45;
   white-space: pre-line;
   backdrop-filter: blur(12px);
@@ -125,7 +131,7 @@
 
 .inspectionHeader strong {
   font-family: var(--font-display);
-  font-size: 14px;
+  font-size: var(--text-lead);
   font-weight: 600;
 }
 
@@ -164,7 +170,7 @@
 .inspectionPanel dt,
 .inspectionPanel dd {
   margin: 0;
-  font-size: 12px;
+  font-size: var(--text-base);
   line-height: 1.35;
 }
 

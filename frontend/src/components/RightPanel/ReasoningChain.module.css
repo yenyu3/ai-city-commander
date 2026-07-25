@@ -2,8 +2,8 @@
   display: flex;
   flex-direction: column;
   gap: 12px;
-  padding-top: 16px;
-  border-top: 1px solid var(--soft-border);
+  padding-top: 0;
+  border-top: 0;
 }
 
 .title {
@@ -19,7 +19,7 @@
   gap: 10px;
   padding: 10px;
   background: color-mix(in srgb, var(--amber), transparent 92%);
-  border: 1px solid color-mix(in srgb, var(--amber), transparent 78%);
+  border: 0;
   border-radius: var(--radius-md);
 }
 
@@ -32,7 +32,7 @@
   border: none;
   padding: 2px;
   font-family: var(--font-nav);
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   font-weight: 600;
   color: var(--cyan);
 }
@@ -54,7 +54,7 @@
   display: flex;
   gap: 10px;
   padding: 10px 0;
-  border-bottom: 1px solid var(--soft-border);
+  border-bottom: 1px solid color-mix(in srgb, var(--text), transparent 94%);
   animation: slideIn 0.25s ease both;
   transition: background var(--transition-fast);
 }
@@ -75,7 +75,7 @@
   display: flex;
   align-items: center;
   justify-content: center;
-  font-size: 11px;
+  font-size: var(--text-sm);
   font-weight: 600;
 }
 .icon_pass { color: var(--ok); background: color-mix(in srgb, var(--ok), transparent 86%); }
@@ -92,12 +92,12 @@
 }
 
 .stepTitle {
-  font-size: 12.5px;
+  font-size: var(--text-base);
   font-weight: 500;
 }
 
 .stepDetail {
-  font-size: 11.5px;
+  font-size: var(--text-sm);
   color: var(--text-dim);
   font-family: var(--font-mono);
   line-height: 1.5;
@@ -105,7 +105,7 @@
 }
 
 .sopRef {
-  font-size: 10.5px;
+  font-size: var(--text-xs);
   color: var(--cyan);
   width: fit-content;
 }

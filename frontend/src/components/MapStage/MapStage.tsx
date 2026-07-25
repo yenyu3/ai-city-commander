@@ -1,7 +1,9 @@
 import { useEffect, useState } from "react";
-import { Box, Layers, Maximize2, Minimize2, PersonStanding } from "lucide-react";
+import { Box, Layers, Map as MapIcon, PersonStanding } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import PanelHeader from "../common/PanelHeader";
+import AlertOverlay from "../AlertOverlay/AlertOverlay";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
 import styles from "./MapStage.module.css";
@@ -16,14 +18,13 @@ export default function MapStage() {
   const roadPaths = useAppStore((s) => s.roadPaths);
   const stationCoords = useAppStore((s) => s.stationCoords);
   const mapCenter = useAppStore((s) => s.mapCenter);
-  const focusZone = useAppStore((s) => s.focusZone);
-  const toggleFocusZone = useAppStore((s) => s.toggleFocusZone);
+  const mapExpanded = useAppStore((s) => s.mapExpanded);
+  const toggleMapExpanded = useAppStore((s) => s.toggleMapExpanded);
   const selectedId = useAppStore((s) => s.selectedSegmentId);
   const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
   const selectedStationId = useAppStore((s) => s.selectedStationId);
   const setSelectedStation = useAppStore((s) => s.setSelectedStation);
   const { language } = useLanguage();
-  const isFocused = focusZone === "center";
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
@@ -63,19 +64,13 @@ export default function MapStage() {
 
   return (
     <div className={styles.wrap}>
+      <PanelHeader
+        icon={MapIcon}
+        title={pick(language, "即時地圖", "Live Map")}
+        expanded={mapExpanded}
+        onToggleExpand={toggleMapExpanded}
+      />
       <div className={styles.graphArea}>
-        <div className={styles.stageHeader}>
-          <button
-            type="button"
-            className={`${styles.iconBtn} ${styles.expandBtn}`}
-            aria-pressed={isFocused}
-            title={isFocused ? pick(language, "還原版面", "Restore layout") : pick(language, "放大地圖區域", "Expand map")}
-            onClick={() => toggleFocusZone("center")}
-          >
-            {isFocused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-        </div>
-
         <div className={styles.layerControls} aria-label="Map view controls">
           <button
             type="button"
@@ -157,6 +152,8 @@ export default function MapStage() {
         </div>
 
         {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedSegment(null)} />}
+
+        <AlertOverlay />
       </div>
     </div>
   );

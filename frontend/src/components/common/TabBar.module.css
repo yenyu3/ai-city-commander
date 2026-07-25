@@ -1,7 +1,7 @@
 .bar {
   display: flex;
   gap: 4px;
-  border-bottom: 1px solid var(--soft-border);
+  border-bottom: 0;
 }
 
 .tab,
@@ -10,9 +10,9 @@
   background: transparent;
   border: none;
   border-bottom: 2px solid transparent;
-  padding: 10px 4px;
+  padding: 9px 4px 11px;
   font-family: var(--font-nav);
-  font-size: 11.5px;
+  font-size: var(--text-base);
   font-weight: 600;
   letter-spacing: 0.04em;
   color: var(--text-dim);

@@ -23,7 +23,7 @@
   border: 1px solid var(--soft-border);
   border-radius: var(--radius-sm);
   padding: 5px 10px;
-  font-size: 11.5px;
+  font-size: var(--text-base);
   white-space: nowrap;
   cursor: pointer;
   transition: border-color var(--transition-fast), background var(--transition-fast);
@@ -43,7 +43,7 @@
 
 .sev {
   font-family: var(--font-mono);
-  font-size: 10px;
+  font-size: var(--text-xs);
   padding: 1px 6px;
   border-radius: 999px;
 }

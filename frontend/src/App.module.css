@@ -4,16 +4,18 @@
   height: 100vh;
   width: 100vw;
   overflow: hidden;
-  background: var(--bg);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--text), transparent 97%), transparent 220px),
+    var(--bg);
 }
 
 .body {
   flex: 1;
   min-height: 0;
   display: grid;
-  grid-template-columns: minmax(250px, 300px) minmax(760px, 1fr) minmax(270px, 320px);
-  grid-template-areas: "left center right";
-  gap: 14px;
+  grid-template-columns: minmax(560px, 3fr) minmax(340px, 2fr);
+  grid-template-areas: "map tabs";
+  gap: 0;
   width: min(100%, 2200px);
   margin: 0 auto;
   padding: 14px 16px 16px;
@@ -22,107 +24,31 @@
 
 .body[data-mode="public"] {
   grid-template-columns: minmax(760px, 1fr) minmax(270px, 320px);
-  grid-template-areas: "center right";
 }
 
-.body[data-focus="left"] {
-  grid-template-columns: minmax(420px, 0.9fr) minmax(560px, 1.1fr) minmax(240px, 0.55fr);
-  grid-template-areas: "left center right";
-}
-
-.body[data-focus="center"] {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "center";
-}
-
-.body[data-focus="right"] {
-  grid-template-columns: minmax(240px, 0.55fr) minmax(560px, 1.1fr) minmax(420px, 0.9fr);
-  grid-template-areas: "left center right";
-}
-
-.body[data-focus="bottom"] {
-  grid-template-columns: minmax(240px, 0.55fr) minmax(760px, 1.6fr) minmax(240px, 0.55fr);
-  grid-template-areas: "left center right";
-}
-
-/* Public mode has no .left; without this, focus="right" fell through to
-   the government 3-column formula above and wasted a grid track. */
-.body[data-mode="public"][data-focus="right"] {
-  grid-template-columns: minmax(480px, 1fr) minmax(360px, 0.85fr);
-  grid-template-areas: "center right";
-}
-
-.body[data-mode="public"][data-focus="center"] {
-  grid-template-columns: minmax(0, 1fr);
-  grid-template-areas: "center";
-}
-
-.left,
-.center,
-.right {
+.mapColumn,
+.tabColumn {
   min-width: 0;
-  overflow: hidden;
-  transition: opacity var(--transition-med);
-}
-
-.left { grid-area: left; }
-.center { grid-area: center; }
-.right { grid-area: right; }
-
-.center {
-  position: relative;
-  display: grid;
-  grid-template-rows: minmax(520px, 1fr) var(--bottom-panel-height, 128px);
-  gap: 14px;
-}
-
-.body[data-mode="public"] .center {
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.mapShell {
-  position: relative;
   min-height: 0;
+  display: flex;
+}
+
+.mapColumn { grid-area: map; }
+.tabColumn {
+  grid-area: tabs;
+  padding-left: 14px;
+  margin-left: 14px;
+}
+
+.mapCard {
+  composes: card from "./components/common/shared.module.css";
+  flex: 1;
+  min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
   overflow: hidden;
-}
-
-.body[data-focus="left"] .center,
-.body[data-focus="left"] .right,
-.body[data-focus="right"] .left,
-.body[data-focus="right"] .center,
-.body[data-focus="bottom"] .left,
-.body[data-focus="bottom"] .right {
-  opacity: 0.72;
-}
-
-.body[data-focus="bottom"] .center {
-  --bottom-panel-height: clamp(320px, 38vh, 430px);
-  grid-template-rows: minmax(260px, 1fr) var(--bottom-panel-height);
-}
-
-.body[data-focus="center"] .left,
-.body[data-focus="center"] .right {
-  display: none;
-}
-
-.body[data-focus="center"] .center {
-  grid-template-rows: minmax(0, 1fr);
-}
-
-.body[data-focus="center"] .bottom {
-  display: none;
-}
-
-.bottom {
-  height: var(--bottom-panel-height, 128px);
-  min-height: var(--bottom-panel-height, 128px);
-  overflow: hidden;
-  transition: min-height var(--transition-med), opacity var(--transition-med);
-}
-
-.bottom[data-focus="active"] {
-  height: var(--bottom-panel-height, 260px);
-  min-height: var(--bottom-panel-height, 260px);
+  border-color: transparent;
 }
 
 .loading {
@@ -136,10 +62,21 @@
   background: var(--bg);
 }
 
-/* Tablet tier — see breakpoint legend in src/index.css */
+/* Tablet tier - see breakpoint legend in src/index.css */
 @media (max-width: 1180px) {
+  .body {
+    grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
+  }
+
+  .body[data-mode="public"] {
+    grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
+  }
+}
+
+/* Mobile tier - see breakpoint legend in src/index.css */
+@media (max-width: 820px) {
   /* .app must stay height-capped (not auto) so it is the element that
-     actually scrolls — with height:auto its box just grows to fit content
+     actually scrolls - with height:auto its box just grows to fit content
      and the overflow spills into #root/body, whose overflow:hidden
      (index.css) then silently blocks real wheel/touch scroll input even
      though programmatic scrollTo() still appears to work. */
@@ -148,119 +85,33 @@
     overflow-y: auto;
     overflow-x: hidden;
   }
-}
 
-/* Tablet tier — see breakpoint legend in src/index.css */
-@media (max-width: 1180px) and (min-width: 821px) {
-  /* Row 1 needs an explicit minmax floor: .left/.center keep overflow:hidden
-     (see the unconditional rule above), and a grid item with a non-visible
-     overflow contributes 0 to its row's automatic (content-based) minimum
-     size — so with only implicit "auto" rows, row 1 collapses to whatever
-     scraps are left after row 2, instead of sizing to fit the map. */
-  .body {
-    grid-template-columns: minmax(250px, 300px) minmax(470px, 1fr);
-    grid-template-rows: minmax(670px, 1fr) auto;
-    grid-template-areas:
-      "left   center"
-      "right  right";
-  }
-
-  .body:not([data-mode="public"]) .right {
-    overflow: visible;
-  }
-
-  .body[data-focus="left"],
-  .body[data-focus="right"],
-  .body[data-focus="bottom"] {
-    grid-template-columns: minmax(250px, 300px) minmax(470px, 1fr);
-    grid-template-rows: minmax(670px, 1fr) auto;
-    grid-template-areas:
-      "left   center"
-      "right  right";
-  }
-
+  .body,
   .body[data-mode="public"] {
-    grid-template-columns: minmax(460px, 1fr) minmax(230px, 300px);
-    grid-template-areas: "center right";
-  }
-
-  .body[data-mode="public"][data-focus="right"] {
-    grid-template-columns: minmax(460px, 1fr) minmax(230px, 300px);
-    grid-template-areas: "center right";
-  }
-}
-
-@media (max-height: 820px) and (min-width: 821px) {
-  .center {
-    grid-template-rows: minmax(420px, 1fr) var(--bottom-panel-height, 112px);
-  }
-
-  .body[data-focus="bottom"] .center {
-    --bottom-panel-height: clamp(300px, 42vh, 360px);
-    grid-template-rows: minmax(220px, 1fr) var(--bottom-panel-height);
-  }
-
-  .bottom {
-    height: var(--bottom-panel-height, 112px);
-    min-height: var(--bottom-panel-height, 112px);
-  }
-}
-
-/* Mobile tier — see breakpoint legend in src/index.css */
-@media (max-width: 820px) {
-  .body {
     grid-template-columns: 1fr;
     grid-template-areas:
-      "left"
-      "center"
-      "right";
+      "map"
+      "tabs";
+    align-content: start;
     padding: 14px;
+    gap: 14px;
   }
 
-  .body[data-mode="public"] {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "center"
-      "right";
-  }
-
-  .body[data-focus="left"],
-  .body[data-focus="right"],
-  .body[data-focus="bottom"] {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "left"
-      "center"
-      "right";
-  }
-
-  .body[data-mode="public"][data-focus="right"] {
-    grid-template-columns: 1fr;
-    grid-template-areas:
-      "center"
-      "right";
-  }
-
-  .left,
-  .center,
-  .right {
+  .mapColumn,
+  .tabColumn {
     display: block;
-    overflow: visible;
+    min-height: auto;
   }
 
-  .center {
-    display: flex;
-    flex-direction: column;
+  .tabColumn {
+    border-top: 1px solid var(--soft-border);
+    margin-left: 0;
+    padding-left: 0;
+    padding-top: 14px;
   }
 
-  .mapShell {
+  .mapCard {
     min-height: 620px;
-  }
-
-  .bottom,
-  .bottom[data-focus="active"] {
-    height: auto;
-    min-height: 0;
     overflow: visible;
   }
 }

@@ -1,22 +1,24 @@
-import { useMemo, useState } from "react";
-import { LayoutDashboard } from "lucide-react";
+import { useMemo } from "react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
-import PanelHeader from "../common/PanelHeader";
-import TabBar from "../common/TabBar";
 import Legend from "./Legend";
-import OverviewTab from "./OverviewTab";
 import SegmentList from "./SegmentList";
 import StationList from "./StationList";
 import SaturationTrendChart from "../charts/SaturationTrendChart";
 import CrowdTrendChart from "../charts/CrowdTrendChart";
+import InfoPopover from "../common/InfoPopover";
 import styles from "./LeftPanel.module.css";
 
-type TabKey = "overview" | "roads" | "crowd";
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
 
-export default function LeftPanel() {
-  const [tab, setTab] = useState<TabKey>("overview");
+function scrollToAnchor(event: React.MouseEvent<HTMLAnchorElement>, id: string) {
+  const target = document.getElementById(id);
+  if (!target) return;
+  event.preventDefault();
+  target.scrollIntoView({ behavior: "smooth", block: "start" });
+}
+
+export default function SituationTab() {
   const { language } = useLanguage();
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
@@ -25,62 +27,90 @@ export default function LeftPanel() {
   const segmentDefs = useAppStore((s) => s.segmentDefs);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const activeIncidents = useAppStore((s) => s.activeIncidents);
 
-  const topSegmentIds = useMemo(
+  const topSegments = useMemo(
     () =>
       Object.values(segments)
         .sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.saturation - a.saturation)
-        .slice(0, 3)
-        .map((s) => s.segmentId),
+        .slice(0, 3),
     [segments],
   );
 
-  const topStationIds = useMemo(
-    () =>
-      Object.values(stations)
-        .sort((a, b) => b.userCount - a.userCount)
-        .slice(0, 3)
-        .map((s) => s.stationId),
+  const topStations = useMemo(
+    () => Object.values(stations).sort((a, b) => b.userCount - a.userCount).slice(0, 3),
     [stations],
   );
 
-  const TABS: { key: TabKey; label: string }[] = [
-    { key: "overview", label: pick(language, "總覽", "Overview") },
-    { key: "roads", label: pick(language, "路段", "Roads") },
-    { key: "crowd", label: pick(language, "人流", "Crowd") },
-  ];
+  const riskSource = useMemo(() => {
+    if (activeIncidents.length > 0) {
+      const rank: Record<string, number> = { Critical: 0, High: 1, Medium: 2 };
+      const worst = [...activeIncidents].sort(
+        (a, b) => (rank[a.severity] ?? 9) - (rank[b.severity] ?? 9),
+      )[0];
+      return { label: pick(language, "現行事件", "Active incident"), value: worst.location };
+    }
+    if (topSegments[0] && topSegments[0].tier !== "Normal") {
+      return {
+        label: pick(language, "壅塞熱點", "Congestion hotspot"),
+        value: `${topSegments[0].name} (${topSegments[0].tier})`,
+      };
+    }
+    return { label: pick(language, "城市狀態", "City status"), value: pick(language, "監控中，無重大風險", "Monitoring — no major risk") };
+  }, [activeIncidents, topSegments, language]);
+
+  const legendLabel = pick(language, "圖例說明", "Legend");
+  const legendTitle = pick(language, "圖例", "Legend");
 
   return (
     <div className={styles.wrap}>
-      <PanelHeader icon={LayoutDashboard} title={pick(language, "情境總覽", "Situation Panel")} zone="left" />
-      <Legend />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} />
-      <div className={styles.tabContent}>
-        {tab === "overview" && <OverviewTab />}
-        {tab === "roads" && (
-          <div className={styles.section}>
-            <SaturationTrendChart
-              traffic={traffic}
-              segmentIds={topSegmentIds}
-              segmentDefs={segmentDefs}
-              currentTime={currentTime}
-              timeOffsetMs={timeOffsetMs}
-            />
-            <SegmentList />
-          </div>
-        )}
-        {tab === "crowd" && (
-          <div className={styles.section}>
-            <CrowdTrendChart
-              crowd={crowd}
-              stationIds={topStationIds}
-              currentTime={currentTime}
-              timeOffsetMs={timeOffsetMs}
-            />
-            <StationList />
-          </div>
-        )}
+      <div className={styles.riskCard}>
+        <span className={styles.riskLabel}>{riskSource.label}</span>
+        <span className={styles.riskValue}>{riskSource.value}</span>
+        <div className={styles.riskLinks}>
+          <a href="#section-roads" className={styles.riskLink} onClick={(e) => scrollToAnchor(e, "section-roads")}>
+            {pick(language, "查看路段 ↓", "View roads ↓")}
+          </a>
+          <a href="#section-crowd" className={styles.riskLink} onClick={(e) => scrollToAnchor(e, "section-crowd")}>
+            {pick(language, "查看人流 ↓", "View crowd ↓")}
+          </a>
+        </div>
       </div>
+
+      <section id="section-roads" className={styles.section}>
+        <div className={styles.sectionTitleRow}>
+          <span className={styles.sectionTitle}>{pick(language, "路段", "Roads")}</span>
+          <InfoPopover label={legendLabel} title={legendTitle}>
+            <Legend />
+          </InfoPopover>
+        </div>
+        <SaturationTrendChart
+          traffic={traffic}
+          segmentIds={topSegments.map((s) => s.segmentId)}
+          segmentDefs={segmentDefs}
+          currentTime={currentTime}
+          timeOffsetMs={timeOffsetMs}
+          compact
+        />
+        <SegmentList />
+      </section>
+
+      <section id="section-crowd" className={styles.section}>
+        <div className={styles.sectionTitleRow}>
+          <span className={styles.sectionTitle}>{pick(language, "人流", "Crowd")}</span>
+          <InfoPopover label={legendLabel} title={legendTitle}>
+            <Legend />
+          </InfoPopover>
+        </div>
+        <CrowdTrendChart
+          crowd={crowd}
+          stationIds={topStations.map((s) => s.stationId)}
+          currentTime={currentTime}
+          timeOffsetMs={timeOffsetMs}
+          compact
+        />
+        <StationList />
+      </section>
     </div>
   );
 }

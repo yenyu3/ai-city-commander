@@ -14,7 +14,6 @@ export default function AlertLogList() {
   if (alerts.length === 0) {
     return (
       <div className={styles.wrap}>
-        <span className={styles.title}>{pick(language, "完整事件紀錄", "Full Alert Log")}</span>
         <p className={styles.empty}>{pick(language, "目前尚無事件紀錄。", "No alerts recorded yet.")}</p>
       </div>
     );
@@ -22,7 +21,6 @@ export default function AlertLogList() {
 
   return (
     <div className={styles.wrap}>
-      <span className={styles.title}>{pick(language, "完整事件紀錄", "Full Alert Log")}</span>
       <div className={styles.list}>
         {alerts.map((alert) => (
           <div key={alert.id} className={styles.row}>

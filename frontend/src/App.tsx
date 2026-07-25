@@ -2,11 +2,10 @@ import { useEffect, useState } from "react";
 import { useAppStore } from "./store/appStore";
 import { pick, useLanguage } from "./i18n";
 import Header from "./components/Header/Header";
-import LeftPanel from "./components/LeftPanel/LeftPanel";
 import MapStage from "./components/MapStage/MapStage";
-import RightPanel from "./components/RightPanel/RightPanel";
 import BottomBar from "./components/BottomBar/BottomBar";
-import AlertOverlay from "./components/AlertOverlay/AlertOverlay";
+import RightPanel from "./components/RightPanel/RightPanel";
+import ChatFab from "./components/ChatFab/ChatFab";
 import LoadingScreen from "./components/LoadingScreen/LoadingScreen";
 import styles from "./App.module.css";
 
@@ -17,7 +16,6 @@ function App() {
   const isPlaying = useAppStore((s) => s.isPlaying);
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
   const advanceTime = useAppStore((s) => s.advanceTime);
-  const focusZone = useAppStore((s) => s.focusZone);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
   const [minimumLoadingDone, setMinimumLoadingDone] = useState(false);
@@ -49,27 +47,18 @@ function App() {
   return (
     <div className={styles.app}>
       <Header />
-      <div className={styles.body} data-focus={focusZone ?? undefined} data-mode={viewerMode}>
-        {viewerMode === "government" && (
-          <div className={styles.left}>
-            <LeftPanel />
-          </div>
-        )}
-        <div className={styles.center}>
-          <div className={styles.mapShell}>
+      <div className={styles.body} data-mode={viewerMode}>
+        <div className={styles.mapColumn}>
+          <div className={styles.mapCard}>
             <MapStage />
-            <AlertOverlay />
+            {viewerMode === "government" && <BottomBar />}
           </div>
-          {viewerMode === "government" && (
-            <div className={styles.bottom} data-focus={focusZone === "bottom" ? "active" : undefined}>
-              <BottomBar />
-            </div>
-          )}
         </div>
-        <div className={styles.right}>
+        <div className={styles.tabColumn}>
           <RightPanel />
         </div>
       </div>
+      {viewerMode === "government" && <ChatFab />}
     </div>
   );
 }
