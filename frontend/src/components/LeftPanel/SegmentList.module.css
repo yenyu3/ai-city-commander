@@ -27,9 +27,21 @@
   font-size: 12.5px;
   border-bottom: 1px solid var(--soft-border);
   transition: background var(--transition-fast);
+  cursor: pointer;
 }
 .row:hover {
   background: color-mix(in srgb, var(--panel-2), transparent 20%);
+}
+.row:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--panel-2), transparent 20%);
+}
+.selected {
+  background: color-mix(in srgb, var(--cyan), transparent 82%);
+  box-shadow: inset 2px 0 0 var(--cyan);
+}
+.selected:hover {
+  background: color-mix(in srgb, var(--cyan), transparent 74%);
 }
 
 .dot {

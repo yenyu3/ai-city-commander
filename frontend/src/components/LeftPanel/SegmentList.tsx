@@ -6,6 +6,8 @@ const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
 
 export default function SegmentList() {
   const segments = useAppStore((s) => s.segments);
+  const selectedSegmentId = useAppStore((s) => s.selectedSegmentId);
+  const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
   const { language } = useLanguage();
   const list = Object.values(segments).sort(
     (a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.saturation - a.saturation,
@@ -20,7 +22,19 @@ export default function SegmentList() {
         {list.map((seg) => (
           <div
             key={seg.segmentId}
-            className={styles.row}
+            className={`${styles.row} ${seg.segmentId === selectedSegmentId ? styles.selected : ""}`}
+            role="button"
+            tabIndex={0}
+            aria-pressed={seg.segmentId === selectedSegmentId}
+            onClick={() =>
+              setSelectedSegment(seg.segmentId === selectedSegmentId ? null : seg.segmentId)
+            }
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                setSelectedSegment(seg.segmentId === selectedSegmentId ? null : seg.segmentId);
+              }
+            }}
             title={pick(
               language,
               `車道狀態：${seg.laneStatus}`,

@@ -10,6 +10,8 @@ const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
 export default function OverviewTab() {
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
+  const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
+  const setSelectedStation = useAppStore((s) => s.setSelectedStation);
   const activeIncidents = useAppStore((s) => s.activeIncidents);
   const traffic = useAppStore((s) => s.traffic);
   const crowd = useAppStore((s) => s.crowd);
@@ -59,7 +61,19 @@ export default function OverviewTab() {
         <div className={styles.blockTitle}>{pick(language, "Top 3 風險路段", "Top 3 risk segments")}</div>
         <div className={styles.miniList}>
           {topSegments.map((seg) => (
-            <div key={seg.segmentId} className={styles.miniRow}>
+            <div
+              key={seg.segmentId}
+              className={styles.miniRow}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedSegment(seg.segmentId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedSegment(seg.segmentId);
+                }
+              }}
+            >
               <span className={`${styles.dot} ${styles[`dot${seg.tier}`]}`} />
               <span className={styles.miniName}>{seg.name}</span>
               <span className={styles.miniValue}>{seg.saturation.toFixed(2)}</span>
@@ -80,7 +94,19 @@ export default function OverviewTab() {
         <div className={styles.blockTitle}>{pick(language, "Top 3 人流熱點", "Top 3 crowd hotspots")}</div>
         <div className={styles.miniList}>
           {topStations.map((st) => (
-            <div key={st.stationId} className={styles.miniRow}>
+            <div
+              key={st.stationId}
+              className={styles.miniRow}
+              role="button"
+              tabIndex={0}
+              onClick={() => setSelectedStation(st.stationId)}
+              onKeyDown={(e) => {
+                if (e.key === "Enter" || e.key === " ") {
+                  e.preventDefault();
+                  setSelectedStation(st.stationId);
+                }
+              }}
+            >
               <span className={`${styles.dot} ${st.roamingPct >= 0.3 ? styles.dotWarnFlag : styles.dotNormal}`} />
               <span className={styles.miniName}>{st.name}</span>
               <span className={styles.miniValue}>{st.userCount.toLocaleString()}</span>

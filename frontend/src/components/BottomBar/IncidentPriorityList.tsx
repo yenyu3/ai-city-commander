@@ -7,10 +7,19 @@ const SEVERITY_RANK: Record<string, number> = { Critical: 0, High: 1, Medium: 2 
 export default function IncidentPriorityList() {
   const activeIncidents = useAppStore((s) => s.activeIncidents);
   const incidentEte = useAppStore((s) => s.incidentEte);
+  const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
+  const setSelectedStation = useAppStore((s) => s.setSelectedStation);
 
   const { language } = useLanguage();
 
   if (activeIncidents.length === 0) return null;
+
+  const focusIncident = (incident: (typeof activeIncidents)[number]) => {
+    const target = incident.affectedSegment ?? incident.affectedRoad;
+    if (!target) return;
+    if (target.startsWith("BS_")) setSelectedStation(target);
+    else setSelectedSegment(target);
+  };
 
   const sorted = [...activeIncidents].sort((a, b) => {
     const sevDiff = (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9);
@@ -26,7 +35,19 @@ export default function IncidentPriorityList() {
       <span className={styles.title}>{pick(language, "多事件優先處理順序", "Multi-incident Priority Order")}</span>
       <div className={styles.list}>
         {sorted.map((incident, idx) => (
-          <div key={incident.eventId} className={styles.item}>
+          <div
+            key={incident.eventId}
+            className={styles.item}
+            role="button"
+            tabIndex={0}
+            onClick={() => focusIncident(incident)}
+            onKeyDown={(e) => {
+              if (e.key === "Enter" || e.key === " ") {
+                e.preventDefault();
+                focusIncident(incident);
+              }
+            }}
+          >
             <span className={styles.rank}>#{idx + 1}</span>
             <span className={styles.sev} data-sev={incident.severity}>
               {incident.severity}

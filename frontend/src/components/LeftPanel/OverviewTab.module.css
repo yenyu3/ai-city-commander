@@ -47,6 +47,14 @@
   gap: 8px;
   font-size: 12px;
   padding: 4px 2px;
+  border-radius: var(--radius-sm);
+  cursor: pointer;
+  transition: background var(--transition-fast);
+}
+.miniRow:hover,
+.miniRow:focus-visible {
+  outline: none;
+  background: color-mix(in srgb, var(--cyan), transparent 86%);
 }
 
 .dot {
