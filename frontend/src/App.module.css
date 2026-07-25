@@ -22,10 +22,6 @@
   transition: grid-template-columns var(--transition-med);
 }
 
-.body[data-mode="public"] {
-  grid-template-columns: minmax(760px, 1fr) minmax(270px, 320px);
-}
-
 .mapColumn,
 .tabColumn {
   min-width: 0;
@@ -68,9 +64,6 @@
     grid-template-columns: minmax(0, 3fr) minmax(300px, 2fr);
   }
 
-  .body[data-mode="public"] {
-    grid-template-columns: minmax(0, 1fr) minmax(230px, 300px);
-  }
 }
 
 /* Mobile tier - see breakpoint legend in src/index.css */

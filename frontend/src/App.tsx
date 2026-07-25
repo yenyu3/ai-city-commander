@@ -58,7 +58,7 @@ function App() {
           <RightPanel />
         </div>
       </div>
-      {viewerMode === "government" && <ChatFab />}
+      <ChatFab />
     </div>
   );
 }

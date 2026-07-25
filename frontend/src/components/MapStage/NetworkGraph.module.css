@@ -18,10 +18,60 @@
   background: var(--map-base);
 }
 
-.mapShell :global(.mapboxgl-ctrl-attrib) {
+.mapShell :global(.mapboxgl-ctrl-bottom-right) {
+  right: 4px;
+  bottom: 4px;
+}
+
+/* Scale the whole control down uniformly instead of overriding its internal
+   width/padding/box-sizing individually - Mapbox reserves padding space to
+   match the button's own size, and touching only one side of that math is
+   what turned the collapsed dot into a lopsided pill. Scaling preserves its
+   internal geometry so the icon stays circular and centered. */
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact) {
+  transform-origin: bottom right;
+  transform: scale(0.7);
+  background-color: color-mix(in srgb, var(--panel), transparent 25%);
+  opacity: 0.4;
+  transition: opacity var(--transition-fast);
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact:hover),
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact:focus-within) {
+  opacity: 0.95;
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib-button) {
+  background-color: transparent;
+}
+
+/* The "i" glyph is baked as a black SVG; invert it to stay visible on our
+   dark panel background. Skipped in light theme, where black-on-light is
+   already legible. */
+:root[data-theme="dark"] .mapShell :global(.mapboxgl-ctrl-attrib-button) {
+  filter: invert(1);
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib-button:focus) {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-dim), transparent 40%) !important;
+}
+
+/* Expanded state: reset the scale so text stays readable, and match the
+   app's glass-panel HUD styling instead of Mapbox's default white pill. */
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact-show) {
+  transform: none;
+  opacity: 1;
   border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--panel), transparent 25%);
+  background: color-mix(in srgb, var(--panel), transparent 10%);
+  border: 1px solid var(--soft-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib) {
   color: var(--text-dim);
+  font-size: 10px;
 }
 
 .mapShell :global(.mapboxgl-ctrl-attrib a) {
