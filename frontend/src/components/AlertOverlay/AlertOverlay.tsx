@@ -57,7 +57,10 @@ export default function AlertOverlay() {
               {alert.llmText ? (
                 <div className={styles.llm}>{alert.llmText}</div>
               ) : (
-                <div className={styles.llmLoading}>{pick(language, "AI 摘要生成中…", "Generating AI summary…")}</div>
+                <div className={styles.llmLoading}>
+                  <span className={styles.spinner} aria-hidden="true" />
+                  {pick(language, "AI 摘要生成中…", "Generating AI summary…")}
+                </div>
               )}
             </>
           )}

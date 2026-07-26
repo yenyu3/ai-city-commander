@@ -2,6 +2,10 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ReasoningChain.module.css";
 
+function splitSopRefs(sopRef: string): string[] {
+  return sopRef.split(/[/·／]/).map((ref) => ref.trim()).filter(Boolean);
+}
+
 export default function ReasoningChain() {
   const reasoningLog = useAppStore((s) => s.reasoningLog);
   const { language } = useLanguage();
@@ -38,7 +42,6 @@ export default function ReasoningChain() {
               <div className={styles.body}>
                 <div className={styles.stepTitle}>{finalStep.title}</div>
                 <div className={styles.stepDetail}>{finalStep.detail}</div>
-                {finalStep.sopRef && <div className={styles.sopRef}>{finalStep.sopRef}</div>}
               </div>
             </div>
           )}
@@ -58,7 +61,13 @@ export default function ReasoningChain() {
                       </span>
                     </div>
                     <div className={styles.stepDetail}>{step.detail}</div>
-                    {step.sopRef && <div className={styles.sopRef}>{step.sopRef}</div>}
+                    {step.sopRef && (
+                      <div className={styles.sopRefs}>
+                        {splitSopRefs(step.sopRef).map((ref) => (
+                          <span key={ref} className={styles.sopRef}>{ref}</span>
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </li>
               ))}

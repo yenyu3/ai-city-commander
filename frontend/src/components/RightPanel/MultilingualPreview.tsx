@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Check, Send } from "lucide-react";
+import { Check, Plus, Send } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { calcETE } from "../../engine/ete";
@@ -84,10 +84,29 @@ export default function MultilingualPreview() {
       </div>
 
       <div className={styles.statusLine}>
-        <span>{pick(language, "漫遊比例", "Roaming share")}</span>
-        <strong>{(current.roamingPct * 100).toFixed(0)}%</strong>
-        <span>{pick(language, "已選語言", "Selected")}</span>
-        <strong>{selectedCount}/{LANGS.length}</strong>
+        <div className={styles.statusMetrics}>
+          <span>{pick(language, "漫遊比例", "Roaming share")}</span>
+          <strong>{(current.roamingPct * 100).toFixed(0)}%</strong>
+          <span>{pick(language, "已選語言", "Selected")}</span>
+          <strong>{selectedCount}/{LANGS.length}</strong>
+        </div>
+        <button
+          className={styles.publishBtn}
+          disabled={selectedCount === 0}
+          onClick={() => {
+            setToast(
+              pick(
+                language,
+                `已發布 ${selectedCount} 種語言（模擬）`,
+                `Published ${selectedCount} languages (simulated)`,
+              ),
+            );
+            setTimeout(() => setToast(null), 1800);
+          }}
+        >
+          <Send size={14} aria-hidden="true" />
+          {pick(language, "發布", "Publish")}
+        </button>
       </div>
 
       <div className={styles.languageGrid} aria-label={pick(language, "選擇發布語言", "Select publish languages")}>
@@ -102,44 +121,35 @@ export default function MultilingualPreview() {
               onChange={() => toggleLang(l.code)}
             />
             <span className={styles.checkMark}>
-              {selectedLangs.has(l.code) && <Check size={12} aria-hidden="true" />}
+              {selectedLangs.has(l.code) ? (
+                <Check size={12} aria-hidden="true" />
+              ) : (
+                <Plus size={12} aria-hidden="true" />
+              )}
             </span>
             {l.label}
           </label>
         ))}
       </div>
 
-      <div className={styles.previewList}>
+      <section className={styles.noticeBlock}>
+        <div className={styles.noticeHeader}>
+          <span>{pick(language, "發布通知", "Publish Notice")}</span>
+          <strong>{current.locationName}</strong>
+        </div>
         {LANGS.filter((l) => selectedLangs.has(l.code)).map((l) => (
-          <article key={l.code} className={styles.previewItem}>
+          <div key={l.code} className={styles.noticeRow}>
             <span>{l.label}</span>
             <p>{messages[l.code]}</p>
-          </article>
+          </div>
         ))}
         {selectedCount === 0 && (
           <div className={styles.noSelection}>
             {pick(language, "請至少選擇一種發布語言", "Select at least one language to publish")}
           </div>
         )}
-      </div>
+      </section>
 
-      <button
-        className={styles.publishBtn}
-        disabled={selectedCount === 0}
-        onClick={() => {
-          setToast(
-            pick(
-              language,
-              `已發布 ${selectedCount} 種語言（模擬）`,
-              `Published ${selectedCount} languages (simulated)`,
-            ),
-          );
-          setTimeout(() => setToast(null), 1800);
-        }}
-      >
-        <Send size={15} aria-hidden="true" />
-        {pick(language, "發布所選語言", "Publish selected")}
-      </button>
       {toast && <div className={styles.toast}>{toast}</div>}
     </div>
   );

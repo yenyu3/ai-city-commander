@@ -1,4 +1,4 @@
-import { ArrowRight, ClipboardList, Clock3 } from "lucide-react";
+import { Clock3 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -51,35 +51,28 @@ export default function DecisionSummary() {
       )}
 
       <div className={styles.summaryBlock}>
-        <span className={styles.summaryLabel}>
-          <ClipboardList size={16} aria-hidden="true" />
-          {pick(language, "情況摘要", "Situation Summary")}
-        </span>
+        <span className={styles.summaryLabel}>{pick(language, "情況摘要", "Situation Summary")}</span>
         {latest.llmText ? (
           <p className={styles.summaryText}>{latest.llmText}</p>
         ) : (
-          <p className={styles.aiLoading}>{pick(language, "AI 摘要生成中…", "Generating AI summary…")}</p>
+          <p className={styles.aiLoading}>
+            <span className={styles.spinner} aria-hidden="true" />
+            {pick(language, "AI 摘要生成中…", "Generating AI summary…")}
+          </p>
         )}
       </div>
 
       <div className={styles.actionsBlock}>
         <span className={styles.actionsLabel}>{pick(language, "建議行動", "Recommended Actions")}</span>
-        <ul className={styles.actionList}>
-          {actionItems.map((item) => (
+        <ol className={styles.actionList}>
+          {actionItems.map((item, index) => (
             <li key={item} className={styles.actionItem}>
-              <ArrowRight size={18} aria-hidden="true" />
-              <span>{item}</span>
+              <span className={styles.actionNumber}>{index + 1}</span>
+              <p>{item}</p>
             </li>
           ))}
-        </ul>
+        </ol>
       </div>
-
-      {latest.sopRef && (
-        <div className={styles.sopRow}>
-          <span className={styles.sopLabel}>{pick(language, "依據", "Refs")}</span>
-          <p className={styles.sopText}>{latest.sopRef}</p>
-        </div>
-      )}
     </div>
   );
 }
