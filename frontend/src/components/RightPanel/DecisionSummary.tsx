@@ -1,4 +1,4 @@
-import { Bot, Clock3, FileText, ShieldAlert } from "lucide-react";
+import { ArrowRight, ClipboardList, Clock3 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -22,62 +22,62 @@ export default function DecisionSummary() {
     );
   }
 
-  const sopChips = (latest.sopRef ?? "").split(/[/·]/).map((s) => s.trim()).filter(Boolean);
+  const actionItems = latest.ruleSummary
+    .split(/[。；;]/)
+    .map((item) => item.trim())
+    .filter(Boolean);
 
   return (
     <div className={styles.wrap}>
       <div className={styles.headRow}>
-        <div>
+        <div className={styles.eventIdentity}>
           <div className={styles.title}>{pick(language, "決策摘要", "Decision Summary")}</div>
           <div className={styles.eventTitle}>{latest.title}</div>
+          <div className={styles.eventTime}>
+            <Clock3 size={14} aria-hidden="true" />
+            {formatDisplayTimestamp(latest.timestamp, timeOffsetMs)}
+          </div>
         </div>
         <span className={styles.kind}>
-          <ShieldAlert size={14} aria-hidden="true" />
           {pick(language, ALERT_KIND_LABEL[latest.kind].zh, ALERT_KIND_LABEL[latest.kind].en)}
         </span>
       </div>
 
-      <div className={styles.metaStrip}>
-        <span className={styles.metaItem}>
-          <Clock3 size={14} aria-hidden="true" />
-          {formatDisplayTimestamp(latest.timestamp, timeOffsetMs)}
-        </span>
-        {latest.ete !== undefined && (
-          <span className={styles.metaItem}>
-            {pick(language, "預估恢復", "ETE")} <strong>{latest.ete}</strong>
-            {pick(language, "分鐘", "min")}
-          </span>
-        )}
-      </div>
+      {latest.ete !== undefined && (
+        <div className={styles.eteLine}>
+          <strong>{latest.ete}</strong>
+          <span>{pick(language, "分鐘後預估恢復通行", "min estimated until traffic recovers")}</span>
+        </div>
+      )}
 
-      <div className={styles.aiBlock}>
-        <span className={styles.aiLabel}>
-          <Bot size={15} aria-hidden="true" />
-          {pick(language, "AI 建議行動", "AI Suggested Action")}
+      <div className={styles.summaryBlock}>
+        <span className={styles.summaryLabel}>
+          <ClipboardList size={16} aria-hidden="true" />
+          {pick(language, "情況摘要", "Situation Summary")}
         </span>
         {latest.llmText ? (
-          <p className={styles.aiText}>{latest.llmText}</p>
+          <p className={styles.summaryText}>{latest.llmText}</p>
         ) : (
           <p className={styles.aiLoading}>{pick(language, "AI 摘要生成中…", "Generating AI summary…")}</p>
         )}
       </div>
 
-      <div className={styles.ruleBlock}>
-        <span className={styles.ruleLabel}>{pick(language, "觸發判斷", "Rule Trigger")}</span>
-        <p className={styles.ruleSummary}>{latest.ruleSummary}</p>
+      <div className={styles.actionsBlock}>
+        <span className={styles.actionsLabel}>{pick(language, "建議行動", "Recommended Actions")}</span>
+        <ul className={styles.actionList}>
+          {actionItems.map((item) => (
+            <li key={item} className={styles.actionItem}>
+              <ArrowRight size={18} aria-hidden="true" />
+              <span>{item}</span>
+            </li>
+          ))}
+        </ul>
       </div>
 
-      {sopChips.length > 0 && (
+      {latest.sopRef && (
         <div className={styles.sopRow}>
-          <span className={styles.sopLabel}>
-            <FileText size={13} aria-hidden="true" />
-            {pick(language, "依據", "Refs")}
-          </span>
-          {sopChips.map((chip) => (
-            <span key={chip} className={styles.sopChip}>
-              {chip}
-            </span>
-          ))}
+          <span className={styles.sopLabel}>{pick(language, "依據", "Refs")}</span>
+          <p className={styles.sopText}>{latest.sopRef}</p>
         </div>
       )}
     </div>
