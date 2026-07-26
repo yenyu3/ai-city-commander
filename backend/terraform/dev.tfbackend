@@ -1,0 +1,8 @@
+# Development remote state (Ohio).
+# Replace the account ID placeholder with the output from:
+#   cd bootstrap && terraform output -raw terraform_state_bucket
+bucket       = "ai-city-commander-dev-tfstate-<aws-account-id>"
+key          = "ai-city-commander/dev/terraform.tfstate"
+region       = "us-east-2"
+encrypt      = true
+use_lockfile = true

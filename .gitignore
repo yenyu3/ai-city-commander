@@ -25,6 +25,11 @@ dist-ssr/
 # Project-private notes
 docs/
 
+# Terraform local cache/state and environment-specific values
+.terraform/
+*.tfstate
+*.tfstate.*
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json
@@ -45,3 +50,5 @@ test-results/
 # Local screenshots and generated artifacts
 *-check.png
 screenshot*.png
+
+__pycache__/*
