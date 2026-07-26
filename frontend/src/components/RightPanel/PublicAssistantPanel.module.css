@@ -41,7 +41,6 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  justify-content: space-between;
   gap: 8px;
 }
 
@@ -80,7 +79,7 @@
 .primaryStatus strong {
   color: var(--text);
   font-family: var(--font-display);
-  font-size: var(--text-hero);
+  font-size: 30px;
   font-weight: 700;
   line-height: 0.95;
 }
@@ -88,7 +87,7 @@
 .primaryStatus span {
   min-width: 0;
   color: var(--text-dim);
-  font-size: var(--text-lead);
+  font-size: var(--text-base);
   line-height: 1.35;
   overflow-wrap: anywhere;
 }
@@ -106,14 +105,14 @@
   display: flex;
   flex-wrap: wrap;
   gap: 6px;
-  margin-top: 4px;
+  margin-top: 2px;
 }
 
 .navLink {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  gap: 5px;
+  gap: 3px;
   min-height: 26px;
   padding: 0 10px;
   border: 0;

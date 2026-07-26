@@ -1,4 +1,4 @@
-import { AlertTriangle, Clock3, MapPin, MessageCircle, Phone, Route, Users } from "lucide-react";
+import { AlertTriangle, ChevronDown, Clock3, MapPin, MessageCircle, Phone, Route, Users } from "lucide-react";
 import { useMemo } from "react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
@@ -112,9 +112,8 @@ export default function PublicAssistantPanel() {
 
   return (
     <div className={styles.wrap}>
-      <span className={styles.title}>{pick(language, "目前狀態", "Current Status")}</span>
-
       <div className={styles.heroCard}>
+        <span className={styles.title}>{pick(language, "目前狀態", "Current Status")}</span>
         <div className={styles.heroHead}>
           <span className={styles.heroKind}>{heroKindLabel}</span>
         </div>
@@ -134,20 +133,20 @@ export default function PublicAssistantPanel() {
         <p className={styles.heroReason}>{heroReason}</p>
         <div className={styles.navLinks}>
           <a href="#public-roads" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-roads")}>
-            <Route size={12} aria-hidden="true" />
             <span>{pick(language, "路況", "Roads")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#public-crowd" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-crowd")}>
-            <Users size={12} aria-hidden="true" />
             <span>{pick(language, "人潮", "Crowds")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#public-advisory" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-advisory")}>
-            <AlertTriangle size={12} aria-hidden="true" />
             <span>{pick(language, "公告", "Advisories")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#public-faq" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-faq")}>
-            <MessageCircle size={12} aria-hidden="true" />
             <span>{pick(language, "常見問題", "FAQ")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
         </div>
       </div>
