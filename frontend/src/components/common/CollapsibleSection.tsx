@@ -1,7 +1,6 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { ChevronDown } from "lucide-react";
-import { pick, useLanguage } from "../../i18n";
 import styles from "./CollapsibleSection.module.css";
 
 const STORAGE_PREFIX = "collapsible-open:";
@@ -25,7 +24,6 @@ export default function CollapsibleSection({
   children: ReactNode;
   className?: string;
 }) {
-  const { language } = useLanguage();
   const [open, setOpen] = useState(() => readStoredOpen(storageKey));
 
   const handleToggle = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
@@ -42,9 +40,8 @@ export default function CollapsibleSection({
     <details className={`${styles.wrap} ${className ?? ""}`} open={open} onToggle={handleToggle}>
       <summary className={styles.summary}>
         <span className={styles.title}>{title}</span>
-        <span className={styles.hint}>
+        <span className={styles.hint} aria-hidden="true">
           <ChevronDown size={13} className={styles.chevron} aria-hidden="true" />
-          {open ? pick(language, "收合", "Collapse") : pick(language, "展開", "Expand")}
         </span>
       </summary>
       <div className={styles.content}>{children}</div>
