@@ -114,6 +114,15 @@
   cursor: grabbing;
 }
 
+.pegmanIcon {
+  width: 23px;
+  height: 30px;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: translateY(1px);
+}
+
 /* Small dot hints that a figure is already on the map and a tap will
    remove it instead of dropping a new one. */
 .pegmanBtnPlaced::after {
@@ -133,18 +142,10 @@
   left: 0;
   top: 0;
   z-index: 60;
-  width: 48px;
-  height: 48px;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--text), transparent 24%);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--panel), transparent 4%);
-  color: var(--text);
-  box-shadow: var(--shadow-lg);
   pointer-events: none;
   transform: translate3d(-100vw, -100vh, 0) translate(-50%, -50%);
-  backdrop-filter: blur(12px);
   will-change: transform;
 }
 

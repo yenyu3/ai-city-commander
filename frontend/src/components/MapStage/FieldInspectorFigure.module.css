@@ -1,0 +1,510 @@
+/*
+  Fixed (non-theme) palette: this mascot only ever appears over the Mapbox
+  dark-v11 basemap (see NetworkGraph's MAP_STYLE), which stays dark
+  regardless of the app's light/dark theme toggle, so it doesn't need to
+  adapt like the surrounding panel UI does.
+*/
+.figure {
+  overflow: visible;
+  filter: drop-shadow(0 3px 3px rgba(0, 0, 0, 0.38));
+}
+
+.shadow {
+  fill: rgba(0, 0, 0, 0.42);
+  transform-box: fill-box;
+  transform-origin: 50% 50%;
+}
+
+.shadowPulse {
+  animation: figureShadowPulse 0.42s ease-in-out infinite;
+}
+
+.head,
+.torso {
+  fill: #f4f5f7;
+  stroke: #4a4e56;
+  stroke-width: 0.9;
+}
+
+.helmet {
+  fill: #9aa0a8;
+  stroke: #4a4e56;
+  stroke-width: 0.9;
+  stroke-linejoin: round;
+}
+
+.helmetBrim {
+  fill: #5a5e66;
+}
+
+.helmetDot {
+  fill: #f4f5f7;
+  opacity: 0.9;
+}
+
+.legBack,
+.legFront,
+.arm {
+  fill: #8b9099;
+  stroke: #4a4e56;
+  stroke-width: 0.8;
+}
+
+/* The rotate() animation runs on the *wrapping* <g> (see .swingA/.swingB
+   below), not on this rect ??the pivot has to live on the element that's
+   actually being transformed, or SVG falls back to rotating around the
+   whole viewBox's center and every limb goes flying. */
+.limb {
+  transform-box: fill-box;
+  transform-origin: 50% 0%;
+}
+
+.torsoSheen {
+  fill: #ffffff;
+  opacity: 0.32;
+}
+
+.eye {
+  fill: #1c1e22;
+}
+
+.smile {
+  fill: none;
+  stroke: #1c1e22;
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+
+/* All three anchor at the feet (50% 100%) rather than the SVG viewBox's
+   center, so scaling/bouncing reads as the character pushing off the
+   ground instead of floating/drifting from an arbitrary point. */
+.landing,
+.idleBob,
+.walkBob {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+
+.landing {
+  animation: figureLanding 0.55s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.idleBob {
+  animation: figureIdleBob 2.6s ease-in-out infinite;
+}
+
+.walkBob {
+  animation: figureWalkBob 0.42s ease-in-out infinite;
+}
+
+.swingA {
+  animation: figureSwingA 0.42s ease-in-out infinite;
+}
+
+.swingB {
+  animation: figureSwingB 0.42s ease-in-out infinite;
+}
+
+.siuBody {
+  transform-origin: 22px 42px;
+  animation: figureSiuBody 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.siuLegA {
+  animation: figureSiuLegA 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.siuLegB {
+  animation: figureSiuLegB 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.siuArmA {
+  animation: figureSiuArmA 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.siuArmB {
+  animation: figureSiuArmB 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.siuShadow {
+  animation: figureSiuShadow 2.6s cubic-bezier(0.45, 0.05, 0.2, 1) both;
+}
+
+.bellinghamBody {
+  transform-origin: 22px 44px;
+  animation: figureBellinghamBody 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bellinghamLegA {
+  animation: figureBellinghamLegA 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bellinghamLegB {
+  animation: figureBellinghamLegB 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bellinghamArmA {
+  animation: figureBellinghamArmA 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bellinghamArmB {
+  animation: figureBellinghamArmB 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+.bellinghamShadow {
+  animation: figureBellinghamShadow 2.6s cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes figureIdleBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-1.3px);
+  }
+}
+
+@keyframes figureWalkBob {
+  0%,
+  100% {
+    transform: translateY(0);
+  }
+  50% {
+    transform: translateY(-2.6px);
+  }
+}
+
+@keyframes figureSwingA {
+  0%,
+  100% {
+    transform: rotate(-18deg);
+  }
+  50% {
+    transform: rotate(18deg);
+  }
+}
+
+@keyframes figureSwingB {
+  0%,
+  100% {
+    transform: rotate(18deg);
+  }
+  50% {
+    transform: rotate(-18deg);
+  }
+}
+
+@keyframes figureShadowPulse {
+  0%,
+  100% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+  50% {
+    transform: scale(0.8, 0.78);
+    opacity: 0.48;
+  }
+}
+
+@keyframes figureSiuBody {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+  10% {
+    transform: translateY(2px) rotate(-5deg) scale(1.1, 0.88);
+  }
+  24% {
+    transform: translateY(-13px) rotate(24deg) scale(0.93, 1.08);
+  }
+  36% {
+    transform: translateY(-7px) rotate(-18deg) scale(0.96, 1.04);
+  }
+  48% {
+    transform: translateY(0) rotate(-6deg) scale(1.06, 0.93);
+  }
+  56%,
+  86% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+  96% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+}
+
+/*
+  Rotation sign convention (SVG rotate() is clockwise on screen, and every
+  limb hangs straight down at rotate(0) from its .limb hip/shoulder pivot):
+  for the left-side limb, POSITIVE angles sweep it further left (outward);
+  for the right-side limb, NEGATIVE angles sweep it further right (outward).
+  These were previously swapped, which pulled the "open" pose inward across
+  the body instead of splaying it outward ??fixed here, and pushed further
+  open so landing reads as a clear figure-eight leg stance / flung-open arms.
+*/
+@keyframes figureSiuLegA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(-6deg);
+  }
+  24%,
+  36% {
+    transform: rotate(10deg);
+  }
+  48%,
+  86% {
+    transform: rotate(34deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureSiuLegB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(6deg);
+  }
+  24%,
+  36% {
+    transform: rotate(-10deg);
+  }
+  48%,
+  86% {
+    transform: rotate(-34deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureSiuArmA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(18deg);
+  }
+  16% {
+    transform: translate(2px, -5px) rotate(-46deg);
+  }
+  22%,
+  36% {
+    transform: translate(4px, -8px) rotate(-118deg);
+  }
+  42% {
+    transform: translate(1px, -3px) rotate(-28deg);
+  }
+  48%,
+  86% {
+    transform: rotate(58deg);
+  }
+  92% {
+    transform: rotate(42deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureSiuArmB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  10% {
+    transform: rotate(-18deg);
+  }
+  16% {
+    transform: translate(-2px, -5px) rotate(46deg);
+  }
+  22%,
+  36% {
+    transform: translate(-4px, -8px) rotate(118deg);
+  }
+  42% {
+    transform: translate(-1px, -3px) rotate(28deg);
+  }
+  48%,
+  86% {
+    transform: rotate(-58deg);
+  }
+  92% {
+    transform: rotate(-42deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureSiuShadow {
+  0%,
+  100% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+  10% {
+    transform: scale(1.1, 0.92);
+    opacity: 0.9;
+  }
+  24%,
+  36% {
+    transform: scale(0.56, 0.48);
+    opacity: 0.3;
+  }
+  48%,
+  86% {
+    transform: scale(1.22, 1.06);
+    opacity: 0.92;
+  }
+  96% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+}
+
+@keyframes figureBellinghamBody {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+  12% {
+    transform: translateY(1px) rotate(0deg) scale(1.04, 0.95);
+  }
+  28% {
+    transform: translateY(-2px) rotate(-3deg) scale(0.98, 1.04);
+  }
+  42%,
+  88% {
+    transform: translateY(0) rotate(0deg) scale(1.03, 1);
+  }
+  96% {
+    transform: translateY(0) rotate(0deg) scale(1, 1);
+  }
+}
+
+@keyframes figureBellinghamLegA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  24%,
+  88% {
+    transform: rotate(12deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureBellinghamLegB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  24%,
+  88% {
+    transform: rotate(-12deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureBellinghamArmA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  18% {
+    transform: rotate(34deg);
+  }
+  36%,
+  88% {
+    transform: rotate(104deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureBellinghamArmB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  18% {
+    transform: rotate(-34deg);
+  }
+  36%,
+  88% {
+    transform: rotate(-104deg);
+  }
+  96% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureBellinghamShadow {
+  0%,
+  100% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+  28%,
+  88% {
+    transform: scale(1.12, 0.92);
+    opacity: 0.92;
+  }
+  96% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+}
+
+@keyframes figureLanding {
+  0% {
+    transform: translateY(-16px) scale(0.85, 1.18);
+    opacity: 0.4;
+  }
+  55% {
+    transform: translateY(1px) scale(1.08, 0.9);
+    opacity: 1;
+  }
+  75% {
+    transform: translateY(-3px) scale(0.97, 1.04);
+  }
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .landing,
+  .idleBob,
+  .walkBob,
+  .swingA,
+  .swingB,
+  .shadowPulse,
+  .siuBody,
+  .siuLegA,
+  .siuLegB,
+  .siuArmA,
+  .siuArmB,
+  .siuShadow,
+  .bellinghamBody,
+  .bellinghamLegA,
+  .bellinghamLegB,
+  .bellinghamArmA,
+  .bellinghamArmB,
+  .bellinghamShadow {
+    animation: none;
+  }
+}

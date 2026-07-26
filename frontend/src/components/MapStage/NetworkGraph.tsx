@@ -15,11 +15,11 @@ import {
 import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
-import { PersonStanding } from "lucide-react";
 import { withElevation } from "./geometry";
 import { useAppStore, type SegmentRuntimeState, type StationRuntimeState } from "../../store/appStore";
 import type { RoadPathDef, ViewerMode } from "../../types";
 import { pick, type Language } from "../../i18n";
+import FieldInspectorFigure from "./FieldInspectorFigure";
 import styles from "./NetworkGraph.module.css";
 
 type CameraMode = "top" | "tilt";
@@ -213,6 +213,9 @@ function NetworkGraph({
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
   const [isMarkerDragging, setIsMarkerDragging] = useState(false);
+  // Bumped on every placement/reposition so the figure replays its landing
+  // hop each time it's set down, even if it lands on the exact same spot.
+  const [placementSeq, setPlacementSeq] = useState(0);
   const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
   const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
 
@@ -352,6 +355,7 @@ function NetworkGraph({
         nearestRoadId: nearestRoad?.segmentId ?? null,
         nearestRoadName: nearestRoad?.name ?? null,
       });
+      setPlacementSeq((seq) => seq + 1);
     },
     [roads, setFieldInspectorPosition],
   );
@@ -599,8 +603,13 @@ function NetworkGraph({
               placeInspectionPoint(event.lngLat.lng, event.lngLat.lat);
             }}
           >
-            <div className={styles.inspectionMarker} aria-label="Field inspection position, drag to reposition">
-              <PersonStanding size={24} />
+            <div className={styles.inspectionMarker}>
+              <FieldInspectorFigure
+                size={44}
+                walking={isMarkerDragging}
+                placementKey={placementSeq}
+                aria-label="Field inspection position, drag to reposition"
+              />
             </div>
           </Marker>
         )}

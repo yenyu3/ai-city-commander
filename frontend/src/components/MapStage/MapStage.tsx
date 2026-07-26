@@ -1,9 +1,10 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { Box, Layers, Map as MapIcon, PersonStanding } from "lucide-react";
+import { Box, Layers, Map as MapIcon } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
 import AlertOverlay from "../AlertOverlay/AlertOverlay";
+import FieldInspectorFigure from "./FieldInspectorFigure";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
 import styles from "./MapStage.module.css";
@@ -199,7 +200,9 @@ export default function MapStage() {
               setIsDragging(true);
             }}
           >
-            <PersonStanding size={19} />
+            <span className={styles.pegmanIcon} aria-hidden="true">
+              <FieldInspectorFigure size={23} animated={false} />
+            </span>
           </button>
         </div>
 
@@ -209,7 +212,7 @@ export default function MapStage() {
             className={styles.dragGhost}
             aria-hidden="true"
           >
-            <PersonStanding size={28} />
+            <FieldInspectorFigure size={46} walking />
           </div>
         )}
 
