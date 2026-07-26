@@ -3,6 +3,7 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayTimestamp } from "../../utils/timeUtils";
+import FieldPositionHint from "../common/FieldPositionHint";
 import styles from "./DecisionSummary.module.css";
 
 function scrollToAnchor(event: React.MouseEvent<HTMLAnchorElement>, id: string) {
@@ -76,6 +77,7 @@ export default function DecisionSummary() {
     return (
       <div className={styles.wrap}>
         <div className={styles.title}>{pick(language, "事件摘要", "Event Summary")}</div>
+        <FieldPositionHint />
         <div className={styles.empty}>
           {pick(language, "城市監控中，尚無事件需要處理", "Monitoring the city — no incident requires action yet")}
         </div>
@@ -94,6 +96,7 @@ export default function DecisionSummary() {
     <div className={styles.wrap}>
       <div className={styles.summaryCard}>
         <span className={styles.title}>{pick(language, "決策摘要", "Decision Summary")}</span>
+        <FieldPositionHint />
         <div className={styles.cardHead}>
           <span className={styles.eventTitle}>{latest.title}</span>
         </div>

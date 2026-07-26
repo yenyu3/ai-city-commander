@@ -1,0 +1,18 @@
+.hint {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 2px 1px;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  line-height: 1.4;
+}
+
+.hint svg {
+  flex-shrink: 0;
+  color: var(--text-dim);
+}
+
+.hint span {
+  overflow-wrap: anywhere;
+}

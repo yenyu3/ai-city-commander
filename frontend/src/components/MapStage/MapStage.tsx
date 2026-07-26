@@ -1,4 +1,4 @@
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import { Box, Layers, Map as MapIcon, PersonStanding } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
@@ -28,24 +28,40 @@ export default function MapStage() {
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
   const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   useEffect(() => {
     setDisplayMode(viewerMode === "public" ? "risk" : "flow");
     setSelectedSegment(null);
   }, [viewerMode, setSelectedSegment]);
 
-  const segmentList = Object.values(segments);
+  const segmentList = useMemo(() => Object.values(segments), [segments]);
+  const stationList = useMemo(() => Object.values(stations), [stations]);
   const selected = selectedId ? segments[selectedId] : null;
   const cameraClass = cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
 
+  const handleSegmentClick = useCallback(
+    (id: string) => setSelectedSegment(id === selectedId ? null : id),
+    [selectedId, setSelectedSegment],
+  );
+  const handleStationClick = useCallback(
+    (id: string) => setSelectedStation(id === selectedStationId ? null : id),
+    [selectedStationId, setSelectedStation],
+  );
+
+  // Listeners are (re)subscribed only when a drag session starts/ends, not on
+  // every pointermove — re-subscribing per pixel of movement was causing the
+  // stutter/stuck feeling while carrying the field-inspector figure across
+  // the screen, since it also forced the whole map+deck.gl tree to re-render.
   useEffect(() => {
-    if (!dragPoint) return;
+    if (!isDragging) return;
 
     const handlePointerMove = (event: PointerEvent) => {
       setDragPoint({ x: event.clientX, y: event.clientY });
     };
 
     const handlePointerUp = (event: PointerEvent) => {
+      setIsDragging(false);
       setDragPoint(null);
       window.dispatchEvent(
         new CustomEvent("field-inspection-drop", {
@@ -54,13 +70,26 @@ export default function MapStage() {
       );
     };
 
+    // A pointercancel (touch scroll takeover, OS gesture, stylus hover loss)
+    // or the window losing focus (alt-tab, devtools) never fires pointerup —
+    // without this the drag would stay "stuck" active until a stray pointerup
+    // happened to land somewhere, which is what made it feel unresponsive.
+    const abortDrag = () => {
+      setIsDragging(false);
+      setDragPoint(null);
+    };
+
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", abortDrag, { once: true });
+    window.addEventListener("blur", abortDrag);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", abortDrag);
+      window.removeEventListener("blur", abortDrag);
     };
-  }, [dragPoint]);
+  }, [isDragging]);
 
   return (
     <div className={styles.wrap}>
@@ -98,6 +127,7 @@ export default function MapStage() {
             onPointerDown={(event) => {
               event.preventDefault();
               setDragPoint({ x: event.clientX, y: event.clientY });
+              setIsDragging(true);
             }}
           >
             <PersonStanding size={19} />
@@ -117,9 +147,9 @@ export default function MapStage() {
         <div className={`${styles.camera} ${cameraClass}`}>
           <NetworkGraph
             segments={segmentList}
-            stations={Object.values(stations)}
-            onSegmentClick={(id) => setSelectedSegment(id === selectedId ? null : id)}
-            onStationClick={(id) => setSelectedStation(id === selectedStationId ? null : id)}
+            stations={stationList}
+            onSegmentClick={handleSegmentClick}
+            onStationClick={handleStationClick}
             selectedSegmentId={selectedId}
             selectedStationId={selectedStationId}
             displayMode={displayMode}

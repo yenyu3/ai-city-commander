@@ -4,6 +4,7 @@ import type {
   AlertRecord,
   ChatMessage,
   CrowdSnapshot,
+  FieldInspectorPosition,
   LiveIncident,
   ReasoningStep,
   RoadPathDef,
@@ -112,6 +113,7 @@ interface AppState {
   alerts: AlertRecord[];
   reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
+  fieldInspectorPosition: FieldInspectorPosition | null;
 
   init(): Promise<void>;
   play(): void;
@@ -125,6 +127,7 @@ interface AppState {
   toggleMapExpanded(): void;
   setSelectedSegment(id: string | null): void;
   setSelectedStation(id: string | null): void;
+  setFieldInspectorPosition(position: FieldInspectorPosition | null): void;
 }
 
 function computeSegmentState(
@@ -327,6 +330,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   reasoningLog: [],
   chatMessages: [],
+  fieldInspectorPosition: null,
 
   async init() {
     try {
@@ -725,5 +729,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedStation(id) {
     set({ selectedStationId: id, selectedSegmentId: null });
+  },
+
+  setFieldInspectorPosition(position) {
+    set({ fieldInspectorPosition: position });
   },
 }));

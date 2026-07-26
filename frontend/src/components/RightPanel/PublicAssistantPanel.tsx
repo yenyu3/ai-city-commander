@@ -8,6 +8,7 @@ import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { getPublicAlertText } from "../../utils/publicView";
 import { formatDisplayShortTime } from "../../utils/timeUtils";
 import CollapsibleSection from "../common/CollapsibleSection";
+import FieldPositionHint from "../common/FieldPositionHint";
 import styles from "./PublicAssistantPanel.module.css";
 
 type Tone = "ok" | "warn" | "crit";
@@ -114,6 +115,7 @@ export default function PublicAssistantPanel() {
     <div className={styles.wrap}>
       <div className={styles.heroCard}>
         <span className={styles.title}>{pick(language, "目前狀態", "Current Status")}</span>
+        <FieldPositionHint />
         <div className={styles.heroHead}>
           <span className={styles.heroKind}>{heroKindLabel}</span>
         </div>

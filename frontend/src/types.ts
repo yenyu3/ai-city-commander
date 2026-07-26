@@ -122,6 +122,13 @@ export interface AlertRecord {
   reasoningSteps?: ReasoningStep[];
 }
 
+export interface FieldInspectorPosition {
+  lng: number;
+  lat: number;
+  nearestRoadId: string | null;
+  nearestRoadName: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";

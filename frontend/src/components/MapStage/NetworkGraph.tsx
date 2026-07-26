@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AttributionControl, Map, Marker, useControl, type MapRef } from "react-map-gl/mapbox";
 import { MapboxOverlay } from "@deck.gl/mapbox";
 import type { Map as MapboxMap } from "mapbox-gl";
@@ -15,9 +15,9 @@ import {
 import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
-import { PersonStanding, X } from "lucide-react";
+import { PersonStanding } from "lucide-react";
 import { withElevation } from "./geometry";
-import type { SegmentRuntimeState, StationRuntimeState } from "../../store/appStore";
+import { useAppStore, type SegmentRuntimeState, type StationRuntimeState } from "../../store/appStore";
 import type { RoadPathDef, ViewerMode } from "../../types";
 import { pick, type Language } from "../../i18n";
 import styles from "./NetworkGraph.module.css";
@@ -197,7 +197,7 @@ function addBuildingLayer(map: MapboxMap) {
   );
 }
 
-export default function NetworkGraph({
+function NetworkGraph({
   segments,
   stations,
   onSegmentClick,
@@ -216,6 +216,7 @@ export default function NetworkGraph({
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
   const [inspectionPoint, setInspectionPoint] = useState<InspectionPoint | null>(null);
+  const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
 
   useEffect(() => {
     let frame = 0;
@@ -337,6 +338,24 @@ export default function NetworkGraph({
 
   const maxVehicleCount = Math.max(1, ...roads.map((road) => road.vehicleCount));
 
+  const placeInspectionPoint = useCallback(
+    (lng: number, lat: number) => {
+      const position: Position = [lng, lat, 58];
+      const nearestRoad = findNearestRoad(position, roads);
+      setInspectionPoint({ position, nearestRoad });
+      // Position is handed off to the store (not shown as a popup) so the
+      // decision-summary panel and, eventually, the backend judgement call
+      // can pick it up without interrupting the operator's placement flow.
+      setFieldInspectorPosition({
+        lng,
+        lat,
+        nearestRoadId: nearestRoad?.segmentId ?? null,
+        nearestRoadName: nearestRoad?.name ?? null,
+      });
+    },
+    [roads, setFieldInspectorPosition],
+  );
+
   useEffect(() => {
     const handleInspectionDrop = (event: Event) => {
       const detail = (event as CustomEvent<{ clientX: number; clientY: number }>).detail;
@@ -355,16 +374,12 @@ export default function NetworkGraph({
       }
 
       const lngLat = map.unproject([detail.clientX - rect.left, detail.clientY - rect.top]);
-      const position: Position = [lngLat.lng, lngLat.lat, 58];
-      setInspectionPoint({
-        position,
-        nearestRoad: findNearestRoad(position, roads),
-      });
+      placeInspectionPoint(lngLat.lng, lngLat.lat);
     };
 
     window.addEventListener("field-inspection-drop", handleInspectionDrop);
     return () => window.removeEventListener("field-inspection-drop", handleInspectionDrop);
-  }, [roads]);
+  }, [placeInspectionPoint]);
 
   const layers = useMemo<Layer[]>(() => {
     const routeLayers: Layer[] = [
@@ -577,48 +592,18 @@ export default function NetworkGraph({
             longitude={inspectionPoint.position[0]}
             latitude={inspectionPoint.position[1]}
             anchor="bottom"
+            draggable
+            onDragEnd={(event) => placeInspectionPoint(event.lngLat.lng, event.lngLat.lat)}
           >
-            <div className={styles.inspectionMarker} aria-label="Field inspection position">
+            <div className={styles.inspectionMarker} aria-label="Field inspection position, drag to reposition">
               <PersonStanding size={24} />
             </div>
           </Marker>
         )}
       </Map>
       <div className={styles.vignette} />
-      {inspectionPoint && (
-        <div className={styles.inspectionPanel}>
-          <div className={styles.inspectionHeader}>
-            <strong>Field inspection</strong>
-            <button type="button" onClick={() => setInspectionPoint(null)} aria-label="Clear field inspection">
-              <X size={14} />
-            </button>
-          </div>
-          <dl>
-            <div>
-              <dt>Position</dt>
-              <dd>
-                {inspectionPoint.position[1].toFixed(5)}, {inspectionPoint.position[0].toFixed(5)}
-              </dd>
-            </div>
-            <div>
-              <dt>Nearest road</dt>
-              <dd>{inspectionPoint.nearestRoad?.name ?? "No road nearby"}</dd>
-            </div>
-            <div>
-              <dt>Traffic</dt>
-              <dd>
-                {inspectionPoint.nearestRoad
-                  ? `${inspectionPoint.nearestRoad.tier} tier · ${inspectionPoint.nearestRoad.vehicleCount.toLocaleString()} vehicles`
-                  : "Awaiting signal"}
-              </dd>
-            </div>
-            <div>
-              <dt>Fire context</dt>
-              <dd>{inspectionPoint.nearestRoad?.isIncidentSource ? "Incident source nearby" : "Ready for fire report"}</dd>
-            </div>
-          </dl>
-        </div>
-      )}
     </div>
   );
 }
+
+export default memo(NetworkGraph);
