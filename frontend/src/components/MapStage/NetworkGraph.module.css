@@ -141,6 +141,9 @@
     0 0 0 5px rgba(232, 91, 108, 0.18);
   transform: translateY(-2px);
   cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
 .inspectionMarker:active {

@@ -39,6 +39,7 @@ export interface NetworkGraphProps {
   mapCenter: [number, number];
   viewerMode: ViewerMode;
   language: Language;
+  pauseAnimation?: boolean;
 }
 
 function roadRiskLabel(tier: string, language: Language): string {
@@ -78,11 +79,6 @@ interface StationPoint {
 interface HeatPoint {
   position: Position;
   weight: number;
-}
-
-interface InspectionPoint {
-  position: Position;
-  nearestRoad: RoadPath | null;
 }
 
 const MAPBOX_TOKEN = import.meta.env.VITE_MAPBOX_TOKEN as string | undefined;
@@ -211,14 +207,17 @@ function NetworkGraph({
   mapCenter,
   viewerMode,
   language,
+  pauseAnimation = false,
 }: NetworkGraphProps) {
   const containerRef = useRef<HTMLDivElement>(null);
   const mapRef = useRef<MapRef>(null);
   const [currentTime, setCurrentTime] = useState(34);
-  const [inspectionPoint, setInspectionPoint] = useState<InspectionPoint | null>(null);
+  const [isMarkerDragging, setIsMarkerDragging] = useState(false);
+  const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
   const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
 
   useEffect(() => {
+    if (pauseAnimation || isMarkerDragging) return;
     let frame = 0;
     let raf = 0;
     const tick = () => {
@@ -228,7 +227,7 @@ function NetworkGraph({
     };
     raf = requestAnimationFrame(tick);
     return () => cancelAnimationFrame(raf);
-  }, []);
+  }, [isMarkerDragging, pauseAnimation]);
 
   useEffect(() => {
     const map = mapRef.current?.getMap();
@@ -340,12 +339,13 @@ function NetworkGraph({
 
   const placeInspectionPoint = useCallback(
     (lng: number, lat: number) => {
-      const position: Position = [lng, lat, 58];
-      const nearestRoad = findNearestRoad(position, roads);
-      setInspectionPoint({ position, nearestRoad });
+      const nearestRoad = findNearestRoad([lng, lat, 58], roads);
       // Position is handed off to the store (not shown as a popup) so the
       // decision-summary panel and, eventually, the backend judgement call
       // can pick it up without interrupting the operator's placement flow.
+      // The store is also the single source of truth for the marker itself
+      // (see the Marker render below), so the toolbar button can remove it
+      // by clearing the store without NetworkGraph needing to know about it.
       setFieldInspectorPosition({
         lng,
         lat,
@@ -587,13 +587,17 @@ function NetworkGraph({
           layers={layers}
           getTooltip={tooltip}
         />
-        {inspectionPoint && (
+        {fieldInspectorPosition && (
           <Marker
-            longitude={inspectionPoint.position[0]}
-            latitude={inspectionPoint.position[1]}
+            longitude={fieldInspectorPosition.lng}
+            latitude={fieldInspectorPosition.lat}
             anchor="bottom"
             draggable
-            onDragEnd={(event) => placeInspectionPoint(event.lngLat.lng, event.lngLat.lat)}
+            onDragStart={() => setIsMarkerDragging(true)}
+            onDragEnd={(event) => {
+              setIsMarkerDragging(false);
+              placeInspectionPoint(event.lngLat.lng, event.lngLat.lat);
+            }}
           >
             <div className={styles.inspectionMarker} aria-label="Field inspection position, drag to reposition">
               <PersonStanding size={24} />

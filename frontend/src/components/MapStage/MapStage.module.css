@@ -77,6 +77,7 @@
 .activeIconBtn,
 .pegmanBtn,
 .activePegmanBtn {
+  position: relative;
   width: var(--icon-btn-lg);
   height: var(--icon-btn-lg);
   display: inline-flex;
@@ -113,8 +114,24 @@
   cursor: grabbing;
 }
 
+/* Small dot hints that a figure is already on the map and a tap will
+   remove it instead of dropping a new one. */
+.pegmanBtnPlaced::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--crit), transparent 8%);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
 .dragGhost {
   position: fixed;
+  left: 0;
+  top: 0;
   z-index: 60;
   width: 48px;
   height: 48px;
@@ -126,8 +143,9 @@
   color: var(--text);
   box-shadow: var(--shadow-lg);
   pointer-events: none;
-  transform: translate(-50%, -50%);
+  transform: translate3d(-100vw, -100vh, 0) translate(-50%, -50%);
   backdrop-filter: blur(12px);
+  will-change: transform;
 }
 
 .mode,
