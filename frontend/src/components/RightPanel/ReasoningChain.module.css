@@ -57,43 +57,14 @@
   line-height: 1.2;
 }
 
-.toggle {
-  display: inline-flex;
-  align-items: center;
-  gap: 6px;
-  align-self: flex-start;
-  background: color-mix(in srgb, var(--cyan), transparent 91%);
-  border: 0;
-  border-radius: 999px;
-  padding: 5px 10px;
-  font-family: var(--font-nav);
-  font-size: var(--text-sm);
-  font-weight: 600;
-  color: var(--cyan);
-}
-.toggle:hover {
-  background: color-mix(in srgb, var(--cyan), transparent 86%);
-}
-
 .steps {
   position: relative;
   list-style: none;
   margin: 0;
   padding: 2px 0 0;
-  overflow-y: auto;
   display: flex;
   flex-direction: column;
   gap: 0;
-}
-
-.steps::before {
-  content: "";
-  position: absolute;
-  left: 14px;
-  top: 20px;
-  bottom: 18px;
-  width: 1px;
-  background: color-mix(in srgb, var(--text), transparent 91%);
 }
 
 .step {
@@ -101,12 +72,17 @@
   display: flex;
   gap: 11px;
   padding: 9px 0 11px;
-  border-bottom: 1px solid color-mix(in srgb, var(--text), transparent 95%);
   animation: slideIn 0.25s ease both;
-  transition: background var(--transition-fast);
 }
-.step:hover {
-  background: transparent;
+
+.step:not(:last-child)::after {
+  content: "";
+  position: absolute;
+  left: 14px;
+  top: 39px;
+  bottom: -5px;
+  width: 1px;
+  background: color-mix(in srgb, var(--text), transparent 92%);
 }
 
 @keyframes slideIn {

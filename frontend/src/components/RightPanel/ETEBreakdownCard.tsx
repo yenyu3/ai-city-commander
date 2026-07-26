@@ -1,6 +1,6 @@
 import type { CSSProperties } from "react";
 import { useEffect, useRef, useState } from "react";
-import { AlertTriangle, TimerReset } from "lucide-react";
+import { TimerReset } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ETEBreakdownCard.module.css";
@@ -39,7 +39,6 @@ export default function ETEBreakdownCard() {
   if (!latest || latest.ete === undefined) return null;
 
   const finalStep = latest.reasoningSteps?.find((s) => s.status === "final");
-  const congestionWarning = latest.ruleSummary.includes("併行大眾運輸") || finalStep?.detail.includes("congestion");
 
   const base = latest.eteBase ?? 0;
   const penalty = latest.etePenalty ?? 0;
@@ -85,17 +84,10 @@ export default function ETEBreakdownCard() {
         )}
       </div>
 
-      {latest.eteBase !== undefined && (
-        <div className={styles.caption}>
-          {pick(language, "環形比例顯示時間來源：藍色為清空時間，黃色為壅塞延誤。", "Ring split shows time source: blue for clearance, yellow for congestion delay.")}
-        </div>
-      )}
-
-      {finalStep && <div className={styles.formula}>{finalStep.detail}</div>}
-      {congestionWarning && (
-        <div className={styles.warning}>
-          <AlertTriangle size={14} aria-hidden="true" />
-          {pick(language, "疏散路徑亦壅塞，建議併行大眾運輸", "Evacuation route also congested; recommend parallel transit")}
+      {finalStep && (
+        <div className={styles.formula}>
+          <span>{pick(language, "依據", "Basis")}</span>
+          <p>{finalStep.detail}</p>
         </div>
       )}
     </div>

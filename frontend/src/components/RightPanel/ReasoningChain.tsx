@@ -1,21 +1,14 @@
-import { useState } from "react";
-import { ChevronDown, ChevronUp } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ReasoningChain.module.css";
 
-const DEFAULT_VISIBLE_STEPS = 3;
-
 export default function ReasoningChain() {
   const reasoningLog = useAppStore((s) => s.reasoningLog);
   const { language } = useLanguage();
-  const [expanded, setExpanded] = useState(false);
 
   const sorted = reasoningLog.slice().sort((a, b) => a.order - b.order);
   const finalStep = sorted.find((s) => s.status === "final");
   const otherSteps = sorted.filter((s) => s !== finalStep);
-  const visibleSteps = expanded ? otherSteps : otherSteps.slice(0, DEFAULT_VISIBLE_STEPS);
-  const hiddenCount = Math.max(0, otherSteps.length - visibleSteps.length);
   const statusLabel = (status: string) => {
     if (status === "pass") return pick(language, "通過", "Pass");
     if (status === "fail") return pick(language, "排除", "Excluded");
@@ -52,7 +45,7 @@ export default function ReasoningChain() {
 
           {otherSteps.length > 0 && (
             <ol className={styles.steps}>
-              {visibleSteps.map((step, index) => (
+              {otherSteps.map((step, index) => (
                 <li key={step.order} className={styles.step}>
                   <span className={`${styles.number} ${styles[`number_${step.status}`]}`}>
                     {index + 1}
@@ -70,20 +63,6 @@ export default function ReasoningChain() {
                 </li>
               ))}
             </ol>
-          )}
-
-          {otherSteps.length > DEFAULT_VISIBLE_STEPS && (
-            <button
-              type="button"
-              className={styles.toggle}
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-            >
-              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
-              {expanded
-                ? pick(language, "收合推理步驟", "Collapse steps")
-                : pick(language, `展開其餘 ${hiddenCount} 步`, `Show ${hiddenCount} more steps`)}
-            </button>
           )}
         </>
       )}
