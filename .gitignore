@@ -51,4 +51,6 @@ test-results/
 *-check.png
 screenshot*.png
 
-__pycache__/*
+# Python bytecode caches at any directory depth
+__pycache__/
+*.py[cod]
