@@ -4,12 +4,7 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ReasoningChain.module.css";
 
-const STATUS_ICON: Record<string, string> = {
-  pass: "✓",
-  fail: "✕",
-  final: "★",
-  info: "ℹ",
-};
+const DEFAULT_VISIBLE_STEPS = 3;
 
 export default function ReasoningChain() {
   const reasoningLog = useAppStore((s) => s.reasoningLog);
@@ -19,10 +14,21 @@ export default function ReasoningChain() {
   const sorted = reasoningLog.slice().sort((a, b) => a.order - b.order);
   const finalStep = sorted.find((s) => s.status === "final");
   const otherSteps = sorted.filter((s) => s !== finalStep);
+  const visibleSteps = expanded ? otherSteps : otherSteps.slice(0, DEFAULT_VISIBLE_STEPS);
+  const hiddenCount = Math.max(0, otherSteps.length - visibleSteps.length);
+  const statusLabel = (status: string) => {
+    if (status === "pass") return pick(language, "通過", "Pass");
+    if (status === "fail") return pick(language, "排除", "Excluded");
+    if (status === "final") return pick(language, "結論", "Final");
+    return pick(language, "檢核", "Check");
+  };
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.title}>{pick(language, "推理鏈", "Reasoning Chain")}</div>
+      <div className={styles.header}>
+        <div className={styles.title}>{pick(language, "推理步驟", "Reasoning Steps")}</div>
+        {otherSteps.length > 0 && <span className={styles.count}>{otherSteps.length}</span>}
+      </div>
       {sorted.length === 0 ? (
         <div className={styles.empty}>
           {pick(
@@ -35,7 +41,7 @@ export default function ReasoningChain() {
         <>
           {finalStep && (
             <div className={styles.conclusion}>
-              <span className={`${styles.icon} ${styles.icon_final}`}>{STATUS_ICON.final}</span>
+              <span className={styles.conclusionLabel}>{pick(language, "決策結論", "Decision")}</span>
               <div className={styles.body}>
                 <div className={styles.stepTitle}>{finalStep.title}</div>
                 <div className={styles.stepDetail}>{finalStep.detail}</div>
@@ -45,34 +51,39 @@ export default function ReasoningChain() {
           )}
 
           {otherSteps.length > 0 && (
-            <button
-              type="button"
-              className={styles.toggle}
-              onClick={() => setExpanded((v) => !v)}
-              aria-expanded={expanded}
-            >
-              {expanded ? <ChevronUp size={13} /> : <ChevronDown size={13} />}
-              {expanded
-                ? pick(language, "收合推理步驟", "Collapse steps")
-                : pick(language, `查看完整推理過程（${otherSteps.length} 步）`, `View full reasoning (${otherSteps.length} steps)`)}
-            </button>
-          )}
-
-          {expanded && (
             <ol className={styles.steps}>
-              {otherSteps.map((step) => (
+              {visibleSteps.map((step, index) => (
                 <li key={step.order} className={styles.step}>
-                  <span className={`${styles.icon} ${styles[`icon_${step.status}`]}`}>
-                    {STATUS_ICON[step.status]}
+                  <span className={`${styles.number} ${styles[`number_${step.status}`]}`}>
+                    {index + 1}
                   </span>
                   <div className={styles.body}>
-                    <div className={styles.stepTitle}>{step.title}</div>
+                    <div className={styles.stepHead}>
+                      <div className={styles.stepTitle}>{step.title}</div>
+                      <span className={`${styles.status} ${styles[`status_${step.status}`]}`}>
+                        {statusLabel(step.status)}
+                      </span>
+                    </div>
                     <div className={styles.stepDetail}>{step.detail}</div>
                     {step.sopRef && <div className={styles.sopRef}>{step.sopRef}</div>}
                   </div>
                 </li>
               ))}
             </ol>
+          )}
+
+          {otherSteps.length > DEFAULT_VISIBLE_STEPS && (
+            <button
+              type="button"
+              className={styles.toggle}
+              onClick={() => setExpanded((v) => !v)}
+              aria-expanded={expanded}
+            >
+              {expanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
+              {expanded
+                ? pick(language, "收合推理步驟", "Collapse steps")
+                : pick(language, `展開其餘 ${hiddenCount} 步`, `Show ${hiddenCount} more steps`)}
+            </button>
           )}
         </>
       )}

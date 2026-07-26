@@ -29,8 +29,8 @@ export default function DecisionTab() {
   return (
     <div className={styles.wrap}>
       <DecisionSummary />
-      <ReasoningChain />
       <ETEBreakdownCard />
+      <ReasoningChain />
 
       <CollapsibleSection
         storageKey="decision-multilingual"
