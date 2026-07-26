@@ -27,7 +27,7 @@
   right: 4px;
   bottom: 0;
   height: 2px;
-  background: var(--cyan);
+  background: var(--text);
   width: 0;
   margin: 0 auto;
   transition: width var(--transition-fast);

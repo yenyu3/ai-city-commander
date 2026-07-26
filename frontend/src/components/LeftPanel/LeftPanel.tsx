@@ -1,4 +1,5 @@
 import { useMemo } from "react";
+import { ChevronDown } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import Legend from "./Legend";
@@ -69,10 +70,12 @@ export default function SituationTab() {
         <span className={styles.riskValue}>{riskSource.value}</span>
         <div className={styles.riskLinks}>
           <a href="#section-roads" className={styles.riskLink} onClick={(e) => scrollToAnchor(e, "section-roads")}>
-            {pick(language, "查看路段 ↓", "View roads ↓")}
+            <span>{pick(language, "查看路段", "View roads")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#section-crowd" className={styles.riskLink} onClick={(e) => scrollToAnchor(e, "section-crowd")}>
-            {pick(language, "查看人流 ↓", "View crowd ↓")}
+            <span>{pick(language, "查看人流", "View crowd")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
           </a>
         </div>
       </div>
