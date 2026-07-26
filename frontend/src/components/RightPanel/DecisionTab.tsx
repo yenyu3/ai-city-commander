@@ -30,26 +30,32 @@ export default function DecisionTab() {
     <div className={styles.wrap}>
       <DecisionSummary />
       <ETEBreakdownCard />
-      <ReasoningChain />
+      <section id="decision-reasoning" className={styles.section}>
+        <ReasoningChain />
+      </section>
 
-      <CollapsibleSection
-        storageKey="decision-multilingual"
-        className={styles.collapsible}
-        title={
-          pick(language, "多語警示", "Multilingual alerts") +
-          (multilingualCount > 0 ? ` (${multilingualCount})` : "")
-        }
-      >
-        <MultilingualPreview />
-      </CollapsibleSection>
+      <section id="decision-multilingual" className={styles.section}>
+        <CollapsibleSection
+          storageKey="decision-multilingual"
+          className={styles.collapsible}
+          title={
+            pick(language, "多語警示", "Multilingual alerts") +
+            (multilingualCount > 0 ? ` (${multilingualCount})` : "")
+          }
+        >
+          <MultilingualPreview />
+        </CollapsibleSection>
+      </section>
 
-      <CollapsibleSection
-        storageKey="decision-alert-log"
-        className={styles.collapsible}
-        title={pick(language, "查看完整事件紀錄", "Full alert log")}
-      >
-        <AlertLogList />
-      </CollapsibleSection>
+      <section id="decision-alert-log" className={styles.section}>
+        <CollapsibleSection
+          storageKey="decision-alert-log"
+          className={styles.collapsible}
+          title={pick(language, "查看完整事件紀錄", "Full alert log")}
+        >
+          <AlertLogList />
+        </CollapsibleSection>
+      </section>
     </div>
   );
 }

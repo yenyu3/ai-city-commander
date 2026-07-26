@@ -14,8 +14,8 @@
   display: flex;
   flex-direction: column;
   gap: 6px;
-  width: max-content;
-  max-width: 260px;
+  width: min(300px, calc(100vw - 28px));
+  max-width: min(300px, calc(100vw - 28px));
   padding: 10px;
   background: var(--panel);
   border: 1px solid var(--soft-border);
@@ -29,6 +29,11 @@
 }
 
 .option {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr);
+  align-items: start;
+  gap: 6px;
+  width: 100%;
   text-align: left;
   background: transparent;
   border: 1px solid var(--soft-border);
@@ -36,8 +41,19 @@
   border-radius: var(--radius-sm);
   padding: 6px 10px;
   font-size: var(--text-base);
-  white-space: nowrap;
+  line-height: 1.35;
+  white-space: normal;
   transition: border-color var(--transition-fast), color var(--transition-fast);
+}
+
+.optionIcon {
+  line-height: 1.35;
+  text-align: center;
+}
+
+.optionText {
+  min-width: 0;
+  overflow-wrap: anywhere;
 }
 .option:hover:not(:disabled) {
   border-color: var(--crit);

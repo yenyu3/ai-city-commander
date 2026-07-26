@@ -54,7 +54,6 @@ export default function ETEBreakdownCard() {
     <div className={styles.card}>
       <div className={styles.header}>
         <div className={styles.title}>{pick(language, "預計恢復時間", "Estimated Recovery")}</div>
-        <span className={styles.badge}>ETE</span>
       </div>
 
       <div className={styles.estimateRow}>

@@ -56,8 +56,8 @@ export default function InjectIncidentButton() {
                   setShowMenu(false);
                 }}
               >
-                {injected ? "✓ " : "⚠ "}
-                {incident.location}
+                <span className={styles.optionIcon}>{injected ? "✓" : "⚠"}</span>
+                <span className={styles.optionText}>{incident.location}</span>
               </button>
             );
           })}

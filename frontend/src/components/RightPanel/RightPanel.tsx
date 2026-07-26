@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useLayoutEffect, useRef, useState } from "react";
 import { Bot, LayoutDashboard, ShieldCheck } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
@@ -15,9 +15,22 @@ type TabKey = "situation" | "decision";
 
 export default function RightPanel() {
   const [tab, setTab] = useState<TabKey>("situation");
+  const tabRef = useRef<TabKey>("situation");
+  const tabContentRef = useRef<HTMLDivElement>(null);
+  const scrollPositions = useRef<Record<TabKey, number>>({
+    situation: 0,
+    decision: 0,
+  });
   const { language } = useLanguage();
   const viewerMode = useAppStore((s) => s.viewerMode);
   const roomTitle = pick(language, "城市情報室", "City Intelligence Room");
+
+  useLayoutEffect(() => {
+    const node = tabContentRef.current;
+    if (!node) return;
+    node.scrollTop = scrollPositions.current[tab] ?? 0;
+    tabRef.current = tab;
+  }, [tab]);
 
   if (viewerMode === "public") {
     return (
@@ -33,6 +46,14 @@ export default function RightPanel() {
     { key: "decision", label: pick(language, "AI 決策", "AI Decision") },
   ];
 
+  const handleTabChange = (next: TabKey) => {
+    const node = tabContentRef.current;
+    if (node) {
+      scrollPositions.current[tabRef.current] = node.scrollTop;
+    }
+    setTab(next);
+  };
+
   return (
     <div className={styles.tabWrap}>
       <PanelHeader
@@ -45,8 +66,8 @@ export default function RightPanel() {
           </>
         }
       />
-      <TabBar tabs={TABS} active={tab} onChange={setTab} className={styles.tabBar} />
-      <div className={styles.tabContent}>
+      <TabBar tabs={TABS} active={tab} onChange={handleTabChange} className={styles.tabBar} />
+      <div className={styles.tabContent} ref={tabContentRef}>
         {tab === "situation" && <SituationTab />}
         {tab === "decision" && <DecisionTab />}
       </div>
