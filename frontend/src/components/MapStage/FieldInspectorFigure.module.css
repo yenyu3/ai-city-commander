@@ -59,6 +59,10 @@
   transform-origin: 50% 0%;
 }
 
+.headGroup {
+  transform-box: fill-box;
+}
+
 .torsoSheen {
   fill: #ffffff;
   opacity: 0.32;
@@ -103,6 +107,51 @@
 
 .swingB {
   animation: figureSwingB 0.42s ease-in-out infinite;
+}
+
+.idleStepLegA {
+  animation: figureIdleStepLegA 1.9s ease-in-out infinite;
+}
+
+.idleStepLegB {
+  animation: figureIdleStepLegB 1.9s ease-in-out infinite;
+}
+
+.idleStepArmA {
+  animation: figureIdleStepArmA 1.9s ease-in-out infinite;
+}
+
+.idleStepArmB {
+  animation: figureIdleStepArmB 1.9s ease-in-out infinite;
+}
+
+.idleStepShadow {
+  animation: figureIdleStepShadow 1.9s ease-in-out infinite;
+}
+
+.hopBody {
+  transform-origin: 22px 44px;
+  animation: figureHopBody 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hopLegA {
+  animation: figureHopLegA 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hopLegB {
+  animation: figureHopLegB 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hopArmA {
+  animation: figureHopArmA 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hopArmB {
+  animation: figureHopArmB 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+.hopShadow {
+  animation: figureHopShadow 2.6s cubic-bezier(0.34, 1.56, 0.64, 1) both;
 }
 
 .siuBody {
@@ -158,10 +207,16 @@
 @keyframes figureIdleBob {
   0%,
   100% {
-    transform: translateY(0);
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-0.8px) rotate(-1.8deg);
   }
   50% {
-    transform: translateY(-1.3px);
+    transform: translateY(-1.5px) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-0.8px) rotate(1.8deg);
   }
 }
 
@@ -204,6 +259,187 @@
   50% {
     transform: scale(0.8, 0.78);
     opacity: 0.48;
+  }
+}
+
+@keyframes figureIdleStepLegA {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  35% {
+    transform: translateY(-1.4px) rotate(-8deg);
+  }
+  70% {
+    transform: translateY(0.7px) rotate(5deg);
+  }
+}
+
+@keyframes figureIdleStepLegB {
+  0%,
+  100% {
+    transform: translateY(0.7px) rotate(5deg);
+  }
+  35% {
+    transform: translateY(0) rotate(0deg);
+  }
+  70% {
+    transform: translateY(-1.4px) rotate(-8deg);
+  }
+}
+
+@keyframes figureIdleStepArmA {
+  0%,
+  100% {
+    transform: rotate(3deg);
+  }
+  50% {
+    transform: rotate(-7deg);
+  }
+}
+
+@keyframes figureIdleStepArmB {
+  0%,
+  100% {
+    transform: rotate(-3deg);
+  }
+  50% {
+    transform: rotate(7deg);
+  }
+}
+
+@keyframes figureIdleStepShadow {
+  0%,
+  100% {
+    transform: scale(1, 1);
+    opacity: 0.82;
+  }
+  50% {
+    transform: scale(0.92, 0.86);
+    opacity: 0.62;
+  }
+}
+
+@keyframes figureHopBody {
+  0%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+  12% {
+    transform: translateY(1.8px) scale(1.08, 0.9);
+  }
+  32% {
+    transform: translateY(-14px) scale(0.94, 1.08);
+  }
+  52% {
+    transform: translateY(1px) scale(1.08, 0.92);
+  }
+  64% {
+    transform: translateY(-2px) scale(0.98, 1.03);
+  }
+  78%,
+  100% {
+    transform: translateY(0) scale(1, 1);
+  }
+}
+
+@keyframes figureHopLegA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12% {
+    transform: rotate(2deg);
+  }
+  32% {
+    transform: rotate(0deg);
+  }
+  52% {
+    transform: rotate(2deg);
+  }
+  78% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureHopLegB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12% {
+    transform: rotate(-2deg);
+  }
+  32% {
+    transform: rotate(0deg);
+  }
+  52% {
+    transform: rotate(-2deg);
+  }
+  78% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureHopArmA {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12% {
+    transform: rotate(5deg);
+  }
+  32% {
+    transform: rotate(-10deg);
+  }
+  52% {
+    transform: rotate(5deg);
+  }
+  78% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureHopArmB {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  12% {
+    transform: rotate(-5deg);
+  }
+  32% {
+    transform: rotate(10deg);
+  }
+  52% {
+    transform: rotate(-5deg);
+  }
+  78% {
+    transform: rotate(0deg);
+  }
+}
+
+@keyframes figureHopShadow {
+  0%,
+  100% {
+    transform: scale(1, 1);
+    opacity: 0.85;
+  }
+  12% {
+    transform: scale(1.08, 0.88);
+    opacity: 0.92;
+  }
+  32% {
+    transform: scale(0.52, 0.46);
+    opacity: 0.28;
+  }
+  52% {
+    transform: scale(1.2, 1.06);
+    opacity: 0.94;
+  }
+  78% {
+    transform: scale(1, 1);
+    opacity: 0.85;
   }
 }
 
@@ -493,6 +729,17 @@
   .swingA,
   .swingB,
   .shadowPulse,
+  .idleStepLegA,
+  .idleStepLegB,
+  .idleStepArmA,
+  .idleStepArmB,
+  .idleStepShadow,
+  .hopBody,
+  .hopLegA,
+  .hopLegB,
+  .hopArmA,
+  .hopArmB,
+  .hopShadow,
   .siuBody,
   .siuLegA,
   .siuLegB,

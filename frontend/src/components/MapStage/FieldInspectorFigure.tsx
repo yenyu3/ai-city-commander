@@ -16,11 +16,17 @@ export interface FieldInspectorFigureProps {
 
 const VIEW_W = 44;
 const VIEW_H = 58;
-const CELEBRATION_MIN_DELAY_MS = 15000;
-const CELEBRATION_JITTER_MS = 5000;
+const SPECIAL_MOVE_MIN_DELAY_MS = 10000;
+const SPECIAL_MOVE_JITTER_MS = 5000;
 const CELEBRATION_ANIM_MS = 2600;
 
-type Celebration = "siu" | "bellingham";
+type SpecialMove = "hop" | "siu" | "bellingham";
+
+function nextSpecialMove(move: SpecialMove): SpecialMove {
+  if (move === "hop") return "siu";
+  if (move === "siu") return "bellingham";
+  return "hop";
+}
 
 export default function FieldInspectorFigure({
   size = 40,
@@ -30,27 +36,27 @@ export default function FieldInspectorFigure({
   className,
   "aria-label": ariaLabel,
 }: FieldInspectorFigureProps) {
-  const [celebration, setCelebration] = useState<Celebration | null>(null);
-  const nextCelebrationRef = useRef<Celebration>("siu");
+  const [specialMove, setSpecialMove] = useState<SpecialMove | null>(null);
+  const nextSpecialMoveRef = useRef<SpecialMove>("hop");
   const scheduleTimeoutRef = useRef<number | undefined>(undefined);
   const clearTimeoutRef = useRef<number | undefined>(undefined);
 
   useEffect(() => {
     if (!animated || walking) {
-      setCelebration(null);
+      setSpecialMove(null);
       window.clearTimeout(scheduleTimeoutRef.current);
       window.clearTimeout(clearTimeoutRef.current);
       return;
     }
 
     const scheduleNext = () => {
-      const delay = CELEBRATION_MIN_DELAY_MS + Math.random() * CELEBRATION_JITTER_MS;
+      const delay = SPECIAL_MOVE_MIN_DELAY_MS + Math.random() * SPECIAL_MOVE_JITTER_MS;
       scheduleTimeoutRef.current = window.setTimeout(() => {
-        const current = nextCelebrationRef.current;
-        setCelebration(current);
-        nextCelebrationRef.current = current === "siu" ? "bellingham" : "siu";
+        const current = nextSpecialMoveRef.current;
+        setSpecialMove(current);
+        nextSpecialMoveRef.current = nextSpecialMove(current);
         clearTimeoutRef.current = window.setTimeout(() => {
-          setCelebration(null);
+          setSpecialMove(null);
           scheduleNext();
         }, CELEBRATION_ANIM_MS);
       }, delay);
@@ -64,19 +70,20 @@ export default function FieldInspectorFigure({
     };
   }, [animated, walking]);
 
-  const isSiu = celebration === "siu";
-  const isBellingham = celebration === "bellingham";
-  const bobClass = !animated ? "" : walking ? styles.walkBob : celebration ? "" : styles.idleBob;
+  const isHop = specialMove === "hop";
+  const isSiu = specialMove === "siu";
+  const isBellingham = specialMove === "bellingham";
+  const isResting = animated && !walking && !specialMove;
+  const bobClass = !animated ? "" : walking ? styles.walkBob : specialMove ? "" : styles.idleBob;
 
   // Contralateral gait: each leg swings opposite the arm on the same side.
-  // Triggered celebrations alternate every 15-20s: Siu jumps/turns/lands
-  // open; Bellingham plants the feet and holds both arms wide.
-  const legClass = animated && walking ? styles.swingA : isSiu ? styles.siuLegA : isBellingham ? styles.bellinghamLegA : "";
-  const legClassAlt = animated && walking ? styles.swingB : isSiu ? styles.siuLegB : isBellingham ? styles.bellinghamLegB : "";
-  const armClass = animated && walking ? styles.swingB : isSiu ? styles.siuArmA : isBellingham ? styles.bellinghamArmA : "";
-  const armClassAlt = animated && walking ? styles.swingA : isSiu ? styles.siuArmB : isBellingham ? styles.bellinghamArmB : "";
-  const shadowClass = animated && walking ? styles.shadowPulse : isSiu ? styles.siuShadow : isBellingham ? styles.bellinghamShadow : "";
-  const bodyClass = isSiu ? styles.siuBody : isBellingham ? styles.bellinghamBody : "";
+  // Triggered special moves rotate every 10-15s: hop, Siu, then Bellingham.
+  const legClass = animated && walking ? styles.swingA : isHop ? styles.hopLegA : isSiu ? styles.siuLegA : isBellingham ? styles.bellinghamLegA : isResting ? styles.idleStepLegA : "";
+  const legClassAlt = animated && walking ? styles.swingB : isHop ? styles.hopLegB : isSiu ? styles.siuLegB : isBellingham ? styles.bellinghamLegB : isResting ? styles.idleStepLegB : "";
+  const armClass = animated && walking ? styles.swingB : isHop ? styles.hopArmA : isSiu ? styles.siuArmA : isBellingham ? styles.bellinghamArmA : isResting ? styles.idleStepArmA : "";
+  const armClassAlt = animated && walking ? styles.swingA : isHop ? styles.hopArmB : isSiu ? styles.siuArmB : isBellingham ? styles.bellinghamArmB : isResting ? styles.idleStepArmB : "";
+  const shadowClass = animated && walking ? styles.shadowPulse : isHop ? styles.hopShadow : isSiu ? styles.siuShadow : isBellingham ? styles.bellinghamShadow : isResting ? styles.idleStepShadow : "";
+  const bodyClass = isHop ? styles.hopBody : isSiu ? styles.siuBody : isBellingham ? styles.bellinghamBody : "";
 
   const character: ReactNode = (
     <g className={bodyClass}>
@@ -94,14 +101,16 @@ export default function FieldInspectorFigure({
         />
         <rect className={styles.torsoSheen} x={15.6} y={27.5} width={2.6} height={13} rx={1.3} />
 
-        <circle className={styles.head} cx={22} cy={19} r={9} />
-        <path className={styles.helmet} d="M12.5 15a9.5 9.5 0 0 1 19 0z" />
-        <ellipse className={styles.helmetBrim} cx={22} cy={15} rx={11} ry={1.8} />
-        <ellipse className={styles.helmetDot} cx={22} cy={8.4} rx={1.5} ry={1.2} />
+        <g className={styles.headGroup}>
+          <circle className={styles.head} cx={22} cy={19} r={9} />
+          <path className={styles.helmet} d="M12.5 15a9.5 9.5 0 0 1 19 0z" />
+          <ellipse className={styles.helmetBrim} cx={22} cy={15} rx={11} ry={1.8} />
+          <ellipse className={styles.helmetDot} cx={22} cy={8.4} rx={1.5} ry={1.2} />
 
-        <circle className={styles.eye} cx={18.4} cy={19.3} r={1.05} />
-        <circle className={styles.eye} cx={25.6} cy={19.3} r={1.05} />
-        <path className={styles.smile} d="M18.6 22.8c1.1 1.5 5.7 1.5 6.8 0" />
+          <circle className={styles.eye} cx={18.4} cy={19.3} r={1.05} />
+          <circle className={styles.eye} cx={25.6} cy={19.3} r={1.05} />
+          <path className={styles.smile} d="M18.6 22.8c1.1 1.5 5.7 1.5 6.8 0" />
+        </g>
 
         <g className={`${styles.limb} ${armClass}`}>
           <rect className={styles.arm} x={9} y={29} width={4.6} height={11} rx={2.3} />
