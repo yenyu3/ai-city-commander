@@ -68,8 +68,6 @@ export type Tier = "Normal" | "B" | "A";
 
 export type ViewerMode = "public" | "government";
 
-export type FocusZone = "left" | "center" | "right" | "bottom";
-
 export interface CityResponseResult {
   segmentId: string;
   tier: Tier;
@@ -122,6 +120,13 @@ export interface AlertRecord {
   eteBase?: number;
   etePenalty?: number;
   reasoningSteps?: ReasoningStep[];
+}
+
+export interface FieldInspectorPosition {
+  lng: number;
+  lat: number;
+  nearestRoadId: string | null;
+  nearestRoadName: string | null;
 }
 
 export interface ChatMessage {

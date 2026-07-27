@@ -10,12 +10,68 @@
 .mapShell :global(.mapboxgl-map) {
   width: 100%;
   height: 100%;
+  background: var(--map-base);
+}
+
+.mapShell :global(.mapboxgl-canvas),
+.mapShell :global(.mapboxgl-canvas-container) {
+  background: var(--map-base);
+}
+
+.mapShell :global(.mapboxgl-ctrl-bottom-right) {
+  right: 4px;
+  bottom: 4px;
+}
+
+/* Scale the whole control down uniformly instead of overriding its internal
+   width/padding/box-sizing individually - Mapbox reserves padding space to
+   match the button's own size, and touching only one side of that math is
+   what turned the collapsed dot into a lopsided pill. Scaling preserves its
+   internal geometry so the icon stays circular and centered. */
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact) {
+  transform-origin: bottom right;
+  transform: scale(0.7);
+  background-color: color-mix(in srgb, var(--panel), transparent 25%);
+  opacity: 0.4;
+  transition: opacity var(--transition-fast);
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact:hover),
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact:focus-within) {
+  opacity: 0.95;
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib-button) {
+  background-color: transparent;
+}
+
+/* The "i" glyph is baked as a black SVG; invert it to stay visible on our
+   dark panel background. Skipped in light theme, where black-on-light is
+   already legible. */
+:root[data-theme="dark"] .mapShell :global(.mapboxgl-ctrl-attrib-button) {
+  filter: invert(1);
+}
+
+.mapShell :global(.mapboxgl-ctrl-attrib-button:focus) {
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-dim), transparent 40%) !important;
+}
+
+/* Expanded state: reset the scale so text stays readable, and match the
+   app's glass-panel HUD styling instead of Mapbox's default white pill. */
+.mapShell :global(.mapboxgl-ctrl-attrib.mapboxgl-compact-show) {
+  transform: none;
+  opacity: 1;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--panel), transparent 10%);
+  border: 1px solid var(--soft-border);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
 }
 
 .mapShell :global(.mapboxgl-ctrl-attrib) {
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--panel), transparent 25%);
   color: var(--text-dim);
+  font-size: 10px;
 }
 
 .mapShell :global(.mapboxgl-ctrl-attrib a) {
@@ -39,13 +95,13 @@
 .tokenMissing strong {
   color: var(--text);
   font-family: var(--font-display);
-  font-size: 16px;
+  font-size: var(--text-title);
   font-weight: 500;
 }
 
 .tokenMissing p {
   max-width: 380px;
-  font-size: 13px;
+  font-size: var(--text-base);
   line-height: 1.5;
 }
 
@@ -55,7 +111,7 @@
   background: rgba(12, 14, 18, 0.86);
   color: var(--text);
   font-family: var(--font-mono);
-  font-size: 11px;
+  font-size: var(--text-sm);
   line-height: 1.45;
   white-space: pre-line;
   backdrop-filter: blur(12px);
@@ -71,118 +127,13 @@
 }
 
 .inspectionMarker {
-  position: relative;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border: 2px solid color-mix(in srgb, var(--text), transparent 18%);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--panel), transparent 4%);
-  color: var(--text);
-  box-shadow:
-    0 10px 22px rgba(0, 0, 0, 0.36),
-    0 0 0 5px rgba(232, 91, 108, 0.18);
-  transform: translateY(-2px);
+  display: block;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-drag: none;
 }
 
-.inspectionMarker::after {
-  content: "";
-  position: absolute;
-  left: 50%;
-  bottom: -9px;
-  width: 12px;
-  height: 12px;
-  border-right: 2px solid color-mix(in srgb, var(--text), transparent 18%);
-  border-bottom: 2px solid color-mix(in srgb, var(--text), transparent 18%);
-  background: color-mix(in srgb, var(--panel), transparent 4%);
-  transform: translateX(-50%) rotate(45deg);
-}
-
-.inspectionPanel {
-  position: absolute;
-  top: 178px;
-  right: 18px;
-  z-index: 5;
-  width: min(280px, calc(100% - 36px));
-  padding: 13px 14px;
-  border: 1px solid var(--soft-border);
-  border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--panel), transparent 8%);
-  color: var(--text);
-  box-shadow: var(--shadow-md);
-  backdrop-filter: blur(16px);
-}
-
-.inspectionHeader {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  padding-bottom: 9px;
-  border-bottom: 1px solid var(--soft-border);
-}
-
-.inspectionHeader strong {
-  font-family: var(--font-display);
-  font-size: 14px;
-  font-weight: 600;
-}
-
-.inspectionHeader button {
-  width: var(--icon-btn-sm);
-  height: var(--icon-btn-sm);
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  border: 1px solid var(--soft-border);
-  border-radius: 50%;
-  background: transparent;
-  color: var(--text-dim);
-  transition:
-    color var(--transition-fast),
-    border-color var(--transition-fast);
-}
-
-.inspectionHeader button:hover {
-  color: var(--text);
-  border-color: var(--text);
-}
-
-.inspectionPanel dl {
-  display: grid;
-  gap: 8px;
-  margin: 10px 0 0;
-}
-
-.inspectionPanel dl div {
-  display: grid;
-  grid-template-columns: 84px 1fr;
-  gap: 10px;
-}
-
-.inspectionPanel dt,
-.inspectionPanel dd {
-  margin: 0;
-  font-size: 12px;
-  line-height: 1.35;
-}
-
-.inspectionPanel dt {
-  color: var(--text-dim);
-  font-weight: 600;
-}
-
-.inspectionPanel dd {
-  color: var(--text);
-  font-family: var(--font-mono);
-  overflow-wrap: anywhere;
-}
-
-@media (max-width: 480px) {
-  .inspectionPanel {
-    top: 142px;
-    right: 12px;
-    width: min(260px, calc(100% - 24px));
-  }
+.inspectionMarker:active {
+  cursor: grabbing;
 }

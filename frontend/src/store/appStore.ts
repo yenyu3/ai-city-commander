@@ -4,7 +4,7 @@ import type {
   AlertRecord,
   ChatMessage,
   CrowdSnapshot,
-  FocusZone,
+  FieldInspectorPosition,
   LiveIncident,
   ReasoningStep,
   RoadPathDef,
@@ -83,7 +83,7 @@ interface AppState {
   isLoading: boolean;
   loadError: string | null;
   viewerMode: ViewerMode;
-  focusZone: FocusZone | null;
+  mapExpanded: boolean;
   selectedSegmentId: string | null;
   selectedStationId: string | null;
 
@@ -113,6 +113,7 @@ interface AppState {
   alerts: AlertRecord[];
   reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
+  fieldInspectorPosition: FieldInspectorPosition | null;
 
   init(): Promise<void>;
   play(): void;
@@ -123,9 +124,10 @@ interface AppState {
   injectIncident(incidentId: string): void;
   sendChatMessage(question: string): void;
   setViewerMode(mode: ViewerMode): void;
-  toggleFocusZone(zone: FocusZone): void;
+  toggleMapExpanded(): void;
   setSelectedSegment(id: string | null): void;
   setSelectedStation(id: string | null): void;
+  setFieldInspectorPosition(position: FieldInspectorPosition | null): void;
 }
 
 function computeSegmentState(
@@ -299,7 +301,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoading: true,
   loadError: null,
   viewerMode: getInitialViewerMode(),
-  focusZone: null,
+  mapExpanded: false,
   selectedSegmentId: null,
   selectedStationId: null,
 
@@ -328,6 +330,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   reasoningLog: [],
   chatMessages: [],
+  fieldInspectorPosition: null,
 
   async init() {
     try {
@@ -716,8 +719,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ viewerMode: mode });
   },
 
-  toggleFocusZone(zone) {
-    set((s) => ({ focusZone: s.focusZone === zone ? null : zone }));
+  toggleMapExpanded() {
+    set((s) => ({ mapExpanded: !s.mapExpanded }));
   },
 
   setSelectedSegment(id) {
@@ -726,5 +729,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedStation(id) {
     set({ selectedStationId: id, selectedSegmentId: null });
+  },
+
+  setFieldInspectorPosition(position) {
+    set({ fieldInspectorPosition: position });
   },
 }));

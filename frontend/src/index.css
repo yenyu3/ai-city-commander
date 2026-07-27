@@ -8,15 +8,15 @@
   Canonical tiers. Align new/edited @media rules to these values unless
   the file is listed as an intentional exception below.
 
-    max-width: 1180px   Desktop -> Tablet   3-col grid becomes 2-col + a
-                                             full-width overflow row
-                                             (src/App.module.css)
+    max-width: 1180px   Desktop -> Tablet   the 3:2 map/tab-panel grid keeps
+                                             two columns but narrows its
+                                             minmax floors (src/App.module.css)
     max-width: 820px    Tablet -> Mobile    grid becomes a single-column
                                              stack; page becomes scrollable
-                                             (App.module.css, BottomBar.module.css,
-                                             MapStage.module.css,
+                                             (App.module.css, MapStage.module.css,
                                              NetworkGraph.module.css,
-                                             AlertLogList.module.css)
+                                             RightPanel/AlertLogList.module.css,
+                                             ChatFab/ChatFab.module.css)
     max-width: 480px    Mobile -> Phone     compacts MapStage/NetworkGraph's
                                              absolutely-positioned overlay
                                              clusters to avoid collisions
@@ -28,12 +28,6 @@
             general mobile tier, purely so the header's single row doesn't
             wrap early. This is a header-internal space budget, unrelated
             to the body grid tiers above.
-
-    1100px, 640px   BottomBar/PublicUpdateBar.module.css — PublicUpdateBar
-            is currently unused/unmounted (not imported by App.tsx or any
-            active component). Breakpoints left as authored with no
-            functional effect today; revisit if this component is wired
-            into the public-mode UI.
 */
 
 :root {
@@ -74,10 +68,27 @@
   --font-nav: "Poppins", sans-serif;
   --font-mono: var(--font-nav);
 
+  /* Type scale — 7 deliberately distinct tiers so headings/content read at
+     a glance instead of blurring together. Roughly ascending by ~12-20%
+     per step, with a large final jump to hero for dominant stat numbers.
+       xs    meta: timestamps, tags, counts, mono stats
+       sm    secondary/eyebrow: section labels, captions
+       base  body: item names, paragraphs, chat/list content
+       lead  card/content sub-heading: card titles, popup headers
+       title in-panel headline: risk value, event title, hero copy
+       panel region chrome title: PanelHeader only (biggest heading per panel)
+       hero  dominant numeric stat (e.g. ETE big number) */
+  --text-xs: 11px;
+  --text-sm: 12.5px;
+  --text-base: 14px;
+  --text-lead: 16.5px;
+  --text-title: 19px;
+  --text-panel: 15px;
+  --text-hero: 42px;
+
   --radius-sm: 4px;
   --radius-md: 6px;
   --radius-lg: 8px;
-  --radius-xl: 8px;
 
   /* Circular icon-button scale — same "round icon toggle" affordance at
      three deliberate sizes: compact panel chrome (PanelHeader), global
@@ -140,8 +151,8 @@
 :root[data-theme="light"] {
   color-scheme: light;
   --bg: #f7f7f7;
-  --panel: #ffffff;
-  --panel-2: #f4f4f4;
+  --panel: color-mix(in srgb, var(--bg), var(--text) 3%);
+  --panel-2: color-mix(in srgb, var(--bg), var(--text) 7%);
   --border: color-mix(in srgb, #666666, transparent 84%);
   --soft-border: color-mix(in srgb, #666666, transparent 90%);
   --text: #111111;

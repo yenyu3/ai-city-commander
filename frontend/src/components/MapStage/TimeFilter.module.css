@@ -12,7 +12,7 @@
   padding: 5px 12px;
   font-family: var(--font-nav);
   font-weight: 600;
-  font-size: 12px;
+  font-size: var(--text-base);
   white-space: nowrap;
   transition: transform var(--transition-fast), box-shadow var(--transition-fast), background var(--transition-fast);
 }
@@ -29,7 +29,7 @@
 
 .time {
   font-family: var(--font-mono);
-  font-size: 12px;
+  font-size: var(--text-base);
   color: var(--text);
   min-width: 126px;
   text-align: center;
@@ -47,7 +47,7 @@
   border-radius: var(--radius-sm);
   padding: 3px 8px;
   font-family: var(--font-nav);
-  font-size: 11px;
+  font-size: var(--text-sm);
   transition: border-color var(--transition-fast), color var(--transition-fast);
 }
 .speedBtn:hover {

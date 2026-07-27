@@ -2,7 +2,7 @@
   position: relative;
   display: flex;
   flex-direction: column;
-  padding: 0 24px;
+  padding: 0 28px;
   border-bottom: 1px solid transparent;
   background: transparent;
   box-shadow: 0 8px 28px rgba(0, 0, 0, 0.04);
@@ -26,7 +26,7 @@
   align-items: center;
   justify-content: space-between;
   gap: 22px;
-  height: 52px;
+  min-height: 68px;
 }
 
 .bottomRow {
@@ -35,16 +35,55 @@
 }
 
 .brand {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
   font-family: var(--font-display);
-  font-weight: 400;
-  font-size: 20px;
   letter-spacing: 0;
   white-space: nowrap;
 }
-.brandAmber {
+
+.brandLogo {
+  display: block;
+  width: auto;
+  height: 46px;
+  object-fit: contain;
+  flex: 0 0 auto;
+}
+
+.brandText {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 0;
+  line-height: 1.1;
+}
+
+.brandPrimary {
   color: var(--text);
-  font-weight: 600;
-  margin-right: 6px;
+  font-size: 17px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.brandSecondary {
+  display: inline-flex;
+  align-items: center;
+  color: var(--text-dim);
+  font-family: var(--font-display);
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0;
+}
+
+.brandBang {
+  display: inline-block;
+  margin-left: 4px;
+  color: inherit;
+  font-weight: 700;
+  transform: rotate(30deg);
+  transform-origin: center;
 }
 
 .right {
@@ -63,7 +102,7 @@
   display: inline-flex;
   align-items: center;
   gap: 2px;
-  height: 32px;
+  height: 36px;
   padding: 2px;
   border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
   border-radius: 999px;
@@ -76,15 +115,15 @@
   align-items: center;
   justify-content: center;
   gap: 5px;
-  height: 26px;
-  min-width: 62px;
-  padding: 0 9px;
+  height: 30px;
+  min-width: 68px;
+  padding: 0 11px;
   border: none;
   border-radius: 999px;
   background: transparent;
   color: var(--text-dim);
   font-family: var(--font-nav);
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.02em;
   white-space: nowrap;
@@ -104,68 +143,86 @@
   color: var(--bg);
 }
 
-.iconBtn {
-  width: var(--icon-btn-md);
-  height: var(--icon-btn-md);
+.groupDivider {
+  width: 1px;
+  height: 26px;
   flex-shrink: 0;
+  background: color-mix(in srgb, var(--text), transparent 76%);
+}
+
+.prefsGroup {
+  display: inline-flex;
+  align-items: center;
+  height: 36px;
+  padding: 2px;
+  border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel), transparent 18%);
+  opacity: 0.92;
+}
+
+.prefsBtn {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--panel), transparent 18%);
+  gap: 5px;
+  height: 30px;
+  min-width: 30px;
+  padding: 0 11px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
   color: var(--text-dim);
-  box-shadow: none;
+  font-family: var(--font-nav);
+  font-size: 12px;
+  font-weight: 600;
+  white-space: nowrap;
   transition:
     background var(--transition-fast),
-    border-color var(--transition-fast),
     color var(--transition-fast),
     transform var(--transition-fast);
 }
-.iconBtn:hover {
+.prefsBtn:hover {
   background: var(--text);
-  border-color: var(--text);
   color: var(--bg);
   transform: translateY(-1px);
 }
 
-.langBtn {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  height: 32px;
-  padding: 0 11px;
-  border: 1px solid color-mix(in srgb, var(--text), transparent 88%);
-  border-radius: 999px;
-  background: color-mix(in srgb, var(--panel), transparent 18%);
-  color: var(--text-dim);
-  font-family: var(--font-nav);
-  font-size: 11.5px;
-  font-weight: 600;
-  box-shadow: none;
-  transition:
-    background var(--transition-fast),
-    border-color var(--transition-fast),
-    color var(--transition-fast),
-    transform var(--transition-fast);
-}
-.langBtn:hover {
-  background: var(--text);
-  border-color: var(--text);
-  color: var(--bg);
-  transform: translateY(-1px);
+.prefsDivider {
+  width: 1px;
+  align-self: stretch;
+  margin: 4px 0;
+  background: color-mix(in srgb, var(--text), transparent 88%);
 }
 
 /* Intentional micro-tier exception — see src/index.css breakpoint legend */
 @media (max-width: 720px) {
   .header {
-    padding: 10px 14px;
+    padding: 8px 14px;
   }
 
   .topRow {
     height: auto;
+    min-height: 58px;
     flex-wrap: wrap;
     row-gap: 8px;
+  }
+
+  .brand {
+    gap: 8px;
+  }
+
+  .brandLogo {
+    height: 40px;
+  }
+
+  .brandPrimary {
+    font-size: 15px;
+  }
+
+  .brandSecondary {
+    font-size: 13px;
+    letter-spacing: 0;
   }
 
   .modeBtn,
@@ -177,5 +234,13 @@
   .modeBtn span,
   .modeBtnActive span {
     display: none;
+  }
+
+  .prefsBtn span {
+    display: none;
+  }
+
+  .prefsBtn {
+    padding: 0 8px;
   }
 }

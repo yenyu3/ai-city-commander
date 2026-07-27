@@ -2,8 +2,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
-  height: 100%;
-  padding: 0;
+  min-height: 0;
+  flex: 1;
+  padding: 10px 14px 0;
 }
 
 .graphArea {
@@ -11,40 +12,9 @@
   flex: 1;
   min-height: 0;
   background: var(--map-base);
-  border: 1px solid var(--soft-border);
   border-radius: var(--radius-lg);
-  box-shadow: var(--shadow-lg);
   overflow: hidden;
   isolation: isolate;
-}
-
-.stageHeader {
-  position: absolute;
-  top: 18px;
-  left: 18px;
-  z-index: 5;
-  display: flex;
-  align-items: flex-start;
-  pointer-events: none;
-}
-
-.stageHeader h2 {
-  max-width: 470px;
-  margin-top: 4px;
-  color: var(--text);
-  font-size: clamp(18px, 2vw, 28px);
-  font-weight: 300;
-  letter-spacing: 0;
-}
-
-.eyebrow {
-  display: block;
-  font-family: var(--font-nav);
-  font-size: 10px;
-  font-weight: 600;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
-  color: var(--text-dim);
 }
 
 .camera {
@@ -60,17 +30,22 @@
   inset: 0;
 }
 
+/* Map HUD anchor: top-right glass cluster (camera + field-inspector controls) */
 .layerControls {
   position: absolute;
-  z-index: 7;
-  display: flex;
-  gap: 8px;
-}
-
-.layerControls {
   top: 18px;
   right: 18px;
+  z-index: 7;
+  display: flex;
   flex-direction: column;
+  gap: 4px;
+  padding: 6px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel), transparent 12%);
+  backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  box-shadow: var(--shadow-sm);
 }
 
 .bottomOverlay {
@@ -98,28 +73,23 @@
   backdrop-filter: blur(14px);
 }
 
-.expandBtn {
-  pointer-events: auto;
-}
-
 .iconBtn,
 .activeIconBtn,
 .pegmanBtn,
 .activePegmanBtn {
+  position: relative;
   width: var(--icon-btn-lg);
   height: var(--icon-btn-lg);
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  border: 1px solid var(--soft-border);
+  border: none;
   border-radius: 50%;
-  background: color-mix(in srgb, var(--panel), transparent 8%);
+  background: transparent;
   color: var(--text-dim);
-  box-shadow: var(--shadow-sm);
   transition:
     color var(--transition-fast),
     background var(--transition-fast),
-    border-color var(--transition-fast),
     transform var(--transition-fast);
 }
 
@@ -130,7 +100,6 @@
 .activePegmanBtn {
   color: var(--bg);
   background: var(--text);
-  border-color: var(--text);
   transform: translateY(-1px);
 }
 
@@ -145,21 +114,39 @@
   cursor: grabbing;
 }
 
-.dragGhost {
-  position: fixed;
-  z-index: 60;
-  width: 48px;
-  height: 48px;
+.pegmanIcon {
+  width: 23px;
+  height: 30px;
   display: grid;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--text), transparent 24%);
-  border-radius: 50%;
-  background: color-mix(in srgb, var(--panel), transparent 4%);
-  color: var(--text);
-  box-shadow: var(--shadow-lg);
   pointer-events: none;
-  transform: translate(-50%, -50%);
-  backdrop-filter: blur(12px);
+  transform: translateY(1px);
+}
+
+/* Small dot hints that a figure is already on the map and a tap will
+   remove it instead of dropping a new one. */
+.pegmanBtnPlaced::after {
+  content: "";
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: color-mix(in srgb, var(--crit), transparent 8%);
+  box-shadow: 0 0 0 2px var(--panel);
+}
+
+.dragGhost {
+  position: fixed;
+  left: 0;
+  top: 0;
+  z-index: 60;
+  display: grid;
+  place-items: center;
+  pointer-events: none;
+  transform: translate3d(-100vw, -100vh, 0) translate(-50%, -50%);
+  will-change: transform;
 }
 
 .mode,
@@ -171,7 +158,7 @@
   background: transparent;
   color: var(--text-dim);
   font-family: var(--font-nav);
-  font-size: 12px;
+  font-size: var(--text-base);
   font-weight: 600;
   transition:
     color var(--transition-fast),

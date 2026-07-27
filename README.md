@@ -1,12 +1,7 @@
-# AI City Commander
-
-城市應變指揮官儀表板原型，用於展示交通壅塞、事件注入、SOP 規則推論、人流熱點與即時應變建議。
-
 ## 專案結構
 
 ```text
 .
-├─ docs/                 # 需求與問題說明
 └─ frontend/             # React + Vite 前端
    ├─ public/data/       # Demo 資料集
    └─ src/               # UI、狀態管理、規則引擎

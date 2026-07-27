@@ -1,4 +1,5 @@
 import { Building2, Languages, Moon, Sun, Users } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { useEffect, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
 import { useAppStore } from "../../store/appStore";
@@ -7,7 +8,7 @@ import styles from "./Header.module.css";
 
 type Theme = "dark" | "light";
 
-const modeOptions: { mode: ViewerMode; icon: typeof Users }[] = [
+const modeOptions: { mode: ViewerMode; icon: LucideIcon }[] = [
   { mode: "public", icon: Users },
   { mode: "government", icon: Building2 },
 ];
@@ -30,10 +31,22 @@ export default function Header() {
   return (
     <header className={styles.header}>
       <div className={styles.topRow}>
-        <div className={styles.brand}>
-          <span className={styles.brandAmber}>
-            {pick(language, "AI 城市指揮官", "AI City Commander")}
-          </span>
+        <div className={styles.brand} aria-label="AI City Commander">
+          <img
+            className={styles.brandLogo}
+            src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
+            alt=""
+            aria-hidden="true"
+          />
+          <div className={styles.brandText}>
+            <span className={styles.brandPrimary}>AI City</span>
+            <span className={styles.brandSecondary}>
+              Commander
+              <span className={styles.brandBang} aria-hidden="true">
+                !
+              </span>
+            </span>
+          </div>
         </div>
 
         <div className={styles.right}>
@@ -45,22 +58,19 @@ export default function Header() {
             >
               {modeOptions.map(({ mode, icon: Icon }) => {
                 const active = viewerMode === mode;
+                const modeLabel =
+                  mode === "public"
+                    ? pick(language, "民眾模式", "Public")
+                    : pick(language, "政府模式", "Government");
+
                 return (
                   <button
                     key={mode}
                     type="button"
                     className={active ? styles.modeBtnActive : styles.modeBtn}
                     aria-pressed={active}
-                    aria-label={
-                      mode === "public"
-                        ? pick(language, "一般民眾", "Public")
-                        : pick(language, "政府單位", "Government")
-                    }
-                    title={
-                      mode === "public"
-                        ? pick(language, "一般民眾", "Public")
-                        : pick(language, "政府單位", "Government")
-                    }
+                    aria-label={modeLabel}
+                    title={modeLabel}
                     onClick={() => setViewerMode(mode)}
                   >
                     <Icon size={14} aria-hidden="true" />
@@ -73,33 +83,41 @@ export default function Header() {
                 );
               })}
             </div>
-            <button
-              type="button"
-              className={styles.iconBtn}
-              aria-label={pick(
-                language,
-                "切換主題",
-                `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
-              )}
-              title={pick(
-                language,
-                "切換主題",
-                `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
-              )}
-              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+            <div className={styles.groupDivider} aria-hidden="true" />
+            <div
+              className={styles.prefsGroup}
+              role="group"
+              aria-label={pick(language, "偏好設定", "Preferences")}
             >
-              {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-            </button>
-            <button
-              type="button"
-              className={styles.langBtn}
-              aria-label={pick(language, "切換語言", "Switch language")}
-              title={pick(language, "切換語言", "Switch language")}
-              onClick={toggleLanguage}
-            >
-              <Languages size={14} aria-hidden="true" />
-              <span>{language === "zh" ? "EN" : "中"}</span>
-            </button>
+              <button
+                type="button"
+                className={styles.prefsBtn}
+                aria-label={pick(
+                  language,
+                  "切換深淺色模式",
+                  `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
+                )}
+                title={pick(
+                  language,
+                  "切換深淺色模式",
+                  `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
+                )}
+                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              >
+                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
+              </button>
+              <div className={styles.prefsDivider} aria-hidden="true" />
+              <button
+                type="button"
+                className={styles.prefsBtn}
+                aria-label={pick(language, "切換語言", "Switch language")}
+                title={pick(language, "切換語言", "Switch language")}
+                onClick={toggleLanguage}
+              >
+                <Languages size={14} aria-hidden="true" />
+                <span>{language === "zh" ? "EN" : "中"}</span>
+              </button>
+            </div>
           </div>
         </div>
       </div>

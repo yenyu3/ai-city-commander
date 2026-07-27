@@ -1,0 +1,47 @@
+.wrap {
+  position: relative;
+  display: inline-flex;
+  text-transform: none;
+}
+
+.btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  padding: 0;
+  border: none;
+  background: transparent;
+  color: var(--text-dim);
+  transition: color var(--transition-fast);
+}
+.btn:hover,
+.btn[aria-expanded="true"] {
+  color: var(--cyan);
+}
+
+.panel {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  z-index: 20;
+  width: max-content;
+  max-width: 240px;
+  padding: 10px 12px;
+  background: var(--panel);
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-md);
+  box-shadow: var(--shadow-md);
+  font-family: var(--font-body);
+  font-size: var(--text-base);
+  font-weight: 400;
+  letter-spacing: normal;
+  text-transform: none;
+  color: var(--text);
+}
+
+.panelTitle {
+  composes: sectionLabel from "./shared.module.css";
+  margin-bottom: 8px;
+}
