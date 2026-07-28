@@ -5,11 +5,12 @@ import styles from "./CollapsibleSection.module.css";
 
 const STORAGE_PREFIX = "collapsible-open:";
 
-function readStoredOpen(storageKey: string): boolean {
+function readStoredOpen(storageKey: string, defaultOpen: boolean): boolean {
   try {
-    return window.localStorage.getItem(STORAGE_PREFIX + storageKey) === "1";
+    const saved = window.localStorage.getItem(STORAGE_PREFIX + storageKey);
+    return saved === null ? defaultOpen : saved === "1";
   } catch {
-    return false;
+    return defaultOpen;
   }
 }
 
@@ -18,13 +19,15 @@ export default function CollapsibleSection({
   title,
   children,
   className,
+  defaultOpen = false,
 }: {
   storageKey: string;
   title: ReactNode;
   children: ReactNode;
   className?: string;
+  defaultOpen?: boolean;
 }) {
-  const [open, setOpen] = useState(() => readStoredOpen(storageKey));
+  const [open, setOpen] = useState(() => readStoredOpen(storageKey, defaultOpen));
 
   const handleToggle = (event: React.SyntheticEvent<HTMLDetailsElement>) => {
     const next = event.currentTarget.open;

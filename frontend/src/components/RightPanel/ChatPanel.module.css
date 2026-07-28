@@ -137,3 +137,10 @@
   transform: translateY(-1px);
   box-shadow: var(--shadow-sm);
 }
+.sendBtn:disabled {
+  background: var(--panel-2);
+  color: var(--text-dim);
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}

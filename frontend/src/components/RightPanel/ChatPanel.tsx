@@ -1,5 +1,6 @@
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAppStore } from "../../store/appStore";
+import type { ViewerMode } from "../../types";
 import { SOP_SECTIONS } from "../../services/sopRetrieval";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ChatPanel.module.css";
@@ -16,37 +17,65 @@ function sopIdFromRef(ref: string): string | null {
   return m ? m[0] : null;
 }
 
-export default function ChatPanel() {
+type ChatPanelProps = {
+  /** "public" 隱藏事件注入與 SOP 條號，供市民助手複用同一個對話框。 */
+  variant?: ViewerMode;
+  title?: string;
+  suggestions?: string[];
+  placeholder?: string;
+};
+
+export default function ChatPanel({
+  variant = "government",
+  title,
+  suggestions = SUGGESTIONS,
+  placeholder,
+}: ChatPanelProps) {
   const chatMessages = useAppStore((s) => s.chatMessages);
   const sendChatMessage = useAppStore((s) => s.sendChatMessage);
   const { language } = useLanguage();
   const [input, setInput] = useState("");
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
+  const messagesRef = useRef<HTMLDivElement | null>(null);
+  const isPublic = variant === "public";
+  // 政府／市民兩種模式各自一條對話串，切換模式不會看到對方的訊息
+  const messages = useMemo(
+    () => chatMessages.filter((m) => m.audience === variant),
+    [chatMessages, variant],
+  );
+
+  // 新訊息（含從推薦問題送出的）進來時自動捲到底
+  useEffect(() => {
+    const el = messagesRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [messages]);
 
   function submit(text: string) {
     if (!text.trim()) return;
-    sendChatMessage(text.trim());
+    sendChatMessage(text.trim(), variant);
     setInput("");
   }
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.title}>{pick(language, "對話式 SOP 問答", "SOP Q&A Chat")}</div>
+      <div className={styles.title}>
+        {title ?? pick(language, "對話式 SOP 問答", "SOP Q&A Chat")}
+      </div>
 
-      <div className={styles.messages}>
-        {chatMessages.length === 0 && (
+      <div className={styles.messages} ref={messagesRef}>
+        {messages.length === 0 && suggestions.length > 0 && (
           <div className={styles.suggestions}>
-            {SUGGESTIONS.map((q) => (
+            {suggestions.map((q) => (
               <button key={q} className={styles.suggestion} onClick={() => submit(q)}>
                 {q}
               </button>
             ))}
           </div>
         )}
-        {chatMessages.map((m) => (
+        {messages.map((m) => (
           <div key={m.id} className={`${styles.bubble} ${m.role === "user" ? styles.user : styles.assistant}`}>
             <div className={styles.bubbleText}>{m.text}</div>
-            {m.sopRefs && m.sopRefs.length > 0 && (
+            {!isPublic && m.sopRefs && m.sopRefs.length > 0 && (
               <div className={styles.refRow}>
                 {m.sopRefs.map((ref) => {
                   const id = sopIdFromRef(ref);
@@ -75,12 +104,16 @@ export default function ChatPanel() {
       <div className={styles.inputRow}>
         <input
           className={styles.input}
-          placeholder={pick(language, "輸入假設性問題…", "Ask a what-if question…")}
+          placeholder={placeholder ?? pick(language, "輸入假設性問題…", "Ask a what-if question…")}
           value={input}
           onChange={(e) => setInput(e.target.value)}
           onKeyDown={(e) => e.key === "Enter" && submit(input)}
         />
-        <button className={styles.sendBtn} onClick={() => submit(input)}>
+        <button
+          className={styles.sendBtn}
+          onClick={() => submit(input)}
+          disabled={!input.trim()}
+        >
           {pick(language, "送出", "Send")}
         </button>
       </div>

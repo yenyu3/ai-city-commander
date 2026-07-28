@@ -23,7 +23,7 @@ import { checkDomeDispersal } from "../engine/domeDispersal";
 import { checkSignalFailure } from "../engine/signalFailure";
 import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
-import { llmAdapter, type StructuredEvent } from "../services/llmAdapter";
+import { llmAdapter, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
 import { computeTimeOffsetMs, reformatEmbeddedTimestamp } from "../utils/timeUtils";
 
@@ -122,7 +122,7 @@ interface AppState {
   advanceTime(): void;
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string): void;
-  sendChatMessage(question: string): void;
+  sendChatMessage(question: string, audience?: ViewerMode): void;
   setViewerMode(mode: ViewerMode): void;
   toggleMapExpanded(): void;
   setSelectedSegment(id: string | null): void;
@@ -288,6 +288,19 @@ function buildAccidentAlert(
   });
 
   return { alert, mainRoute: route.mainRoute, secondaryRoutes: route.secondaryRoutes };
+}
+
+/** 把目前的即時狀態壓成市民模式問答需要的可公開概況。 */
+function buildPublicContext(state: AppState): PublicContext {
+  const busiest = Object.values(state.stations).sort((a, b) => b.userCount - a.userCount)[0];
+  return {
+    affectedRoads: Object.values(state.segments)
+      .filter((segment) => segment.tier !== "Normal" || segment.isIncidentSource)
+      .sort((a, b) => b.saturation - a.saturation)
+      .map((segment) => ({ name: segment.name, tier: segment.tier })),
+    busiestStation: busiest ? { name: busiest.name, userCount: busiest.userCount } : null,
+    activeIncidentCount: state.activeIncidents.length,
+  };
 }
 
 function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
@@ -685,25 +698,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  sendChatMessage(question) {
+  sendChatMessage(question, audience = "government") {
+    const isPublic = audience === "public";
     const userMsg: ChatMessage = {
       id: nextId("chat"),
       role: "user",
       text: question,
+      audience,
       createdAt: Date.now(),
     };
     const { ruleResult, sopExcerpt, sopRefs } = runWhatIf(question);
     const placeholder: ChatMessage = {
       id: nextId("chat"),
       role: "assistant",
-      text: "研判中…",
-      sopRefs,
+      text: isPublic ? "查詢中…" : "研判中…",
+      audience,
+      // 市民模式不揭露 SOP 條號
+      sopRefs: isPublic ? undefined : sopRefs,
       ruleResult,
       createdAt: Date.now(),
     };
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
 
-    llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt).then((text) => {
+    const answer = isPublic
+      ? llmAdapter.answerPublic(question, ruleResult, buildPublicContext(get()))
+      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt);
+
+    answer.then((text) => {
       set((s) => ({
         chatMessages: s.chatMessages.map((m) =>
           m.id === placeholder.id ? { ...m, text } : m,

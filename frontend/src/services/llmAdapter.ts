@@ -59,12 +59,26 @@ export interface StructuredEvent {
   sopRef?: string;
 }
 
+/** 市民模式問答用的即時概況（只含可公開資訊，不含門檻／SOP 條號）。 */
+export interface PublicContext {
+  /** 目前非 Normal 或為事故來源的路段，依飽和度由高到低 */
+  affectedRoads: { name: string; tier: string }[];
+  busiestStation: { name: string; userCount: number } | null;
+  activeIncidentCount: number;
+}
+
 export interface LLMAdapter {
   summarize(input: StructuredEvent): Promise<string>;
   answerWhatIf(
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+  ): Promise<string>;
+  /** 市民模式：同樣的規則引擎結果，改用白話、去敏感化的說法回覆。 */
+  answerPublic(
+    question: string,
+    ruleResult: unknown,
+    context: PublicContext,
   ): Promise<string>;
   generateMultilingual(
     type: MessageType,
@@ -84,6 +98,86 @@ function pick<T>(arr: T[]): T {
  */
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+type PublicRuleResult = {
+  rule?: string;
+  triggered?: boolean;
+  tier?: string;
+  ete?: number;
+};
+
+/** 問題裡帶了具體數字、規則引擎真的算過時，把結論轉成白話（不揭露門檻）。 */
+function publicRuleAnswer(result: PublicRuleResult): string | null {
+  switch (result.rule) {
+    case "checkMrtDiversion":
+      return result.triggered
+        ? "以您提到的人潮量，捷運站會啟動人流管制，列車可能過站不停，建議改到鄰近車站搭車，或改搭接駁專車。"
+        : "以您提到的人潮量，捷運仍會正常停靠，依原本路線搭乘即可。";
+    case "checkDomeDispersal":
+      return result.triggered
+        ? "這樣的人潮變化屬於散場時段，場館周邊會湧入大量人流，建議散場後稍等 15 分鐘再離開，或改走周邊街廓。"
+        : "這樣的人潮變化還沒到散場尖峰，場館周邊人流大致穩定。";
+    case "checkMultilingualNeeded":
+      return result.triggered
+        ? "該區域外籍旅客比例偏高，官方提醒會同時以中／英／日／韓四種語言發布，可以直接轉發給同行的旅客。"
+        : "該區域外籍旅客比例不高，目前以中文提醒發布即可。";
+    case "getTier":
+      if (result.tier === "A") {
+        return "這個壅塞程度屬於最嚴重的等級，路段幾乎動彈不得，強烈建議改道或改搭大眾運輸。";
+      }
+      if (result.tier === "B") {
+        return "這個壅塞程度屬於車多壅擠，通行會明顯延誤，建議多預留時間或改走替代道路。";
+      }
+      return "這個壅塞程度還在正常範圍，通行大致順暢。";
+    case "calcETE":
+      return `依這個情境估算，恢復順暢大約還需要 ${result.ete} 分鐘，建議這段時間先改走其他路線。`;
+    default:
+      return null;
+  }
+}
+
+/** 沒有具體數字時，改用目前的即時路況回答常見的市民提問。 */
+function publicContextAnswer(question: string, ctx: PublicContext): string {
+  const roads = ctx.affectedRoads.slice(0, 3).map((r) => r.name).join("、");
+  const station = ctx.busiestStation;
+
+  if (/英文|外語|多語|旅客|外國|english|visitor|foreign/i.test(question)) {
+    const location = ctx.affectedRoads[0]?.name ?? "市中心";
+    return [
+      "以下是可以直接轉發給旅客的雙語提醒：",
+      `【交通提醒】${location}周邊車流量大，請預留額外通行時間，或改搭捷運。`,
+      `[Traffic Advisory] Heavy traffic near ${location}. Please allow extra travel time or take the MRT.`,
+    ].join("\n");
+  }
+
+  if (/避開|避免|哪些區|哪幾|不要去|avoid|which area/i.test(question)) {
+    return roads
+      ? `目前建議避開：${roads}。這幾個路段車流較滿，非必要請改走周邊道路或改搭大眾運輸。`
+      : "目前沒有需要特別避開的區域，主要道路都算順暢，依原本路線移動即可。";
+  }
+
+  if (/人潮|人多|擁擠|車站|捷運站|crowd|station/i.test(question)) {
+    return station
+      ? `目前人潮最多的是${station.name}，約 ${station.userCount.toLocaleString()} 人。建議避開尖峰，或從鄰近站點進出。`
+      : "目前各站點人潮都在正常範圍內。";
+  }
+
+  if (/適合|現在|要去|出發|前往|該不該|is it ok|good time|go to|travel/i.test(question)) {
+    const head = roads
+      ? `${roads}一帶目前比較壅塞，建議改走周邊道路或改搭捷運，並多預留一點時間。`
+      : "目前主要道路狀況穩定，現在出發沒有問題。";
+    const tail = station ? `另外${station.name}人潮較多，可考慮從鄰近站點進出。` : "";
+    return [head, tail].filter(Boolean).join("\n");
+  }
+
+  return [
+    roads ? `目前需要留意的路段有：${roads}。` : "目前主要道路狀況穩定。",
+    ctx.activeIncidentCount > 0
+      ? `市區有 ${ctx.activeIncidentCount} 件事件處理中，公開資訊會以官方可發布內容為準。`
+      : "目前沒有進行中的重大公開事件。",
+    "您可以問我「哪幾個區域建議避開」或「現在適合出門嗎」。",
+  ].join("\n");
 }
 
 export class TemplateLLMAdapter implements LLMAdapter {
@@ -128,6 +222,16 @@ export class TemplateLLMAdapter implements LLMAdapter {
         ? JSON.stringify(ruleResult)
         : String(ruleResult);
     return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」`;
+  }
+
+  async answerPublic(
+    question: string,
+    ruleResult: unknown,
+    context: PublicContext,
+  ): Promise<string> {
+    await delay(400 + Math.random() * 400);
+    const fromRule = publicRuleAnswer((ruleResult ?? {}) as PublicRuleResult);
+    return fromRule ?? publicContextAnswer(question, context);
   }
 
   generateMultilingual(
