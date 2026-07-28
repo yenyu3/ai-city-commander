@@ -1,12 +1,9 @@
-import { Building2, Languages, Moon, Sun, Users } from "lucide-react";
+import { Building2, Languages, Users } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
-import { useEffect, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
 import { useAppStore } from "../../store/appStore";
 import type { ViewerMode } from "../../types";
 import styles from "./Header.module.css";
-
-type Theme = "dark" | "light";
 
 const modeOptions: { mode: ViewerMode; icon: LucideIcon }[] = [
   { mode: "public", icon: Users },
@@ -18,23 +15,13 @@ export default function Header() {
   const setViewerMode = useAppStore((s) => s.setViewerMode);
   const { language, toggleLanguage } = useLanguage();
 
-  const [theme, setTheme] = useState<Theme>(() => {
-    const saved = window.localStorage.getItem("theme");
-    return saved === "light" || saved === "dark" ? saved : "dark";
-  });
-
-  useEffect(() => {
-    document.documentElement.dataset.theme = theme;
-    window.localStorage.setItem("theme", theme);
-  }, [theme]);
-
   return (
     <header className={styles.header}>
       <div className={styles.topRow}>
         <div className={styles.brand} aria-label="AI City Commander">
           <img
             className={styles.brandLogo}
-            src={theme === "light" ? "/logo-light.png" : "/logo-dark.png"}
+            src="/logo-light.png"
             alt=""
             aria-hidden="true"
           />
@@ -89,24 +76,6 @@ export default function Header() {
               role="group"
               aria-label={pick(language, "偏好設定", "Preferences")}
             >
-              <button
-                type="button"
-                className={styles.prefsBtn}
-                aria-label={pick(
-                  language,
-                  "切換深淺色模式",
-                  `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
-                )}
-                title={pick(
-                  language,
-                  "切換深淺色模式",
-                  `Switch to ${theme === "dark" ? "light" : "dark"} mode`,
-                )}
-                onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              >
-                {theme === "dark" ? <Sun size={16} /> : <Moon size={16} />}
-              </button>
-              <div className={styles.prefsDivider} aria-hidden="true" />
               <button
                 type="button"
                 className={styles.prefsBtn}

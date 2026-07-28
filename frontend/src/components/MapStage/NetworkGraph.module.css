@@ -45,13 +45,6 @@
   background-color: transparent;
 }
 
-/* The "i" glyph is baked as a black SVG; invert it to stay visible on our
-   dark panel background. Skipped in light theme, where black-on-light is
-   already legible. */
-:root[data-theme="dark"] .mapShell :global(.mapboxgl-ctrl-attrib-button) {
-  filter: invert(1);
-}
-
 .mapShell :global(.mapboxgl-ctrl-attrib-button:focus) {
   box-shadow: 0 0 0 2px color-mix(in srgb, var(--text-dim), transparent 40%) !important;
 }

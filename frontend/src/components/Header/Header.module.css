@@ -188,13 +188,6 @@
   transform: translateY(-1px);
 }
 
-.prefsDivider {
-  width: 1px;
-  align-self: stretch;
-  margin: 4px 0;
-  background: color-mix(in srgb, var(--text), transparent 88%);
-}
-
 /* Intentional micro-tier exception — see src/index.css breakpoint legend */
 @media (max-width: 720px) {
   .header {
