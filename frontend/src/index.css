@@ -31,37 +31,37 @@
 */
 
 :root {
-  --bg: #0f1012;
-  --panel: #181a1f;
-  --panel-2: #202329;
-  --border: rgba(255, 255, 255, 0.12);
-  --soft-border: rgba(255, 255, 255, 0.08);
-  --text: #f4f5f7;
-  --text-dim: #a7abb2;
-  --amber: #e5e7eb;
-  --ok: #51b887;
-  --warn: #d8a13f;
-  --crit: #e15b68;
-  --cyan: #6aa9bc;
-  --map-base: #090d12;
-  --map-grid: rgba(255, 255, 255, 0.055);
-  --map-road: #333b47;
-  --map-road-shadow: rgba(0, 0, 0, 0.64);
-  --map-water: #121d29;
-  --map-label: rgba(244, 245, 247, 0.58);
-  --map-building: #2b3037;
-  --map-building-hi: #444a54;
-  --map-building-side: #1c2026;
-  --map-building-roof: #505761;
-  --map-building-line: rgba(255, 255, 255, 0.08);
-  --map-heat: rgba(196, 143, 214, 0.56);
-  --header-background-color: rgba(15, 16, 18, 0.78);
+  --bg: #f7f7f7;
+  --panel: color-mix(in srgb, var(--bg), var(--text) 3%);
+  --panel-2: color-mix(in srgb, var(--bg), var(--text) 7%);
+  --border: color-mix(in srgb, #666666, transparent 84%);
+  --soft-border: color-mix(in srgb, #666666, transparent 90%);
+  --text: #111111;
+  --text-dim: #737373;
+  --amber: #2f2f2f;
+  --ok: #1f8f62;
+  --warn: #b7791f;
+  --crit: #c43d4b;
+  --cyan: #2f6f88;
+  --map-base: #e8eaed;
+  --map-grid: rgba(0, 0, 0, 0.06);
+  --map-road: #d5d9de;
+  --map-road-shadow: rgba(0, 0, 0, 0.16);
+  --map-water: #cfdbe3;
+  --map-label: rgba(17, 17, 17, 0.56);
+  --map-building: #c9ced4;
+  --map-building-hi: #eef0f2;
+  --map-building-side: #aeb5be;
+  --map-building-roof: #f5f6f7;
+  --map-building-line: rgba(0, 0, 0, 0.08);
+  --map-heat: rgba(128, 84, 150, 0.28);
+  --header-background-color: rgba(255, 255, 255, 0.72);
 
-  --chart-1: #6aa9bc;
-  --chart-2: #9085e9;
-  --chart-3: #d55181;
-  --chart-grid: rgba(255, 255, 255, 0.08);
-  --chart-axis: rgba(255, 255, 255, 0.32);
+  --chart-1: #2f6f88;
+  --chart-2: #4a3aa7;
+  --chart-3: #b23763;
+  --chart-grid: rgba(0, 0, 0, 0.08);
+  --chart-axis: rgba(0, 0, 0, 0.32);
 
   --font-display: "Montserrat", sans-serif;
   --font-body: "Roboto", system-ui, -apple-system, "Segoe UI", sans-serif;
@@ -104,83 +104,13 @@
   --transition-fast: 0.2s ease;
   --transition-med: 0.3s ease;
 
-  color-scheme: dark;
+  color-scheme: light;
   color: var(--text);
   background: var(--bg);
   font-synthesis: none;
   text-rendering: optimizeLegibility;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-:root[data-theme="dark"] {
-  color-scheme: dark;
-  --bg: #0f1012;
-  --panel: #181a1f;
-  --panel-2: #202329;
-  --border: rgba(255, 255, 255, 0.12);
-  --soft-border: rgba(255, 255, 255, 0.08);
-  --text: #f4f5f7;
-  --text-dim: #a7abb2;
-  --amber: #e5e7eb;
-  --ok: #51b887;
-  --warn: #d8a13f;
-  --crit: #e15b68;
-  --cyan: #6aa9bc;
-  --map-base: #090d12;
-  --map-grid: rgba(255, 255, 255, 0.055);
-  --map-road: #333b47;
-  --map-road-shadow: rgba(0, 0, 0, 0.64);
-  --map-water: #121d29;
-  --map-label: rgba(244, 245, 247, 0.58);
-  --map-building: #2b3037;
-  --map-building-hi: #444a54;
-  --map-building-side: #1c2026;
-  --map-building-roof: #505761;
-  --map-building-line: rgba(255, 255, 255, 0.08);
-  --map-heat: rgba(196, 143, 214, 0.56);
-  --header-background-color: rgba(15, 16, 18, 0.78);
-
-  --chart-1: #6aa9bc;
-  --chart-2: #9085e9;
-  --chart-3: #d55181;
-  --chart-grid: rgba(255, 255, 255, 0.08);
-  --chart-axis: rgba(255, 255, 255, 0.32);
-}
-
-:root[data-theme="light"] {
-  color-scheme: light;
-  --bg: #f7f7f7;
-  --panel: color-mix(in srgb, var(--bg), var(--text) 3%);
-  --panel-2: color-mix(in srgb, var(--bg), var(--text) 7%);
-  --border: color-mix(in srgb, #666666, transparent 84%);
-  --soft-border: color-mix(in srgb, #666666, transparent 90%);
-  --text: #111111;
-  --text-dim: #737373;
-  --amber: #2f2f2f;
-  --ok: #1f8f62;
-  --warn: #b7791f;
-  --crit: #c43d4b;
-  --cyan: #2f6f88;
-  --map-base: #e8eaed;
-  --map-grid: rgba(0, 0, 0, 0.06);
-  --map-road: #d5d9de;
-  --map-road-shadow: rgba(0, 0, 0, 0.16);
-  --map-water: #cfdbe3;
-  --map-label: rgba(17, 17, 17, 0.56);
-  --map-building: #c9ced4;
-  --map-building-hi: #eef0f2;
-  --map-building-side: #aeb5be;
-  --map-building-roof: #f5f6f7;
-  --map-building-line: rgba(0, 0, 0, 0.08);
-  --map-heat: rgba(128, 84, 150, 0.28);
-  --header-background-color: rgba(255, 255, 255, 0.72);
-
-  --chart-1: #2f6f88;
-  --chart-2: #4a3aa7;
-  --chart-3: #b23763;
-  --chart-grid: rgba(0, 0, 0, 0.08);
-  --chart-axis: rgba(0, 0, 0, 0.32);
 }
 
 * {

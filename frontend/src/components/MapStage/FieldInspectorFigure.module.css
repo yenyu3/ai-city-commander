@@ -1,8 +1,7 @@
 /*
   Fixed (non-theme) palette: this mascot only ever appears over the Mapbox
-  dark-v11 basemap (see NetworkGraph's MAP_STYLE), which stays dark
-  regardless of the app's light/dark theme toggle, so it doesn't need to
-  adapt like the surrounding panel UI does.
+  dark-v11 basemap (see NetworkGraph's MAP_STYLE), which is always dark,
+  so it doesn't need to adapt like the surrounding panel UI does.
 */
 .figure {
   overflow: visible;
