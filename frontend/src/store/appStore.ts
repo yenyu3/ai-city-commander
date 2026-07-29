@@ -122,6 +122,7 @@ interface AppState {
   advanceTime(): void;
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string): void;
+  addIncidents(incidents: LiveIncident[]): void;
   sendChatMessage(question: string, audience?: ViewerMode): void;
   setViewerMode(mode: ViewerMode): void;
   toggleMapExpanded(): void;
@@ -582,6 +583,15 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().injectIncident(incident.eventId);
       }
     }
+  },
+
+  addIncidents(incidents) {
+    set((s) => ({
+      allIncidents: [
+        ...s.allIncidents,
+        ...incidents.filter((i) => !s.allIncidents.some((e) => e.eventId === i.eventId)),
+      ],
+    }));
   },
 
   injectIncident(incidentId) {

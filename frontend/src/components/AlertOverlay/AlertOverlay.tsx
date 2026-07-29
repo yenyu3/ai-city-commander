@@ -6,28 +6,29 @@ import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { getPublicAlertText } from "../../utils/publicView";
 import styles from "./AlertOverlay.module.css";
 
-const DISPLAY_MS = 9000;
-
 export default function AlertOverlay() {
   const alerts = useAppStore((s) => s.alerts);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
   const [toastIds, setToastIds] = useState<string[]>([]);
   const seen = useRef(new Set<string>());
+  const overlayRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     if (alerts.length === 0) return;
     const newest = alerts[0];
     if (!seen.current.has(newest.id)) {
       seen.current.add(newest.id);
-      setToastIds((ids) => [newest.id, ...ids]);
-      const timer = setTimeout(() => {
-        setToastIds((ids) => ids.filter((id) => id !== newest.id));
-      }, DISPLAY_MS);
-      return () => clearTimeout(timer);
+      setToastIds((ids) => [...ids, newest.id]);
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [alerts.length]);
+
+  useEffect(() => {
+    const el = overlayRef.current;
+    if (!el) return;
+    el.scrollTop = el.scrollHeight;
+  }, [toastIds]);
 
   const toasts = toastIds
     .map((id) => alerts.find((a) => a.id === id))
@@ -36,7 +37,7 @@ export default function AlertOverlay() {
   if (toasts.length === 0) return null;
 
   return (
-    <div className={styles.overlay}>
+    <div className={styles.overlay} ref={overlayRef}>
       {toasts.map((alert) => (
         <div key={alert.id} className={styles.card}>
           <div className={styles.head}>
