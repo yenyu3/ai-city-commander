@@ -9,13 +9,15 @@ import SituationTab from "../LeftPanel/LeftPanel";
 import DecisionTab from "./DecisionTab";
 import InjectIncidentButton from "./InjectIncidentButton";
 import ExportReportButton from "./ExportReportButton";
+import ExportProposalButton from "./ExportProposalButton";
+import ProposalDocument from "./ProposalDocument";
 import styles from "./RightPanel.module.css";
 
 type TabKey = "situation" | "decision";
 
 export default function RightPanel() {
-  const [tab, setTab] = useState<TabKey>("situation");
-  const tabRef = useRef<TabKey>("situation");
+  const [tab, setTab] = useState<TabKey>("decision");
+  const tabRef = useRef<TabKey>("decision");
   const tabContentRef = useRef<HTMLDivElement>(null);
   const scrollPositions = useRef<Record<TabKey, number>>({
     situation: 0,
@@ -62,7 +64,7 @@ export default function RightPanel() {
         actions={
           <>
             <InjectIncidentButton />
-            <ExportReportButton />
+            <ExportProposalButton />
           </>
         }
       />
@@ -71,6 +73,7 @@ export default function RightPanel() {
         {tab === "situation" && <SituationTab />}
         {tab === "decision" && <DecisionTab />}
       </div>
+      <ProposalDocument />
     </div>
   );
 }

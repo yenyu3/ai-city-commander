@@ -132,6 +132,18 @@ export default function PublicAssistantPanel() {
           <strong>{pick(language, statusWord.zh, statusWord.en)}</strong>
           <span>{pick(language, statusWord.sub, statusWord.subEn)}</span>
         </div>
+        {latestAlert?.ete !== undefined && (
+          <div className={styles.recoveryRow}>
+            <Clock3 size={14} aria-hidden="true" />
+            <span>
+              {pick(
+                language,
+                `預估 ${latestAlert.ete} 分鐘後恢復通行`,
+                `Est. ${latestAlert.ete} min until traffic recovers`,
+              )}
+            </span>
+          </div>
+        )}
         <p className={styles.heroReason}>{heroReason}</p>
         <div className={styles.navLinks}>
           <a href="#public-roads" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-roads")}>
@@ -217,6 +229,12 @@ export default function PublicAssistantPanel() {
                   </span>
                 </div>
                 <p className={styles.advisoryText}>{getPublicAlertText(alert, language)}</p>
+                {alert.ete !== undefined && (
+                  <span className={styles.advisoryEte}>
+                    <Clock3 size={11} aria-hidden="true" />
+                    {pick(language, `預估 ${alert.ete} 分鐘後恢復通行`, `Est. ${alert.ete} min until recovery`)}
+                  </span>
+                )}
               </div>
             ))}
           </div>

@@ -1,0 +1,64 @@
+.wrap {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.title {
+  composes: sectionLabel from "../common/shared.module.css";
+}
+
+.empty {
+  composes: emptyState from "../common/shared.module.css";
+}
+
+.grid {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.tile {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-areas:
+    "label value"
+    "unit unit";
+  align-items: center;
+  gap: 2px 9px;
+  padding: 8px 10px;
+  border-radius: var(--radius-md);
+  background: color-mix(in srgb, var(--text), transparent 95%);
+}
+
+.label {
+  grid-area: label;
+  min-width: 0;
+  color: var(--text-dim);
+  font-size: var(--text-sm);
+  overflow-wrap: anywhere;
+}
+
+.tile strong {
+  grid-area: value;
+  justify-self: end;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-lead);
+  line-height: 1;
+}
+
+.crit {
+  color: var(--crit);
+}
+
+.warn {
+  color: var(--warn);
+}
+
+.unit {
+  grid-area: unit;
+  color: var(--text-dim);
+  font-size: var(--text-xs);
+  overflow-wrap: anywhere;
+}

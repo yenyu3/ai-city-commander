@@ -161,7 +161,15 @@ export default function DecisionSummary() {
             <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#decision-reasoning" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-reasoning")}>
-            <span>{pick(language, "推理步驟", "Reasoning")}</span>
+            <span>{pick(language, "推理與數據依據", "Reasoning & metrics")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
+          </a>
+          <a href="#decision-reroute" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-reroute")}>
+            <span>{pick(language, "替代路徑", "Rerouting")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
+          </a>
+          <a href="#decision-signals" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-signals")}>
+            <span>{pick(language, "號誌聯動", "Coordination")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#decision-multilingual" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-multilingual")}>

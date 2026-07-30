@@ -225,6 +225,7 @@ function buildAccidentAlert(
   segmentDefs: Map<string, RoadSegment>,
   segmentSaturation: Map<string, number>,
   timeOffsetMs: number,
+  segmentsState: Record<string, SegmentRuntimeState>,
 ): { alert: AlertRecord; mainRoute: string | null; secondaryRoutes: string[] } {
   const route = selectEvacuationRoute(
     incident.affectedSegment,
@@ -304,6 +305,20 @@ function buildAccidentAlert(
     eteBase: base,
     etePenalty: penalty,
     reasoningSteps: steps,
+    segmentMetrics: {
+      segmentName: incidentSegName,
+      flowPcuh: segmentsState[incident.affectedSegment]?.vehicleCount ?? 0,
+      saturation: incidentSat,
+    },
+    reroute: {
+      primaryRouteName: route.mainRoute ? mainRouteName : null,
+      secondaryRouteNames: route.secondaryRoutes.map((id) => segToName(segmentDefs, id)),
+      excluded: route.excluded.map((e) => ({
+        segmentName: segToName(segmentDefs, e.segmentId),
+        reason: e.reason,
+      })),
+      congestionWarning: route.congestionWarning,
+    },
   };
 
   const structured: StructuredEvent = {
@@ -530,6 +545,11 @@ export const useAppStore = create<AppState>((set, get) => ({
             title: `${name} 觸發 ${nextTier} 級壅塞`,
             ruleSummary: `Saturation_Score=${newSegments[id].saturation.toFixed(2)} → ${nextTier} 級。${result.actions.join("；")}`,
             sopRef: "SOP §1",
+            segmentMetrics: {
+              segmentName: name,
+              flowPcuh: newSegments[id].vehicleCount,
+              saturation: newSegments[id].saturation,
+            },
           };
           pushAlert(alert);
           llmAdapter
@@ -736,6 +756,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         segmentDefs,
         saturationMap,
         get().timeOffsetMs,
+        segments,
       );
       pushAlert(alert, alert.reasoningSteps);
       set((s) => ({

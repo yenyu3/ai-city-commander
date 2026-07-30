@@ -102,6 +102,21 @@ export interface ReasoningStep {
   sopRef?: string;
 }
 
+/** 事件觸發當下，來源路段的即時流量快照（僅 city_response/accident 有意義）。 */
+export interface SegmentMetricsSnapshot {
+  segmentName: string;
+  flowPcuh: number;
+  saturation: number;
+}
+
+/** 替代路徑疏散規劃的結構化版本，對應 selectEvacuationRoute 的計算結果（僅 accident 會填入）。 */
+export interface RerouteSnapshot {
+  primaryRouteName: string | null;
+  secondaryRouteNames: string[];
+  excluded: { segmentName: string; reason: string }[];
+  congestionWarning: boolean;
+}
+
 export interface AlertRecord {
   id: string;
   timestamp: string;
@@ -120,6 +135,8 @@ export interface AlertRecord {
   eteBase?: number;
   etePenalty?: number;
   reasoningSteps?: ReasoningStep[];
+  segmentMetrics?: SegmentMetricsSnapshot;
+  reroute?: RerouteSnapshot;
 }
 
 export interface FieldInspectorPosition {
