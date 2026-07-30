@@ -54,3 +54,5 @@ screenshot*.png
 # Python bytecode caches at any directory depth
 __pycache__/
 *.py[cod]
+
+data/
