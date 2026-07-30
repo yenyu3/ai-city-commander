@@ -20,13 +20,24 @@ export default function ExportProposalButton() {
     window.scrollTo(0, 0);
     el.style.clipPath = "none";
     const prevMinWidth = document.body.style.minWidth;
-    document.body.style.minWidth = "794px";
+    const exportWidth = Math.ceil(el.scrollWidth);
+    const exportHeight = Math.ceil(el.scrollHeight);
+    document.body.style.minWidth = `${exportWidth}px`;
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import("html2canvas"),
         import("jspdf"),
       ]);
-      const canvas = await html2canvas(el, { scale: 2, useCORS: true, scrollX: 0, scrollY: 0 });
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        scrollX: 0,
+        scrollY: 0,
+        width: exportWidth,
+        height: exportHeight,
+        windowWidth: exportWidth,
+        windowHeight: exportHeight,
+      });
       // 直接用截圖的長寬比算出單張自訂尺寸的頁面（寬固定為 A4 寬 210mm），
       // 不做分頁裁切——文件不長，單頁完整呈現比處理跨頁裁切簡單可靠。
       const pageWidthMm = 210;

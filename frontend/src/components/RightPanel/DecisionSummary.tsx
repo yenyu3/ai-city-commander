@@ -169,10 +169,6 @@ export default function DecisionSummary() {
             <span>{pick(language, "號誌聯動", "Coordination")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
-          <a href="#decision-multilingual" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-multilingual")}>
-            <span>{pick(language, "多語警示", "Multilingual")}</span>
-            <ChevronDown size={12} aria-hidden="true" />
-          </a>
         </div>
       </div>
 
