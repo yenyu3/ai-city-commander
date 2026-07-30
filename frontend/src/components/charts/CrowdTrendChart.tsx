@@ -22,6 +22,7 @@ interface Props {
   currentTime?: string;
   timeOffsetMs?: number;
   compact?: boolean;
+  showAxes?: boolean;
 }
 
 export default function CrowdTrendChart({
@@ -30,8 +31,10 @@ export default function CrowdTrendChart({
   currentTime,
   timeOffsetMs = 0,
   compact = false,
+  showAxes = false,
 }: Props) {
   const { language } = useLanguage();
+  const showAxesActual = !compact || showAxes;
 
   const { data, names } = useMemo(() => {
     const names: Record<string, string> = {};
@@ -58,25 +61,27 @@ export default function CrowdTrendChart({
           {pick(language, "人流趨勢（User Count）", "Crowd Trend (User Count)")}
         </div>
       )}
-      <ResponsiveContainer width="100%" height={compact ? 56 : 220}>
-        <LineChart data={data} margin={compact ? { top: 2, right: 2, left: 2, bottom: 0 } : { top: 8, right: 12, left: -12, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={compact ? (showAxes ? 110 : 56) : 220}>
+        <LineChart data={data} margin={compact ? { top: 4, right: 8, left: showAxes ? 0 : 2, bottom: showAxes ? 16 : 0 } : { top: 8, right: 12, left: -12, bottom: 0 }}>
           {!compact && <CartesianGrid stroke="var(--chart-grid)" vertical={false} />}
           <XAxis
             dataKey="timestamp"
-            hide={compact}
+            hide={!showAxesActual}
             tickFormatter={(v: string) => formatDisplayShortTime(v, timeOffsetMs)}
             tick={{ fill: "var(--text-dim)", fontSize: 10 }}
             axisLine={{ stroke: "var(--chart-axis)" }}
             tickLine={false}
             interval="preserveStartEnd"
+            label={showAxesActual ? { value: pick(language, "時間", "Time"), position: "insideBottomRight", offset: -4, fill: "var(--text-dim)", fontSize: 10 } : undefined}
           />
           <YAxis
-            hide={compact}
+            hide={!showAxesActual}
             tick={{ fill: "var(--text-dim)", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
-            width={40}
+            width={compact ? 44 : 40}
             tickFormatter={(v: number) => (v >= 1000 ? `${(v / 1000).toFixed(0)}k` : String(v))}
+            label={showAxesActual ? { value: pick(language, "人數", "Users"), angle: -90, position: "insideLeft", offset: compact ? 2 : 14, fill: "var(--text-dim)", fontSize: 10 } : undefined}
           />
           {!compact && currentTime && data.some((d) => d.timestamp === currentTime) && (
             <ReferenceLine x={currentTime} stroke="var(--text)" strokeWidth={1} strokeDasharray="2 2" />

@@ -8,26 +8,33 @@ import styles from "./AlertOverlay.module.css";
 
 export default function AlertOverlay() {
   const alerts = useAppStore((s) => s.alerts);
+  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
   const [toastIds, setToastIds] = useState<string[]>([]);
   const seen = useRef(new Set<string>());
   const overlayRef = useRef<HTMLDivElement>(null);
 
+  // Gated on `displayedAlertIds` (not `alerts` directly) so this toast surfaces in step
+  // with the timeline marker/playhead during playback instead of the instant the rule
+  // engine decided the alert, a tick early — see pushAlert in appStore.ts.
   useEffect(() => {
-    if (alerts.length === 0) return;
-    const newest = alerts[0];
-    if (!seen.current.has(newest.id)) {
-      seen.current.add(newest.id);
-      setToastIds((ids) => [...ids, newest.id]);
-    }
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [alerts.length]);
+    // `alerts` is newest-first (see pushAlert); reverse so a batch that becomes
+    // visible in the same tick is appended oldest-first, matching toastIds' order.
+    const newlyVisible = alerts.filter((a) => displayedAlertIds.has(a.id) && !seen.current.has(a.id)).reverse();
+    if (newlyVisible.length === 0) return;
+    newlyVisible.forEach((a) => seen.current.add(a.id));
+    setToastIds((ids) => [...ids, ...newlyVisible.map((a) => a.id)]);
+  }, [alerts, displayedAlertIds]);
 
   useEffect(() => {
     const el = overlayRef.current;
     if (!el) return;
-    el.scrollTop = el.scrollHeight;
+    // Align to the top of the newest card rather than the bottom of the panel —
+    // scrolling to scrollHeight clips a tall card's title/head off the top when
+    // it overflows the fixed-height viewport.
+    const last = el.lastElementChild as HTMLElement | null;
+    el.scrollTop = last ? last.offsetTop : el.scrollHeight;
   }, [toastIds]);
 
   const toasts = toastIds

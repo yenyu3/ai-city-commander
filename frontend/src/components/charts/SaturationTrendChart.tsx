@@ -25,6 +25,7 @@ interface Props {
   currentTime?: string;
   timeOffsetMs?: number;
   compact?: boolean;
+  showAxes?: boolean;
 }
 
 export default function SaturationTrendChart({
@@ -35,6 +36,7 @@ export default function SaturationTrendChart({
   currentTime,
   timeOffsetMs = 0,
   compact = false,
+  showAxes = false,
 }: Props) {
   const { language } = useLanguage();
 
@@ -70,6 +72,8 @@ export default function SaturationTrendChart({
 
   if (data.length === 0) return null;
 
+  const showAxesActual = !compact || showAxes;
+
   return (
     <div className={compact ? styles.compactWrap : styles.wrap}>
       {!compact && (
@@ -77,25 +81,27 @@ export default function SaturationTrendChart({
           {pick(language, "路段飽和度趨勢", "Segment Saturation Trend")}
         </div>
       )}
-      <ResponsiveContainer width="100%" height={compact ? 56 : 220}>
-        <AreaChart data={data} margin={compact ? { top: 2, right: 2, left: 2, bottom: 0 } : { top: 8, right: 12, left: -18, bottom: 0 }}>
+      <ResponsiveContainer width="100%" height={compact ? (showAxes ? 110 : 56) : 220}>
+        <AreaChart data={data} margin={compact ? { top: 4, right: 8, left: showAxes ? 0 : 2, bottom: showAxes ? 16 : 0 } : { top: 8, right: 12, left: -18, bottom: 0 }}>
           {!compact && <CartesianGrid stroke="var(--chart-grid)" vertical={false} />}
           <XAxis
             dataKey="timestamp"
-            hide={compact}
+            hide={!showAxesActual}
             tickFormatter={(v: string) => formatDisplayShortTime(v, timeOffsetMs)}
             tick={{ fill: "var(--text-dim)", fontSize: 10 }}
             axisLine={{ stroke: "var(--chart-axis)" }}
             tickLine={false}
             interval="preserveStartEnd"
+            label={showAxesActual ? { value: pick(language, "時間", "Time"), position: "insideBottomRight", offset: -4, fill: "var(--text-dim)", fontSize: 10 } : undefined}
           />
           <YAxis
-            hide={compact}
+            hide={!showAxesActual}
             domain={[0, (max: number) => Math.max(1.05, max * 1.1)]}
             tick={{ fill: "var(--text-dim)", fontSize: 10 }}
             axisLine={false}
             tickLine={false}
-            width={32}
+            width={compact ? 44 : 32}
+            label={showAxesActual ? { value: pick(language, "飽和度", "Sat."), angle: -90, position: "insideLeft", offset: compact ? 2 : 14, fill: "var(--text-dim)", fontSize: 10 } : undefined}
           />
           {!compact && (
             <>

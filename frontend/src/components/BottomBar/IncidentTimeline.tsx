@@ -1,4 +1,5 @@
 import { useMemo, useRef, useState } from "react";
+import { Play, Pause, RotateCcw } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -6,12 +7,28 @@ import { formatDisplayShortTime, formatDisplayTimestamp, parseTimestamp, timePct
 import type { AlertRecord } from "../../types";
 import styles from "./IncidentTimeline.module.css";
 
+const BASE_PLAYBACK_SPEED_MS = 1500;
+const SPEED_OPTIONS = [
+  { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
+  { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },
+  { label: "2x", ms: BASE_PLAYBACK_SPEED_MS / 2 },
+];
+
 export default function IncidentTimeline() {
   const ticks = useAppStore((s) => s.ticks);
   const tickIndex = useAppStore((s) => s.tickIndex);
   const alerts = useAppStore((s) => s.alerts);
+  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const seekTime = useAppStore((s) => s.seekTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const isPlaying = useAppStore((s) => s.isPlaying);
+  const playbackSpeed = useAppStore((s) => s.playbackSpeed);
+  const legDurationMs = useAppStore((s) => s.legDurationMs);
+  const frozenPlayheadPct = useAppStore((s) => s.frozenPlayheadPct);
+  const play = useAppStore((s) => s.play);
+  const pause = useAppStore((s) => s.pause);
+  const restart = useAppStore((s) => s.restart);
+  const setPlaybackSpeed = useAppStore((s) => s.setPlaybackSpeed);
   const { language } = useLanguage();
   const trackRef = useRef<HTMLDivElement>(null);
   const [hovered, setHovered] = useState<AlertRecord | null>(null);
@@ -25,9 +42,45 @@ export default function IncidentTimeline() {
     return marks;
   }, [ticks, end]);
 
+  // Alerts that land on the same timestamp render at the same left% and would
+  // otherwise stack exactly on top of each other, leaving only the topmost one
+  // clickable. Fan same-timestamp alerts out vertically so every marker stays
+  // independently clickable/hoverable.
+  const verticalOffsets = useMemo(() => {
+    const groups = new Map<string, AlertRecord[]>();
+    for (const a of alerts) {
+      const group = groups.get(a.timestamp);
+      if (group) group.push(a);
+      else groups.set(a.timestamp, [a]);
+    }
+    const offsets = new Map<string, number>();
+    for (const group of groups.values()) {
+      group.forEach((a, i) => offsets.set(a.id, (i - (group.length - 1) / 2) * 14));
+    }
+    return offsets;
+  }, [alerts]);
+
   if (ticks.length === 0) return null;
 
-  const playheadPct = timePct(ticks[tickIndex], start, end);
+  // While playing, target the *next* tick instead of the current (already-committed) one, and
+  // animate to it over exactly the real time until that next tick is due (store's
+  // legDurationMs — ticks are unevenly spaced in sim-time). Each glide then lands on its
+  // target at the exact real moment the store advances tickIndex, so the next glide can pick
+  // up from there with no gap or overshoot. Targeting the *current* tick instead (as before)
+  // meant the glide only started once a tick had already arrived, permanently running one step
+  // behind the timer that schedules ticks — and since consecutive steps can cover very
+  // different sim-time spans, a short step landing while a longer glide was still mid-flight
+  // would cut it off and jump-start a new one, reading as an erratic speed-up/slow-down (and
+  // letting alert markers, which surface the instant their tick is committed, visibly beat the
+  // still-catching-up playhead to position).
+  const hasNext = isPlaying && tickIndex < ticks.length - 1;
+  // When paused mid-glide, `frozenPlayheadPct` (set by the store's pause()) holds the exact
+  // interpolated position so the dot freezes in place instead of snapping back to the last
+  // committed tick — resuming continues from there via the store's shrunk legDurationMs.
+  const playheadPct = hasNext
+    ? timePct(ticks[tickIndex + 1], start, end)
+    : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
+  const visibleAlerts = alerts.filter((a) => displayedAlertIds.has(a.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {
     const el = trackRef.current;
@@ -56,14 +109,24 @@ export default function IncidentTimeline() {
           </div>
         ))}
 
-        <div className={styles.playhead} style={{ left: `${playheadPct}%` }} />
+        <div
+          className={styles.playhead}
+          style={{
+            left: `${playheadPct}%`,
+            transition: hasNext ? `left ${legDurationMs}ms linear` : "none",
+          }}
+        />
 
-        {alerts.map((a) => (
+        {visibleAlerts.map((a) => (
           <button
             key={a.id}
             type="button"
             className={styles.node}
-            style={{ left: `${timePct(a.timestamp, start, end)}%`, background: ALERT_KIND_COLOR[a.kind] }}
+            style={{
+              left: `${timePct(a.timestamp, start, end)}%`,
+              top: `calc(50% + ${verticalOffsets.get(a.id) ?? 0}px)`,
+              background: ALERT_KIND_COLOR[a.kind],
+            }}
             onClick={(e) => {
               e.stopPropagation();
               seekTime(a.timestamp);
@@ -73,6 +136,38 @@ export default function IncidentTimeline() {
             aria-label={a.title}
           />
         ))}
+      </div>
+
+      <div className={styles.controls}>
+        <button
+          type="button"
+          className={styles.playBtn}
+          onClick={() => (isPlaying ? pause() : play())}
+          aria-label={isPlaying ? pick(language, "暫停", "Pause") : pick(language, "播放", "Play")}
+        >
+          {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+        </button>
+        <button
+          type="button"
+          className={styles.playBtn}
+          onClick={() => restart()}
+          aria-label={pick(language, "重播", "Replay")}
+          title={pick(language, "重播（清除所有事件點並從頭開始）", "Replay (clears all markers and restarts)")}
+        >
+          <RotateCcw size={14} />
+        </button>
+        <div className={styles.speedGroup}>
+          {SPEED_OPTIONS.map((s) => (
+            <button
+              key={s.label}
+              type="button"
+              className={`${styles.speedBtn} ${playbackSpeed === s.ms ? styles.speedActive : ""}`}
+              onClick={() => setPlaybackSpeed(s.ms)}
+            >
+              {s.label}
+            </button>
+          ))}
+        </div>
       </div>
 
       {hovered && (

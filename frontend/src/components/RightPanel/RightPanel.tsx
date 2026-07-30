@@ -42,8 +42,8 @@ export default function RightPanel() {
   }
 
   const TABS: { key: TabKey; label: string }[] = [
-    { key: "situation", label: pick(language, "情境總覽", "Situation") },
     { key: "decision", label: pick(language, "AI 決策", "AI Decision") },
+    { key: "situation", label: pick(language, "情境總覽", "Situation") },
   ];
 
   const handleTabChange = (next: TabKey) => {

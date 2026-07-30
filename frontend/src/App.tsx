@@ -14,7 +14,9 @@ function App() {
   const isLoading = useAppStore((s) => s.isLoading);
   const loadError = useAppStore((s) => s.loadError);
   const isPlaying = useAppStore((s) => s.isPlaying);
-  const playbackSpeed = useAppStore((s) => s.playbackSpeed);
+  const ticks = useAppStore((s) => s.ticks);
+  const tickIndex = useAppStore((s) => s.tickIndex);
+  const legDurationMs = useAppStore((s) => s.legDurationMs);
   const advanceTime = useAppStore((s) => s.advanceTime);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const { language } = useLanguage();
@@ -32,9 +34,15 @@ function App() {
 
   useEffect(() => {
     if (!isPlaying) return;
-    const id = setInterval(() => advanceTime(), playbackSpeed);
-    return () => clearInterval(id);
-  }, [isPlaying, playbackSpeed, advanceTime]);
+    if (tickIndex >= ticks.length - 1) return;
+    // legDurationMs is the store's single source of truth for the current leg's real
+    // duration — a fresh full duration scaled to the sim-time gap being crossed (ticks are
+    // unevenly spaced), or whatever's left of it after a pause/resume. Scheduling off it
+    // directly (instead of recomputing here) keeps this timer and the playhead's CSS glide
+    // in the timeline perfectly in sync.
+    const id = window.setTimeout(() => advanceTime(), legDurationMs);
+    return () => window.clearTimeout(id);
+  }, [isPlaying, legDurationMs, ticks, tickIndex, advanceTime]);
 
   if (isLoading || !minimumLoadingDone) {
     return <LoadingScreen />;

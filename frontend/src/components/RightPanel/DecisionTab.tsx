@@ -2,7 +2,6 @@ import DecisionSummary from "./DecisionSummary";
 import ReasoningChain from "./ReasoningChain";
 import ETEBreakdownCard from "./ETEBreakdownCard";
 import MultilingualPreview from "./MultilingualPreview";
-import AlertLogList from "./AlertLogList";
 import CollapsibleSection from "../common/CollapsibleSection";
 import { useAppStore } from "../../store/appStore";
 import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
@@ -47,15 +46,6 @@ export default function DecisionTab() {
         </CollapsibleSection>
       </section>
 
-      <section id="decision-alert-log" className={styles.section}>
-        <CollapsibleSection
-          storageKey="decision-alert-log"
-          className={styles.collapsible}
-          title={pick(language, "查看完整事件紀錄", "Full alert log")}
-        >
-          <AlertLogList />
-        </CollapsibleSection>
-      </section>
     </div>
   );
 }

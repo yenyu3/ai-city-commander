@@ -25,7 +25,7 @@ import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
 import { llmAdapter, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
-import { computeTimeOffsetMs, reformatEmbeddedTimestamp } from "../utils/timeUtils";
+import { computeTimeOffsetMs, reformatEmbeddedTimestamp, parseTimestamp, timePct } from "../utils/timeUtils";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -67,6 +67,26 @@ function segToName(segments: Map<string, RoadSegment>, id: string): string {
   return segments.get(id)?.name ?? id;
 }
 
+// Demo ticks are sampled unevenly (hourly early on, down to 10-15min later). The progress
+// bar maps left% to real elapsed time linearly (see timePct), so for the playhead to cross
+// it at a constant pixel velocity, each step's real playback duration must be proportional
+// to the share of the total time span that step covers — not a fixed ms per tick, which
+// would speed through coarse stretches and crawl through dense ones. `ticks.length - 1`
+// keeps the total playthrough duration at a given speed close to the previous fixed-interval
+// design (sum of all step gaps == the full span, so the proportions sum to 1).
+export function computeStepDurationMs(ticks: string[], fromTs: string, toTs: string, playbackSpeed: number): number {
+  const totalSpanMs = parseTimestamp(ticks[ticks.length - 1]) - parseTimestamp(ticks[0]);
+  if (totalSpanMs <= 0) return playbackSpeed;
+  const gapMs = parseTimestamp(toTs) - parseTimestamp(fromTs);
+  return (gapMs / totalSpanMs) * (ticks.length - 1) * playbackSpeed;
+}
+
+/** Fresh full duration for the leg starting at `tickIndex`, or 0 if it's the last tick. */
+function computeLegDurationMs(ticks: string[], tickIndex: number, playbackSpeed: number): number {
+  if (tickIndex >= ticks.length - 1) return 0;
+  return computeStepDurationMs(ticks, ticks[tickIndex], ticks[tickIndex + 1], playbackSpeed);
+}
+
 let idCounter = 0;
 function nextId(prefix: string): string {
   idCounter += 1;
@@ -92,6 +112,16 @@ interface AppState {
   currentTime: string;
   isPlaying: boolean;
   playbackSpeed: number; // ms per tick
+  /** Real ms the glide from `tickIndex` to `tickIndex + 1` takes. Set to a fresh full duration
+   *  whenever a new leg begins (seekTime/setPlaybackSpeed), and shrunk to the remaining time by
+   *  `pause()` so resuming continues the same glide instead of restarting it. */
+  legDurationMs: number;
+  /** Date.now() when the current `legDurationMs` countdown started (reset on every leg change
+   *  and on resume) — used by `pause()` to compute how much of the leg is left. */
+  legStartedAt: number;
+  /** Playhead left% frozen at the exact pause instant (interpolated between the current and
+   *  next tick); null while playing or once a fresh seek/tick makes it stale. */
+  frozenPlayheadPct: number | null;
   /** ms added to every raw scenario timestamp so the timeline reads as starting "now" (Taipei time). */
   timeOffsetMs: number;
 
@@ -111,6 +141,12 @@ interface AppState {
   injectedIncidentIds: Set<string>;
   incidentEte: Record<string, number>;
   alerts: AlertRecord[];
+  /** `${kind}:${entityId}:${timestamp}` fingerprints of rule-based alerts already fired, so
+   *  scrubbing backward past a trigger point and playing forward again doesn't re-fire the
+   *  same historical crossing as a duplicate alert. */
+  firedAlertKeys: Set<string>;
+  /** Alert ids ready to surface on-screen (timeline marker, map toast). */
+  displayedAlertIds: Set<string>;
   reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
   fieldInspectorPosition: FieldInspectorPosition | null;
@@ -118,6 +154,9 @@ interface AppState {
   init(): Promise<void>;
   play(): void;
   pause(): void;
+  /** Jumps back to the first tick, re-runs it as a clean slate (clears alerts, injected
+   *  incidents, fired-rule fingerprints, active incidents), and starts playing again. */
+  restart(): void;
   setPlaybackSpeed(ms: number): void;
   advanceTime(): void;
   seekTime(timestamp: string): void;
@@ -305,10 +344,26 @@ function buildPublicContext(state: AppState): PublicContext {
 }
 
 function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
+  // The playhead now animates one tick ahead of the committed tickIndex (see
+  // IncidentTimeline), landing on a tick's pixel position at exactly the real time that
+  // tick is committed here — so revealing the marker/toast immediately is already in step
+  // with the animation; no artificial delay needed.
   useAppStore.setState((s) => ({
     alerts: [alert, ...s.alerts],
     reasoningLog: reasoningSteps ?? s.reasoningLog,
+    displayedAlertIds: s.displayedAlertIds.has(alert.id) ? s.displayedAlertIds : new Set(s.displayedAlertIds).add(alert.id),
   }));
+}
+
+// Rule-based alerts (city tier, MRT diversion, dome dispersal, multilingual) fire on a
+// prev-tick-vs-next-tick rising edge read from live store state. Scrubbing backward past a
+// trigger point resets that comparison, so playing forward across the same point again would
+// re-fire the same alert — dedupe by (rule, entity, timestamp) so the same historical crossing
+// only ever produces one alert, while a genuinely later crossing (different timestamp) still can.
+function tryFireOnce(key: string): boolean {
+  if (useAppStore.getState().firedAlertKeys.has(key)) return false;
+  useAppStore.setState((s) => ({ firedAlertKeys: new Set(s.firedAlertKeys).add(key) }));
+  return true;
 }
 
 export const useAppStore = create<AppState>((set, get) => ({
@@ -324,6 +379,9 @@ export const useAppStore = create<AppState>((set, get) => ({
   currentTime: "",
   isPlaying: false,
   playbackSpeed: 1500,
+  legDurationMs: 0,
+  legStartedAt: 0,
+  frozenPlayheadPct: null,
   timeOffsetMs: 0,
 
   traffic: [],
@@ -342,6 +400,8 @@ export const useAppStore = create<AppState>((set, get) => ({
   injectedIncidentIds: new Set(),
   incidentEte: {},
   alerts: [],
+  firedAlertKeys: new Set(),
+  displayedAlertIds: new Set(),
   reasoningLog: [],
   chatMessages: [],
   fieldInspectorPosition: null,
@@ -365,6 +425,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         ticks,
         tickIndex: 0,
         currentTime: firstTime,
+        legDurationMs: computeLegDurationMs(ticks, 0, get().playbackSpeed),
+        legStartedAt: Date.now(),
         timeOffsetMs: computeTimeOffsetMs(firstTime),
         segments: computeSegmentState(data.segments, data.traffic, firstTime),
         stations: computeStationState(data.crowd, firstTime),
@@ -378,15 +440,62 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   play() {
-    set({ isPlaying: true });
+    // legDurationMs already holds whatever's left of the current leg (a fresh full duration,
+    // or the remainder left over from a prior pause) — only the countdown's start needs resetting.
+    set({ isPlaying: true, legStartedAt: Date.now(), frozenPlayheadPct: null });
   },
 
   pause() {
-    set({ isPlaying: false });
+    const { isPlaying, ticks, tickIndex, legDurationMs, legStartedAt } = get();
+    if (!isPlaying) return;
+    if (tickIndex >= ticks.length - 1) {
+      set({ isPlaying: false });
+      return;
+    }
+    const start = ticks[0];
+    const end = ticks[ticks.length - 1];
+    const fraction = legDurationMs > 0 ? Math.min(1, Math.max(0, (Date.now() - legStartedAt) / legDurationMs)) : 1;
+    const fromPct = timePct(ticks[tickIndex], start, end);
+    const toPct = timePct(ticks[tickIndex + 1], start, end);
+    set({
+      isPlaying: false,
+      legDurationMs: Math.max(0, legDurationMs - (Date.now() - legStartedAt)),
+      frozenPlayheadPct: fromPct + (toPct - fromPct) * fraction,
+    });
+  },
+
+  restart() {
+    const { ticks, traffic, crowd, segmentDefs, playbackSpeed } = get();
+    if (ticks.length === 0) return;
+    const firstTime = ticks[0];
+    set({
+      tickIndex: 0,
+      currentTime: firstTime,
+      segments: computeSegmentState(segmentDefs, traffic, firstTime),
+      stations: computeStationState(crowd, firstTime),
+      activeIncidents: [],
+      injectedIncidentIds: new Set(),
+      incidentEte: {},
+      alerts: [],
+      firedAlertKeys: new Set(),
+      displayedAlertIds: new Set(),
+      reasoningLog: [],
+      isPlaying: true,
+      legDurationMs: computeLegDurationMs(ticks, 0, playbackSpeed),
+      legStartedAt: Date.now(),
+      frozenPlayheadPct: null,
+    });
   },
 
   setPlaybackSpeed(ms) {
-    set({ playbackSpeed: ms });
+    const { isPlaying, ticks, tickIndex } = get();
+    if (isPlaying && tickIndex < ticks.length - 1) {
+      // Restart the current leg's countdown at the new speed rather than leaving it running
+      // at the old one — matches how a speed change felt before this leg-tracking was added.
+      set({ playbackSpeed: ms, legDurationMs: computeLegDurationMs(ticks, tickIndex, ms), legStartedAt: Date.now() });
+    } else {
+      set({ playbackSpeed: ms });
+    }
   },
 
   advanceTime() {
@@ -412,7 +521,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nextTier = newSegments[id]?.tier ?? "Normal";
       if (prevTier === "Normal" && nextTier !== "Normal") {
         const result = checkCityResponse(id, nextTier);
-        if (result) {
+        if (result && tryFireOnce(`city_response:${id}:${timestamp}`)) {
           const name = segToName(segmentDefs, id);
           const alert: AlertRecord = {
             id: nextId("alert"),
@@ -458,7 +567,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (
       bl17Next &&
       !(bl17Prev && checkMrtDiversion(toCrowdSnapshot(bl17Prev, get().currentTime))) &&
-      checkMrtDiversion(toCrowdSnapshot(bl17Next, timestamp))
+      checkMrtDiversion(toCrowdSnapshot(bl17Next, timestamp)) &&
+      tryFireOnce(`mrt_diversion:BS_MRT_BL17:${timestamp}`)
     ) {
       const alert: AlertRecord = {
         id: nextId("alert"),
@@ -506,7 +616,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           )
         : false;
       const nowTriggered = checkDomeDispersal(domeHistory, domeCurrentSnapshot);
-      if (!wasTriggered && nowTriggered) {
+      if (!wasTriggered && nowTriggered && tryFireOnce(`dome_dispersal:BS_TPE_DOME:${timestamp}`)) {
         const peak = Math.max(0, ...domeHistory.map((d) => d.userCount));
         const alert: AlertRecord = {
           id: nextId("alert"),
@@ -552,7 +662,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       roamingPct: s.roamingPct,
     })));
     for (const st of nowMultilingual) {
-      if (!prevMultilingualIds.has(st.stationId)) {
+      if (!prevMultilingualIds.has(st.stationId) && tryFireOnce(`multilingual:${st.stationId}:${timestamp}`)) {
         const alert: AlertRecord = {
           id: nextId("alert"),
           timestamp,
@@ -575,7 +685,15 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
-    set({ tickIndex: newIndex, currentTime: timestamp, segments: newSegments, stations: newStations });
+    set({
+      tickIndex: newIndex,
+      currentTime: timestamp,
+      segments: newSegments,
+      stations: newStations,
+      legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
+      legStartedAt: Date.now(),
+      frozenPlayheadPct: null,
+    });
 
     // 事件自動注入：時鐘走到事件時間點時自動注入（同時仍保留手動按鈕注入能力）
     for (const incident of allIncidents) {

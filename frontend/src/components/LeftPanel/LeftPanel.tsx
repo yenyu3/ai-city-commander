@@ -8,6 +8,8 @@ import StationList from "./StationList";
 import SaturationTrendChart from "../charts/SaturationTrendChart";
 import CrowdTrendChart from "../charts/CrowdTrendChart";
 import InfoPopover from "../common/InfoPopover";
+import CollapsibleSection from "../common/CollapsibleSection";
+import AlertLogList from "../RightPanel/AlertLogList";
 import styles from "./LeftPanel.module.css";
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
@@ -94,6 +96,7 @@ export default function SituationTab() {
           currentTime={currentTime}
           timeOffsetMs={timeOffsetMs}
           compact
+          showAxes
         />
         <SegmentList />
       </section>
@@ -111,8 +114,18 @@ export default function SituationTab() {
           currentTime={currentTime}
           timeOffsetMs={timeOffsetMs}
           compact
+          showAxes
         />
         <StationList />
+      </section>
+
+      <section className={styles.section}>
+        <CollapsibleSection
+          storageKey="decision-alert-log"
+          title={pick(language, "查看完整事件紀錄", "Full alert log")}
+        >
+          <AlertLogList />
+        </CollapsibleSection>
       </section>
     </div>
   );

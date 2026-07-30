@@ -61,6 +61,79 @@
   transform: translate(-50%, -50%) scale(1.3);
 }
 
+.controls {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.playBtn {
+  flex-shrink: 0;
+  width: var(--icon-btn-lg);
+  height: var(--icon-btn-lg);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid var(--soft-border);
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text);
+  transition:
+    color var(--transition-fast),
+    background var(--transition-fast),
+    border-color var(--transition-fast),
+    transform var(--transition-fast);
+}
+.playBtn svg {
+  transform: translateX(1px);
+}
+.playBtn:hover {
+  color: var(--bg);
+  background: var(--text);
+  border-color: var(--text);
+  transform: translateY(-1px);
+}
+
+.speedGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 2px;
+  height: 28px;
+  padding: 2px;
+  border: 1px solid var(--soft-border);
+  border-radius: 999px;
+  background: color-mix(in srgb, var(--panel), transparent 12%);
+}
+
+.speedBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  height: 22px;
+  min-width: 34px;
+  padding: 0 10px;
+  border: none;
+  border-radius: 999px;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-nav);
+  font-size: var(--text-sm);
+  font-weight: 600;
+  white-space: nowrap;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+.speedBtn:hover {
+  color: var(--text);
+}
+
+.speedActive {
+  background: var(--text);
+  color: var(--bg);
+}
+
 .tooltip {
   position: absolute;
   bottom: 56px;
