@@ -1,13 +1,19 @@
-import { useEffect, useState } from "react";
-import { Box, Layers, Maximize2, Minimize2, PersonStanding } from "lucide-react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { Box, Layers, Map as MapIcon } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import PanelHeader from "../common/PanelHeader";
+import AlertOverlay from "../AlertOverlay/AlertOverlay";
+import FieldInspectorFigure from "./FieldInspectorFigure";
 import NetworkGraph from "./NetworkGraph";
 import SegmentCard from "./SegmentCard";
 import styles from "./MapStage.module.css";
 
 type CameraMode = "top" | "tilt";
 type DisplayMode = "flow" | "risk";
+
+/** Pointer movement below this, between down and up, counts as a tap rather than a drag. */
+const CLICK_MOVE_THRESHOLD_PX = 6;
 
 export default function MapStage() {
   const segments = useAppStore((s) => s.segments);
@@ -16,36 +22,97 @@ export default function MapStage() {
   const roadPaths = useAppStore((s) => s.roadPaths);
   const stationCoords = useAppStore((s) => s.stationCoords);
   const mapCenter = useAppStore((s) => s.mapCenter);
-  const focusZone = useAppStore((s) => s.focusZone);
-  const toggleFocusZone = useAppStore((s) => s.toggleFocusZone);
+  const mapExpanded = useAppStore((s) => s.mapExpanded);
+  const toggleMapExpanded = useAppStore((s) => s.toggleMapExpanded);
   const selectedId = useAppStore((s) => s.selectedSegmentId);
   const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
   const selectedStationId = useAppStore((s) => s.selectedStationId);
   const setSelectedStation = useAppStore((s) => s.setSelectedStation);
+  const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
+  const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
   const { language } = useLanguage();
-  const isFocused = focusZone === "center";
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
-  const [dragPoint, setDragPoint] = useState<{ x: number; y: number } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
+  const dragGhostRef = useRef<HTMLDivElement>(null);
+  const dragPointerIdRef = useRef<number | null>(null);
+  const dragLatestPointRef = useRef<{ x: number; y: number } | null>(null);
+  const dragFrameRef = useRef<number | null>(null);
+  const dragStartPointRef = useRef<{ x: number; y: number } | null>(null);
+  // Mirrors store state into a ref so the pointerup handler (registered once
+  // per drag session, not re-subscribed per pixel) can read the latest value
+  // without pulling fieldInspectorPosition into that effect's deps.
+  const fieldInspectorPositionRef = useRef(fieldInspectorPosition);
+
+  useEffect(() => {
+    fieldInspectorPositionRef.current = fieldInspectorPosition;
+  }, [fieldInspectorPosition]);
 
   useEffect(() => {
     setDisplayMode(viewerMode === "public" ? "risk" : "flow");
     setSelectedSegment(null);
   }, [viewerMode, setSelectedSegment]);
 
-  const segmentList = Object.values(segments);
+  const segmentList = useMemo(() => Object.values(segments), [segments]);
+  const stationList = useMemo(() => Object.values(stations), [stations]);
   const selected = selectedId ? segments[selectedId] : null;
   const cameraClass = cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
 
+  const handleSegmentClick = useCallback(
+    (id: string) => setSelectedSegment(id === selectedId ? null : id),
+    [selectedId, setSelectedSegment],
+  );
+  const handleStationClick = useCallback(
+    (id: string) => setSelectedStation(id === selectedStationId ? null : id),
+    [selectedStationId, setSelectedStation],
+  );
+
+  const moveDragGhost = useCallback((x: number, y: number) => {
+    dragLatestPointRef.current = { x, y };
+    if (dragFrameRef.current !== null) return;
+
+    dragFrameRef.current = window.requestAnimationFrame(() => {
+      dragFrameRef.current = null;
+      const point = dragLatestPointRef.current;
+      if (!point || !dragGhostRef.current) return;
+      dragGhostRef.current.style.transform = `translate3d(${point.x}px, ${point.y}px, 0) translate(-50%, -50%)`;
+    });
+  }, []);
+
+  // Listeners are (re)subscribed only when a drag session starts/ends, not on
+  // every pointermove — re-subscribing per pixel of movement was causing the
+  // stutter/stuck feeling while carrying the field-inspector figure across
+  // the screen, since it also forced the whole map+deck.gl tree to re-render.
   useEffect(() => {
-    if (!dragPoint) return;
+    if (!isDragging) return;
+    const initialPoint = dragLatestPointRef.current;
+    if (initialPoint) moveDragGhost(initialPoint.x, initialPoint.y);
 
     const handlePointerMove = (event: PointerEvent) => {
-      setDragPoint({ x: event.clientX, y: event.clientY });
+      if (dragPointerIdRef.current !== null && event.pointerId !== dragPointerIdRef.current) return;
+      moveDragGhost(event.clientX, event.clientY);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      setDragPoint(null);
+      if (dragPointerIdRef.current !== null && event.pointerId !== dragPointerIdRef.current) return;
+      setIsDragging(false);
+      dragPointerIdRef.current = null;
+      dragLatestPointRef.current = null;
+
+      const start = dragStartPointRef.current;
+      dragStartPointRef.current = null;
+      const movedDistance = start
+        ? Math.hypot(event.clientX - start.x, event.clientY - start.y)
+        : Number.POSITIVE_INFINITY;
+
+      // A tap (negligible movement) toggles removal of an already-placed
+      // figure — the "recycle" gesture — instead of dropping a new one on
+      // top of the toolbar button. A real drag still places/repositions it.
+      if (movedDistance < CLICK_MOVE_THRESHOLD_PX) {
+        if (fieldInspectorPositionRef.current) setFieldInspectorPosition(null);
+        return;
+      }
+
       window.dispatchEvent(
         new CustomEvent("field-inspection-drop", {
           detail: { clientX: event.clientX, clientY: event.clientY },
@@ -53,29 +120,42 @@ export default function MapStage() {
       );
     };
 
+    // A pointercancel (touch scroll takeover, OS gesture, stylus hover loss)
+    // or the window losing focus (alt-tab, devtools) never fires pointerup —
+    // without this the drag would stay "stuck" active until a stray pointerup
+    // happened to land somewhere, which is what made it feel unresponsive.
+    const abortDrag = () => {
+      setIsDragging(false);
+      dragPointerIdRef.current = null;
+      dragLatestPointRef.current = null;
+      dragStartPointRef.current = null;
+    };
+
     window.addEventListener("pointermove", handlePointerMove);
     window.addEventListener("pointerup", handlePointerUp, { once: true });
+    window.addEventListener("pointercancel", abortDrag, { once: true });
+    window.addEventListener("blur", abortDrag);
     return () => {
       window.removeEventListener("pointermove", handlePointerMove);
       window.removeEventListener("pointerup", handlePointerUp);
+      window.removeEventListener("pointercancel", abortDrag);
+      window.removeEventListener("blur", abortDrag);
+      if (dragFrameRef.current !== null) {
+        window.cancelAnimationFrame(dragFrameRef.current);
+        dragFrameRef.current = null;
+      }
     };
-  }, [dragPoint]);
+  }, [isDragging, moveDragGhost, setFieldInspectorPosition]);
 
   return (
     <div className={styles.wrap}>
+      <PanelHeader
+        icon={MapIcon}
+        title={pick(language, "即時地圖", "Live Map")}
+        expanded={mapExpanded}
+        onToggleExpand={toggleMapExpanded}
+      />
       <div className={styles.graphArea}>
-        <div className={styles.stageHeader}>
-          <button
-            type="button"
-            className={`${styles.iconBtn} ${styles.expandBtn}`}
-            aria-pressed={isFocused}
-            title={isFocused ? pick(language, "還原版面", "Restore layout") : pick(language, "放大地圖區域", "Expand map")}
-            onClick={() => toggleFocusZone("center")}
-          >
-            {isFocused ? <Minimize2 size={16} /> : <Maximize2 size={16} />}
-          </button>
-        </div>
-
         <div className={styles.layerControls} aria-label="Map view controls">
           <button
             type="button"
@@ -97,34 +177,51 @@ export default function MapStage() {
           </button>
           <button
             type="button"
-            className={dragPoint ? styles.activePegmanBtn : styles.pegmanBtn}
-            title="Drag field inspector to map"
-            aria-label="Drag field inspector to map"
+            className={[
+              isDragging ? styles.activePegmanBtn : styles.pegmanBtn,
+              fieldInspectorPosition && !isDragging ? styles.pegmanBtnPlaced : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
+            title={
+              fieldInspectorPosition
+                ? "Click to remove field inspector, drag to reposition"
+                : "Drag field inspector to map"
+            }
+            aria-label={
+              fieldInspectorPosition ? "Remove field inspector from map" : "Drag field inspector to map"
+            }
             onPointerDown={(event) => {
               event.preventDefault();
-              setDragPoint({ x: event.clientX, y: event.clientY });
+              dragPointerIdRef.current = event.pointerId;
+              dragStartPointRef.current = { x: event.clientX, y: event.clientY };
+              event.currentTarget.setPointerCapture(event.pointerId);
+              moveDragGhost(event.clientX, event.clientY);
+              setIsDragging(true);
             }}
           >
-            <PersonStanding size={19} />
+            <span className={styles.pegmanIcon} aria-hidden="true">
+              <FieldInspectorFigure size={23} animated={false} />
+            </span>
           </button>
         </div>
 
-        {dragPoint && (
+        {isDragging && (
           <div
+            ref={dragGhostRef}
             className={styles.dragGhost}
-            style={{ left: dragPoint.x, top: dragPoint.y }}
             aria-hidden="true"
           >
-            <PersonStanding size={28} />
+            <FieldInspectorFigure size={46} walking />
           </div>
         )}
 
         <div className={`${styles.camera} ${cameraClass}`}>
           <NetworkGraph
             segments={segmentList}
-            stations={Object.values(stations)}
-            onSegmentClick={(id) => setSelectedSegment(id === selectedId ? null : id)}
-            onStationClick={(id) => setSelectedStation(id === selectedStationId ? null : id)}
+            stations={stationList}
+            onSegmentClick={handleSegmentClick}
+            onStationClick={handleStationClick}
             selectedSegmentId={selectedId}
             selectedStationId={selectedStationId}
             displayMode={displayMode}
@@ -134,6 +231,7 @@ export default function MapStage() {
             mapCenter={mapCenter}
             viewerMode={viewerMode}
             language={language}
+            pauseAnimation={isDragging}
           />
         </div>
 
@@ -157,6 +255,8 @@ export default function MapStage() {
         </div>
 
         {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedSegment(null)} />}
+
+        <AlertOverlay />
       </div>
     </div>
   );

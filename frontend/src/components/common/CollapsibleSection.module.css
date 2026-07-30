@@ -5,8 +5,8 @@
 .summary {
   display: flex;
   align-items: center;
-  justify-content: space-between;
-  gap: 12px;
+  justify-content: flex-start;
+  gap: 6px;
   cursor: pointer;
   list-style: none;
 }
@@ -16,7 +16,7 @@
 }
 
 .title {
-  composes: panelLabel from "./shared.module.css";
+  composes: sectionLabel from "./shared.module.css";
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -25,12 +25,9 @@
 .hint {
   display: inline-flex;
   align-items: center;
-  gap: 4px;
-  letter-spacing: 0.04em;
-  text-transform: none;
-  font-family: var(--font-nav);
-  font-size: 11px;
-  color: var(--cyan);
+  justify-content: center;
+  flex-shrink: 0;
+  color: var(--text-dim);
   white-space: nowrap;
 }
 

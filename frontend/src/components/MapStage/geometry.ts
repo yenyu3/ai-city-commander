@@ -1,8 +1,12 @@
 import type { Position } from "@deck.gl/core";
 
-const DEFAULT_ROUTE_SIMPLIFY_TOLERANCE = 0.00016;
+const DEFAULT_ROUTE_SIMPLIFY_TOLERANCE = 0.0004;
 
-function perpendicularDistance(point: [number, number], start: [number, number], end: [number, number]) {
+function perpendicularDistance(
+  point: [number, number],
+  start: [number, number],
+  end: [number, number],
+) {
   const [px, py] = point;
   const [sx, sy] = start;
   const [ex, ey] = end;
@@ -11,7 +15,10 @@ function perpendicularDistance(point: [number, number], start: [number, number],
 
   if (dx === 0 && dy === 0) return Math.hypot(px - sx, py - sy);
 
-  const t = Math.max(0, Math.min(1, ((px - sx) * dx + (py - sy) * dy) / (dx * dx + dy * dy)));
+  const t = Math.max(
+    0,
+    Math.min(1, ((px - sx) * dx + (py - sy) * dy) / (dx * dx + dy * dy)),
+  );
   const projectedX = sx + t * dx;
   const projectedY = sy + t * dy;
   return Math.hypot(px - projectedX, py - projectedY);
@@ -46,7 +53,10 @@ function simplifySection(
   }
 }
 
-export function simplifyPath(path: [number, number][], tolerance = DEFAULT_ROUTE_SIMPLIFY_TOLERANCE): [number, number][] {
+export function simplifyPath(
+  path: [number, number][],
+  tolerance = DEFAULT_ROUTE_SIMPLIFY_TOLERANCE,
+): [number, number][] {
   if (path.length <= 2) return path;
 
   const keep = Array.from({ length: path.length }, () => false);

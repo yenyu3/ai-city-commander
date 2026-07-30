@@ -4,7 +4,7 @@ import type {
   AlertRecord,
   ChatMessage,
   CrowdSnapshot,
-  FocusZone,
+  FieldInspectorPosition,
   LiveIncident,
   ReasoningStep,
   RoadPathDef,
@@ -23,7 +23,7 @@ import { checkDomeDispersal } from "../engine/domeDispersal";
 import { checkSignalFailure } from "../engine/signalFailure";
 import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
-import { llmAdapter, type StructuredEvent } from "../services/llmAdapter";
+import { llmAdapter, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
 import { computeTimeOffsetMs, reformatEmbeddedTimestamp } from "../utils/timeUtils";
 
@@ -83,7 +83,7 @@ interface AppState {
   isLoading: boolean;
   loadError: string | null;
   viewerMode: ViewerMode;
-  focusZone: FocusZone | null;
+  mapExpanded: boolean;
   selectedSegmentId: string | null;
   selectedStationId: string | null;
 
@@ -113,6 +113,7 @@ interface AppState {
   alerts: AlertRecord[];
   reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
+  fieldInspectorPosition: FieldInspectorPosition | null;
 
   init(): Promise<void>;
   play(): void;
@@ -121,11 +122,12 @@ interface AppState {
   advanceTime(): void;
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string): void;
-  sendChatMessage(question: string): void;
+  sendChatMessage(question: string, audience?: ViewerMode): void;
   setViewerMode(mode: ViewerMode): void;
-  toggleFocusZone(zone: FocusZone): void;
+  toggleMapExpanded(): void;
   setSelectedSegment(id: string | null): void;
   setSelectedStation(id: string | null): void;
+  setFieldInspectorPosition(position: FieldInspectorPosition | null): void;
 }
 
 function computeSegmentState(
@@ -288,6 +290,19 @@ function buildAccidentAlert(
   return { alert, mainRoute: route.mainRoute, secondaryRoutes: route.secondaryRoutes };
 }
 
+/** 把目前的即時狀態壓成市民模式問答需要的可公開概況。 */
+function buildPublicContext(state: AppState): PublicContext {
+  const busiest = Object.values(state.stations).sort((a, b) => b.userCount - a.userCount)[0];
+  return {
+    affectedRoads: Object.values(state.segments)
+      .filter((segment) => segment.tier !== "Normal" || segment.isIncidentSource)
+      .sort((a, b) => b.saturation - a.saturation)
+      .map((segment) => ({ name: segment.name, tier: segment.tier })),
+    busiestStation: busiest ? { name: busiest.name, userCount: busiest.userCount } : null,
+    activeIncidentCount: state.activeIncidents.length,
+  };
+}
+
 function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
   useAppStore.setState((s) => ({
     alerts: [alert, ...s.alerts],
@@ -299,7 +314,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   isLoading: true,
   loadError: null,
   viewerMode: getInitialViewerMode(),
-  focusZone: null,
+  mapExpanded: false,
   selectedSegmentId: null,
   selectedStationId: null,
 
@@ -328,6 +343,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   reasoningLog: [],
   chatMessages: [],
+  fieldInspectorPosition: null,
 
   async init() {
     try {
@@ -682,25 +698,33 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  sendChatMessage(question) {
+  sendChatMessage(question, audience = "government") {
+    const isPublic = audience === "public";
     const userMsg: ChatMessage = {
       id: nextId("chat"),
       role: "user",
       text: question,
+      audience,
       createdAt: Date.now(),
     };
     const { ruleResult, sopExcerpt, sopRefs } = runWhatIf(question);
     const placeholder: ChatMessage = {
       id: nextId("chat"),
       role: "assistant",
-      text: "研判中…",
-      sopRefs,
+      text: isPublic ? "查詢中…" : "研判中…",
+      audience,
+      // 市民模式不揭露 SOP 條號
+      sopRefs: isPublic ? undefined : sopRefs,
       ruleResult,
       createdAt: Date.now(),
     };
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
 
-    llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt).then((text) => {
+    const answer = isPublic
+      ? llmAdapter.answerPublic(question, ruleResult, buildPublicContext(get()))
+      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt);
+
+    answer.then((text) => {
       set((s) => ({
         chatMessages: s.chatMessages.map((m) =>
           m.id === placeholder.id ? { ...m, text } : m,
@@ -716,8 +740,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     set({ viewerMode: mode });
   },
 
-  toggleFocusZone(zone) {
-    set((s) => ({ focusZone: s.focusZone === zone ? null : zone }));
+  toggleMapExpanded() {
+    set((s) => ({ mapExpanded: !s.mapExpanded }));
   },
 
   setSelectedSegment(id) {
@@ -726,5 +750,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setSelectedStation(id) {
     set({ selectedStationId: id, selectedSegmentId: null });
+  },
+
+  setFieldInspectorPosition(position) {
+    set({ fieldInspectorPosition: position });
   },
 }));

@@ -68,8 +68,6 @@ export type Tier = "Normal" | "B" | "A";
 
 export type ViewerMode = "public" | "government";
 
-export type FocusZone = "left" | "center" | "right" | "bottom";
-
 export interface CityResponseResult {
   segmentId: string;
   tier: Tier;
@@ -124,10 +122,19 @@ export interface AlertRecord {
   reasoningSteps?: ReasoningStep[];
 }
 
+export interface FieldInspectorPosition {
+  lng: number;
+  lat: number;
+  nearestRoadId: string | null;
+  nearestRoadName: string | null;
+}
+
 export interface ChatMessage {
   id: string;
   role: "user" | "assistant";
   text: string;
+  /** 這則訊息屬於哪個檢視模式的對話串，切換模式時不互相混入 */
+  audience: ViewerMode;
   sopRefs?: string[];
   ruleResult?: unknown;
   createdAt: number;

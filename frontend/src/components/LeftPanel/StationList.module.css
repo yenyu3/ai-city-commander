@@ -15,6 +15,7 @@
   flex-direction: column;
   gap: 0;
   overflow-y: auto;
+  padding-right: 6px;
 }
 
 .row {
@@ -24,7 +25,7 @@
   gap: 6px;
   min-height: 34px;
   padding: 7px 4px;
-  font-size: 12px;
+  font-size: var(--text-base);
   border-bottom: 1px solid var(--soft-border);
   transition: background var(--transition-fast);
   cursor: pointer;
@@ -38,13 +39,13 @@
 }
 .selected {
   background: color-mix(in srgb, var(--cyan), transparent 82%);
-  box-shadow: inset 2px 0 0 var(--cyan);
 }
 .selected:hover {
   background: color-mix(in srgb, var(--cyan), transparent 74%);
 }
 
 .name {
+  font-weight: 500;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
@@ -54,7 +55,7 @@
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
-  font-size: 10.5px;
+  font-size: var(--text-sm);
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -64,7 +65,7 @@
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
-  font-size: 10.5px;
+  font-size: var(--text-xs);
 }
 .growthUp { color: var(--warn); }
 .growthDown { color: var(--cyan); }
@@ -73,7 +74,7 @@
   font-family: var(--font-mono);
   text-align: right;
   color: var(--text-dim);
-  font-size: 11px;
+  font-size: var(--text-sm);
 }
 .roamingHot {
   color: var(--cyan);

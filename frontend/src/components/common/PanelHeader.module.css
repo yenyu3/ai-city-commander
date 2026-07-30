@@ -2,6 +2,7 @@
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-height: var(--icon-btn-md);
   flex-shrink: 0;
 }
 
@@ -17,6 +18,13 @@
   overflow: hidden;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-shrink: 0;
 }
 
 .btn {
@@ -44,5 +52,29 @@
 .btn[aria-pressed="true"] {
   color: var(--bg);
   background: var(--text);
+  border-color: var(--text);
+}
+
+/* Filled, larger variant for primary panel-level actions (e.g. inject
+   demo incident, export report) that should read as more prominent than
+   the plain ghost .btn used for expand/restore/close toggles. */
+.actionBtn {
+  composes: btn;
+  width: var(--icon-btn-md);
+  height: var(--icon-btn-md);
+  background: var(--text);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.actionBtn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--text), transparent 15%);
+  color: var(--bg);
+  border-color: var(--text);
+}
+
+.actionBtn:disabled {
+  background: var(--text);
+  color: var(--bg);
   border-color: var(--text);
 }
