@@ -242,6 +242,7 @@ function NetworkGraph({
   const [placementSeq, setPlacementSeq] = useState(0);
   const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
   const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
+  const setFieldInspectorLocateStatus = useAppStore((s) => s.setFieldInspectorLocateStatus);
   // Briefly shown once the camera finishes panning to a newly selected
   // segment, so the operator can tell which road on the map just got
   // selected without a label sitting on the map permanently.
@@ -417,6 +418,59 @@ function NetworkGraph({
     },
     [roads, setFieldInspectorPosition],
   );
+
+  // Mirrors `roads` into a ref so the one-shot auto-locate effect below can read the latest
+  // value from inside an async geolocation callback without re-running every tick (roads is
+  // recomputed on every simulation tick since it carries live saturation/vehicleCount).
+  const roadsRef = useRef(roads);
+  useEffect(() => {
+    roadsRef.current = roads;
+  }, [roads]);
+
+  const hasAutoLocatedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoLocatedRef.current) return;
+    hasAutoLocatedRef.current = true;
+    if (fieldInspectorPosition) return;
+
+    if (!("geolocation" in navigator)) {
+      setFieldInspectorLocateStatus("unavailable");
+      return;
+    }
+
+    setFieldInspectorLocateStatus("pending");
+    navigator.geolocation.getCurrentPosition(
+      (geoPosition) => {
+        const point: Position = [geoPosition.coords.longitude, geoPosition.coords.latitude, 58];
+        const nearestRoad = findNearestRoad(point, roadsRef.current);
+        const nearestDistance = nearestRoad
+          ? samplePath(nearestRoad.path, 12).reduce(
+              (min, sample) => Math.min(min, positionDistance(point, sample)),
+              Number.POSITIVE_INFINITY,
+            )
+          : Number.POSITIVE_INFINITY;
+
+        // Demo dataset only covers Taipei's city core — a real-world fix that lands far outside
+        // it (e.g. testing from another city) shouldn't get snapped to a distant road; treat it
+        // the same as "couldn't locate you" so the chatbot falls back to the overall city answer.
+        if (!nearestRoad || nearestDistance > 0.05) {
+          setFieldInspectorLocateStatus("unavailable");
+          return;
+        }
+
+        setFieldInspectorPosition({
+          lng: geoPosition.coords.longitude,
+          lat: geoPosition.coords.latitude,
+          nearestRoadId: nearestRoad.segmentId,
+          nearestRoadName: nearestRoad.name,
+        });
+        setPlacementSeq((seq) => seq + 1);
+        setFieldInspectorLocateStatus("granted");
+      },
+      () => setFieldInspectorLocateStatus("denied"),
+      { timeout: 8000 },
+    );
+  }, [fieldInspectorPosition, setFieldInspectorPosition, setFieldInspectorLocateStatus]);
 
   useEffect(() => {
     const handleInspectionDrop = (event: Event) => {

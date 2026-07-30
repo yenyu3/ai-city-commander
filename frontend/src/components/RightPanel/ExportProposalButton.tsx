@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Loader2, Printer } from "lucide-react";
+import { Download, Loader2 } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./ExportProposalButton.module.css";
@@ -16,6 +16,11 @@ export default function ExportProposalButton() {
     if (!el) return;
 
     setIsExporting(true);
+    const prevScrollY = window.scrollY;
+    window.scrollTo(0, 0);
+    el.style.clipPath = "none";
+    const prevMinWidth = document.body.style.minWidth;
+    document.body.style.minWidth = "794px";
     try {
       const [{ default: html2canvas }, { jsPDF }] = await Promise.all([
         import("html2canvas"),
@@ -34,6 +39,9 @@ export default function ExportProposalButton() {
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.98), "JPEG", 0, 0, pageWidthMm, pageHeightMm);
       pdf.save(`交控中心建議書_${latest.id}.pdf`);
     } finally {
+      document.body.style.minWidth = prevMinWidth;
+      el.style.clipPath = "";
+      window.scrollTo(0, prevScrollY);
       setIsExporting(false);
     }
   }
@@ -50,7 +58,7 @@ export default function ExportProposalButton() {
       {isExporting ? (
         <Loader2 size={16} className={styles.spin} aria-hidden="true" />
       ) : (
-        <Printer size={16} aria-hidden="true" />
+        <Download size={16} aria-hidden="true" />
       )}
     </button>
   );

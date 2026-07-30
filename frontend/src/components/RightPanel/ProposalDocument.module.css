@@ -14,9 +14,9 @@
   不是 dashboard 互動介面，不需要跟隨專案的 --text/--crit 等 CSS 變數）。
 */
 .doc {
-  opacity: 0;
+  clip-path: inset(0 0 0 100vw);
   pointer-events: none;
-  position: fixed;
+  position: absolute;
   top: 0;
   left: 0;
   z-index: -1;

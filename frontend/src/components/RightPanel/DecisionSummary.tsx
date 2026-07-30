@@ -106,10 +106,7 @@ export default function DecisionSummary() {
     );
   }
 
-  const actionItems = latest.ruleSummary
-    .split(/[。；;]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const actionItems = latest.actions;
   const kindLabel = pick(language, ALERT_KIND_LABEL[latest.kind].zh, ALERT_KIND_LABEL[latest.kind].en);
   const primaryMetric = getPrimaryMetric(latest, language, kindLabel);
 

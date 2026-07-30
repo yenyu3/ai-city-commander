@@ -8,7 +8,6 @@ import PublicAssistantPanel from "./PublicAssistantPanel";
 import SituationTab from "../LeftPanel/LeftPanel";
 import DecisionTab from "./DecisionTab";
 import InjectIncidentButton from "./InjectIncidentButton";
-import ExportReportButton from "./ExportReportButton";
 import ExportProposalButton from "./ExportProposalButton";
 import ProposalDocument from "./ProposalDocument";
 import styles from "./RightPanel.module.css";

@@ -129,6 +129,8 @@ export interface AlertRecord {
     | "multilingual";
   title: string;
   ruleSummary: string;
+  /** SOP 規定的實際處置步驟（非觸發條件數據），供「建議行動」區塊顯示。 */
+  actions: string[];
   llmText?: string;
   sopRef?: string;
   ete?: number;
@@ -145,6 +147,9 @@ export interface FieldInspectorPosition {
   nearestRoadId: string | null;
   nearestRoadName: string | null;
 }
+
+/** 小人自動定位（瀏覽器 Geolocation）的狀態，用來決定要不要顯示「無法取得位置」提示。 */
+export type FieldInspectorLocateStatus = "idle" | "pending" | "granted" | "denied" | "unavailable";
 
 export interface ChatMessage {
   id: string;

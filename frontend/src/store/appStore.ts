@@ -4,6 +4,7 @@ import type {
   AlertRecord,
   ChatMessage,
   CrowdSnapshot,
+  FieldInspectorLocateStatus,
   FieldInspectorPosition,
   LiveIncident,
   ReasoningStep,
@@ -150,6 +151,7 @@ interface AppState {
   reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
   fieldInspectorPosition: FieldInspectorPosition | null;
+  fieldInspectorLocateStatus: FieldInspectorLocateStatus;
 
   init(): Promise<void>;
   play(): void;
@@ -168,6 +170,7 @@ interface AppState {
   setSelectedSegment(id: string | null): void;
   setSelectedStation(id: string | null): void;
   setFieldInspectorPosition(position: FieldInspectorPosition | null): void;
+  setFieldInspectorLocateStatus(status: FieldInspectorLocateStatus): void;
 }
 
 function computeSegmentState(
@@ -300,6 +303,16 @@ function buildAccidentAlert(
     kind: "accident",
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
+    actions: [
+      route.mainRoute ? `主疏散路徑：引導車流改道至 ${mainRouteName}` : "無符合條件之替代路段，維持現場疏導",
+      ...(route.secondaryRoutes.length > 0
+        ? [`次要疏散路徑：${route.secondaryRoutes.map((id) => segToName(segmentDefs, id)).join("、")}`]
+        : []),
+      ...(route.congestionWarning
+        ? ["主疏散路徑已壅塞，啟動「長綠燈時制」並建議併行大眾運輸"]
+        : []),
+      `CMS 發布：「${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘」`,
+    ],
     sopRef: "SOP §2 / §7",
     ete,
     eteBase: base,
@@ -348,6 +361,9 @@ function buildAccidentAlert(
 /** 把目前的即時狀態壓成市民模式問答需要的可公開概況。 */
 function buildPublicContext(state: AppState): PublicContext {
   const busiest = Object.values(state.stations).sort((a, b) => b.userCount - a.userCount)[0];
+  const inspectorSegment = state.fieldInspectorPosition?.nearestRoadId
+    ? state.segments[state.fieldInspectorPosition.nearestRoadId]
+    : undefined;
   return {
     affectedRoads: Object.values(state.segments)
       .filter((segment) => segment.tier !== "Normal" || segment.isIncidentSource)
@@ -355,6 +371,7 @@ function buildPublicContext(state: AppState): PublicContext {
       .map((segment) => ({ name: segment.name, tier: segment.tier })),
     busiestStation: busiest ? { name: busiest.name, userCount: busiest.userCount } : null,
     activeIncidentCount: state.activeIncidents.length,
+    nearbyRoad: inspectorSegment ? { name: inspectorSegment.name, tier: inspectorSegment.tier } : null,
   };
 }
 
@@ -420,6 +437,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   reasoningLog: [],
   chatMessages: [],
   fieldInspectorPosition: null,
+  fieldInspectorLocateStatus: "idle",
 
   async init() {
     try {
@@ -543,7 +561,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             timestamp,
             kind: "city_response",
             title: `${name} 觸發 ${nextTier} 級壅塞`,
-            ruleSummary: `Saturation_Score=${newSegments[id].saturation.toFixed(2)} → ${nextTier} 級。${result.actions.join("；")}`,
+            ruleSummary: `Saturation_Score=${newSegments[id].saturation.toFixed(2)} → ${nextTier} 級`,
+            actions: result.actions,
             sopRef: "SOP §1",
             segmentMetrics: {
               segmentName: name,
@@ -596,6 +615,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         kind: "mrt_diversion",
         title: `${bl17Next.name} 觸發捷運分流`,
         ruleSummary: `User_Count=${bl17Next.userCount}、Growth_Rate=${bl17Next.growthRate.toFixed(2)}（門檻：>25,000 或 growth>0.30）`,
+        actions: [
+          "建議北捷「過站不停」",
+          "通知公車處調度接駁專車",
+          "引導群眾步行至 BS_MRT_BL18",
+        ],
         sopRef: "SOP §3",
       };
       pushAlert(alert);
@@ -644,6 +668,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           kind: "dome_dispersal",
           title: `大巨蛋 散場啟動`,
           ruleSummary: `歷史峰值=${peak}（>=30,000）、當前 Growth_Rate=${domeNext.growthRate.toFixed(2)}（<=-0.20）`,
+          actions: [
+            "標記「散場啟動」",
+            "提前連動第 3 條接駁機制：北捷過站不停、公車處調度接駁專車、引導步行至 BS_MRT_BL18",
+          ],
           sopRef: "SOP §4",
         };
         pushAlert(alert);
@@ -689,6 +717,10 @@ export const useAppStore = create<AppState>((set, get) => ({
           kind: "multilingual",
           title: `${st.locationName} 觸發多語通報`,
           ruleSummary: `Roaming_User_Pct=${(st.roamingPct * 100).toFixed(0)}%（門檻 >=30%）`,
+          actions: [
+            "該區域簡訊與看板訊息同時提供多國語言版本（中/英/日/韓）",
+            "發布時間格式統一為 YYYY-MM-DD HH:MM",
+          ],
           sopRef: "SOP §6",
         };
         pushAlert(alert);
@@ -800,6 +832,11 @@ export const useAppStore = create<AppState>((set, get) => ({
         kind: "signal_failure",
         title: `${segToName(segmentDefs, incident.affectedSegment)} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
+        actions: [
+          "產出人工指揮派遣建議",
+          `調度警力至 ${segToName(segmentDefs, incident.affectedSegment)}，每路口 2 人`,
+          `CMS 加註：「${segToName(segmentDefs, incident.affectedSegment)} 號誌故障，請依現場指揮通行」`,
+        ],
         sopRef: "SOP §5",
         reasoningSteps: steps,
       };
@@ -840,6 +877,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         kind: "accident",
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,
+        actions: ["僅作情境關聯顯示，交由第 3 條捷運分流規則觀察後續是否需要處置"],
         sopRef: "SOP §3",
         reasoningSteps: steps,
       };
@@ -903,5 +941,9 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFieldInspectorPosition(position) {
     set({ fieldInspectorPosition: position });
+  },
+
+  setFieldInspectorLocateStatus(status) {
+    set({ fieldInspectorLocateStatus: status });
   },
 }));
