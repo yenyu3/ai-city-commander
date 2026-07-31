@@ -18,7 +18,7 @@ export default function ExportProposalButton() {
     setIsExporting(true);
     const prevScrollY = window.scrollY;
     window.scrollTo(0, 0);
-    el.style.clipPath = "none";
+    el.style.visibility = "visible";
     const prevMinWidth = document.body.style.minWidth;
     const exportWidth = Math.ceil(el.scrollWidth);
     const exportHeight = Math.ceil(el.scrollHeight);
@@ -48,10 +48,13 @@ export default function ExportProposalButton() {
         orientation: "portrait",
       });
       pdf.addImage(canvas.toDataURL("image/jpeg", 0.98), "JPEG", 0, 0, pageWidthMm, pageHeightMm);
-      pdf.save(`交控中心建議書_${latest.id}.pdf`);
+      const now = new Date();
+      const pad = (n: number) => String(n).padStart(2, "0");
+      const timestamp = `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+      pdf.save(`交控中心建議書_${latest.id}_${timestamp}.pdf`);
     } finally {
       document.body.style.minWidth = prevMinWidth;
-      el.style.clipPath = "";
+      el.style.visibility = "";
       window.scrollTo(0, prevScrollY);
       setIsExporting(false);
     }

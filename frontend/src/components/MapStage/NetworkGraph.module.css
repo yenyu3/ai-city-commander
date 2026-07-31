@@ -154,8 +154,7 @@
 
 .stationIcon,
 .stationIconSelected {
-  width: 18px;
-  height: 18px;
+  display: block;
   /* Source PNGs are black glyphs on transparent backgrounds; this recolors
      them to solid white while preserving the alpha-channel silhouette. */
   filter: brightness(0) invert(1) drop-shadow(0 1px 2px rgba(0, 0, 0, 0.6));
@@ -167,8 +166,6 @@
 }
 
 .stationIconSelected {
-  width: 18px;
-  height: 18px;
   filter: brightness(0) invert(1) drop-shadow(0 0 4px rgba(255, 255, 255, 0.9));
 }
 

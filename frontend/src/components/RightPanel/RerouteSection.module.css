@@ -27,12 +27,50 @@
   background: color-mix(in srgb, var(--text), transparent 95%);
 }
 
+.cardBody {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.iconWrap {
+  flex-shrink: 0;
+  align-self: center;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.5em;
+  height: 2.5em;
+  border-radius: var(--radius-md);
+  color: var(--text-dim);
+}
+
 .primary {
   background: color-mix(in srgb, var(--ok), transparent 90%);
 }
 
+.primary .iconWrap {
+  color: var(--ok);
+}
+
+.secondaryCard {
+  background: color-mix(in srgb, var(--warn), transparent 90%);
+}
+
+.secondaryCard .iconWrap {
+  color: var(--warn);
+}
+
+.secondaryCard .cardHead {
+  color: var(--warn);
+}
+
 .excludedCard {
   background: color-mix(in srgb, var(--crit), transparent 92%);
+}
+
+.excludedCard .iconWrap {
+  color: var(--crit);
 }
 
 .cardHead {

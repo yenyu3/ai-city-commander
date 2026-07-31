@@ -22,52 +22,70 @@ export default function RerouteSection() {
       ) : (
         <div className={styles.list}>
           <div className={`${styles.card} ${styles.primary}`}>
-            <div className={styles.cardHead}>
-              <Check size={14} aria-hidden="true" />
-              <span>{pick(language, "主要疏散路徑", "Primary route")}</span>
-            </div>
-            <p className={styles.routeName}>
-              {reroute.primaryRouteName ??
-                pick(language, "無符合條件之替代路段", "No qualifying alternative route")}
-            </p>
-            {reroute.congestionWarning && (
-              <p className={styles.warningNote}>
-                {pick(
-                  language,
-                  "疏散路徑亦壅塞，建議併行大眾運輸",
-                  "Route is also congested — recommend combining with public transit",
+            <div className={styles.cardBody}>
+              <div className={styles.iconWrap}>
+                <Check size={20} aria-hidden="true" />
+              </div>
+              <div>
+                <div className={styles.cardHead}>
+                  <span>{pick(language, "主要疏散路徑", "Primary route")}</span>
+                </div>
+                <p className={styles.routeName}>
+                  {reroute.primaryRouteName ??
+                    pick(language, "無符合條件之替代路段", "No qualifying alternative route")}
+                </p>
+                {reroute.congestionWarning && (
+                  <p className={styles.warningNote}>
+                    {pick(
+                      language,
+                      "疏散路徑亦壅塞，建議併行大眾運輸",
+                      "Route is also congested — recommend combining with public transit",
+                    )}
+                  </p>
                 )}
-              </p>
-            )}
+              </div>
+            </div>
           </div>
 
           {reroute.secondaryRouteNames.length > 0 && (
-            <div className={styles.card}>
-              <div className={styles.cardHead}>
-                <Route size={14} aria-hidden="true" />
-                <span>{pick(language, "次要替代路徑", "Secondary routes")}</span>
+            <div className={`${styles.card} ${styles.secondaryCard}`}>
+              <div className={styles.cardBody}>
+                <div className={styles.iconWrap}>
+                  <Route size={20} aria-hidden="true" />
+                </div>
+                <div>
+                  <div className={styles.cardHead}>
+                    <span>{pick(language, "次要替代路徑", "Secondary routes")}</span>
+                  </div>
+                  <ul className={styles.plainList}>
+                    {reroute.secondaryRouteNames.map((name) => (
+                      <li key={name}>{name}</li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <ul className={styles.plainList}>
-                {reroute.secondaryRouteNames.map((name) => (
-                  <li key={name}>{name}</li>
-                ))}
-              </ul>
             </div>
           )}
 
           {reroute.excluded.length > 0 && (
             <div className={`${styles.card} ${styles.excludedCard}`}>
-              <div className={styles.cardHead}>
-                <AlertTriangle size={14} aria-hidden="true" />
-                <span>{pick(language, "排除候選路段說明", "Excluded candidates")}</span>
+              <div className={styles.cardBody}>
+                <div className={styles.iconWrap}>
+                  <AlertTriangle size={20} aria-hidden="true" />
+                </div>
+                <div>
+                  <div className={styles.cardHead}>
+                    <span>{pick(language, "排除候選路段說明", "Excluded candidates")}</span>
+                  </div>
+                  <ul className={styles.plainList}>
+                    {reroute.excluded.map((e) => (
+                      <li key={e.segmentName}>
+                        <strong>{e.segmentName}</strong>：{e.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
               </div>
-              <ul className={styles.plainList}>
-                {reroute.excluded.map((e) => (
-                  <li key={e.segmentName}>
-                    <strong>{e.segmentName}</strong>：{e.reason}
-                  </li>
-                ))}
-              </ul>
             </div>
           )}
         </div>

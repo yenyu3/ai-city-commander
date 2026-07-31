@@ -1,8 +1,11 @@
-import { useEffect, useState } from "react";
 import { Bus, ShieldAlert, Train } from "lucide-react";
-import { useAppStore } from "../../store/appStore";
-import { opsCoordinationAdapter, type OpsCoordinationPlan } from "../../services/opsCoordinationAdapter";
+import { useEffect, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
+import {
+  opsCoordinationAdapter,
+  type OpsCoordinationPlan,
+} from "../../services/opsCoordinationAdapter";
+import { useAppStore } from "../../store/appStore";
 import styles from "./SignalCoordinationSection.module.css";
 
 const AGENCY_ICON = { train: Train, bus: Bus, shield: ShieldAlert };
@@ -51,17 +54,15 @@ export default function SignalCoordinationSection() {
 
   return (
     <div className={styles.wrap}>
-      <div className={styles.periodRow}>
-        <span>{pick(language, "調整時段", "Adjustment window")}</span>
-        <strong>{plan.period}</strong>
-      </div>
-
-      <div className={styles.subLabel}>
-        {pick(language, "號誌動態配時調整建議", "Signal timing adjustments")}
+      <div className={styles.subLabelRow}>
+        <span className={styles.subLabel}>
+          {pick(language, "號誌動態配時調整建議", "Signal timing adjustments")}
+        </span>
+        <strong className={styles.periodValue}>調整時間：{plan.period}</strong>
       </div>
       <ul className={styles.timingList}>
         {plan.signalTimings.map((row) => (
-          <li key={row.intersectionName} className={styles.timingRow}>
+          <li key={row.intersectionName}>
             <div className={styles.timingHead}>
               <span>{row.intersectionName}</span>
               <span className={styles.timingValues}>

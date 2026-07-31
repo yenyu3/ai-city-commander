@@ -1,4 +1,4 @@
-import { pick, useLanguage } from "../../i18n";
+import { useLanguage } from "../../i18n";
 import DecisionSummary from "./DecisionSummary";
 import styles from "./DecisionTab.module.css";
 import ETEBreakdownCard from "./ETEBreakdownCard";
@@ -24,12 +24,8 @@ export default function DecisionTab() {
       </section>
 
       <section id="decision-signals" className={styles.section}>
-        <div className={styles.sectionTitle}>
-          {pick(language, "號誌與跨系統聯動", "Signal & inter-agency coordination")}
-        </div>
         <SignalCoordinationSection />
       </section>
-
     </div>
   );
 }

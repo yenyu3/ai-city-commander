@@ -33,23 +33,23 @@
   gap: 12px;
 }
 
-.periodRow {
+.subLabelRow {
   display: flex;
   align-items: center;
   justify-content: space-between;
   gap: 8px;
-  font-size: var(--text-sm);
-  color: var(--text-dim);
-}
-
-.periodRow strong {
-  color: var(--text);
-  font-family: var(--font-mono);
-  font-weight: 700;
 }
 
 .subLabel {
   composes: sectionLabel from "../common/shared.module.css";
+}
+
+.periodValue {
+  flex-shrink: 0;
+  color: var(--text);
+  font-family: var(--font-mono);
+  font-size: var(--text-sm);
+  font-weight: 700;
 }
 
 .timingList,

@@ -56,6 +56,13 @@ const KIND_AGENCIES: Record<AlertRecord["kind"], InterAgencyAction[]> = {
   ],
 };
 
+function formatPeriod(timestamp: string): string {
+  const start = new Date(timestamp.replace(" ", "T"));
+  const end = new Date(start.getTime() + 2 * 60 * 60 * 1000);
+  const fmt = (d: Date) => `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return `${fmt(start)}-${fmt(end)}`;
+}
+
 /**
  * MVP 佔位資料：規則引擎目前沒有號誌秒數計算或跨機關派遣邏輯，這裡先用依事件種類
  * 模板化的假資料撐版面。介面維持 Promise 簽章，未來要換成真後端 API 時，
@@ -64,7 +71,7 @@ const KIND_AGENCIES: Record<AlertRecord["kind"], InterAgencyAction[]> = {
 export class TemplateOpsCoordinationAdapter implements OpsCoordinationAdapter {
   async getCoordinationPlan(alert: AlertRecord): Promise<OpsCoordinationPlan> {
     return {
-      period: `${alert.timestamp} 起 2 小時`,
+      period: formatPeriod(alert.timestamp),
       signalTimings: [
         {
           intersectionName: KIND_INTERSECTION_NAME[alert.kind],

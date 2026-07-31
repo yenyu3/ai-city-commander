@@ -248,6 +248,7 @@ function NetworkGraph({
   // selected without a label sitting on the map permanently.
   const [flashSegmentId, setFlashSegmentId] = useState<string | null>(null);
   const flashTimeoutRef = useRef<number | null>(null);
+  const [mapZoom, setMapZoom] = useState(VIEWS[cameraMode].zoom);
 
   useEffect(() => {
     if (pauseAnimation || isMarkerDragging) return;
@@ -327,6 +328,8 @@ function NetworkGraph({
     if (!map) return;
     addBuildingLayer(map);
     applyLabelLanguage(map, language);
+    const onZoom = () => setMapZoom(map.getZoom());
+    map.on("zoom", onZoom);
   }, [language]);
 
   useEffect(() => {
@@ -364,17 +367,18 @@ function NetworkGraph({
 
   const stationPoints = useMemo<StationPoint[]>(
     () =>
-      stations.flatMap((station) => {
-        const position = stationCoords[station.stationId];
+      Object.keys(STATION_ICON_CATEGORY).flatMap((stationId) => {
+        const position = stationCoords[stationId];
         if (!position) return [];
+        const runtime = stations.find((s) => s.stationId === stationId);
         return [
           {
-            stationId: station.stationId,
-            name: station.name,
+            stationId,
+            name: runtime?.name ?? stationId,
             position: [position[0], position[1], 42],
-            userCount: station.userCount,
-            growthRate: station.growthRate,
-            roamingPct: station.roamingPct,
+            userCount: runtime?.userCount ?? 0,
+            growthRate: runtime?.growthRate ?? 0,
+            roamingPct: runtime?.roamingPct ?? 0,
           },
         ];
       }),
@@ -721,6 +725,7 @@ function NetworkGraph({
         )}
         {stationPoints.map((station) => {
           const isSelected = station.stationId === selectedStationId;
+          const iconSize = Math.round(6 * Math.pow(2, mapZoom - 14));
           return (
             <Marker
               key={station.stationId}
@@ -742,6 +747,7 @@ function NetworkGraph({
                   src={stationIconSrc(station.stationId)}
                   alt=""
                   className={isSelected ? styles.stationIconSelected : styles.stationIcon}
+                  style={{ width: iconSize, height: iconSize }}
                 />
               </button>
             </Marker>

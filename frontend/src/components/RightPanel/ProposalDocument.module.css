@@ -3,19 +3,23 @@
   預設 display:none。ExportProposalButton 呼叫 html2pdf 之前會把 display 切成
   block，截圖完立刻切回 none。
 
-  兩個實測踩到的 html2canvas 陷阱，別再犯：
+  三個實測踩到的 html2canvas 陷阱，別再犯：
   1. 不能把節點擺在螢幕外的負座標（例如 left:-99999px）隱藏——html2canvas 只擷取
      「瀏覽器視窗座標範圍內」的內容，超出範圍會截出整份空白。
   2. 不能用 position:fixed——html2canvas 複製文件做截圖時不會正確套用 fixed
      定位，元件會退回原本的巢狀版面位置，若原本巢狀在 flex 版面裡就可能被擠成
      高度 0。改用 position:absolute + createPortal 掛到 body 上即可避開。
+  3. 不能用 clip-path 隱藏——html2canvas 官方文件列為不支援的 CSS 屬性，牽涉
+     vw 這類視窗相對單位時，它內部複製出來的離屏 iframe 計算容易出錯，會導致
+     擷取範圍誤判、內容被裁掉（曾經導致匯出的 PDF 右側被切掉）。改用
+     visibility:hidden，匯出時再切成 visible，是 html2canvas 有正式支援的屬性。
 
   視覺樣式刻意貼近 `AI poc.tsx` 的 Tailwind slate 色票（這是給人看的正式文件輸出，
   不是 dashboard 互動介面，不需要跟隨專案的 --text/--crit 等 CSS 變數）。
 */
 .doc {
   box-sizing: border-box;
-  clip-path: inset(0 0 0 100vw);
+  visibility: hidden;
   pointer-events: none;
   position: absolute;
   top: 0;
