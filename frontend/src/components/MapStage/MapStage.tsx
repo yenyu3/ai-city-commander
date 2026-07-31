@@ -1,7 +1,8 @@
-import { Box, Layers, Map as MapIcon } from "lucide-react";
+import { AlertTriangle, Box, CheckCircle2, Layers, Map as MapIcon } from "lucide-react";
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
 import { useAppStore } from "../../store/appStore";
+import { findNearestRoadId } from "../../utils/geoDistance";
 import AlertOverlay from "../AlertOverlay/AlertOverlay";
 import PanelHeader from "../common/PanelHeader";
 import FieldInspectorFigure from "./FieldInspectorFigure";
@@ -14,11 +15,20 @@ type DisplayMode = "flow" | "risk";
 /** Pointer movement below this, between down and up, counts as a tap rather than a drag. */
 const CLICK_MOVE_THRESHOLD_PX = 6;
 
+/** 兩個固定示範定位點：近事件（光復南路事故現場附近，~50m）與遠方（信義路五段東側，
+ *  距離所有進行中事件都超過 1 公里）——座標經 utils/geoDistance.ts 驗證過實際距離，
+ *  讓「定位鄰近事件」與「定位遠離事件」兩種情境不需要靠拖曳精準度就能穩定重現。 */
+const DEMO_LOCATIONS = {
+  near: { lng: 121.5578, lat: 25.0405 },
+  far: { lng: 121.5746, lat: 25.0336 },
+} as const;
+
 export default function MapStage() {
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
   const viewerMode = useAppStore((s) => s.viewerMode);
   const roadPaths = useAppStore((s) => s.roadPaths);
+  const segmentDefs = useAppStore((s) => s.segmentDefs);
   const stationCoords = useAppStore((s) => s.stationCoords);
   const mapCenter = useAppStore((s) => s.mapCenter);
   const mapExpanded = useAppStore((s) => s.mapExpanded);
@@ -66,6 +76,20 @@ export default function MapStage() {
   const handleStationClick = useCallback(
     (id: string) => setSelectedStation(id === selectedStationId ? null : id),
     [selectedStationId, setSelectedStation],
+  );
+
+  const jumpToDemoLocation = useCallback(
+    (key: keyof typeof DEMO_LOCATIONS) => {
+      const { lng, lat } = DEMO_LOCATIONS[key];
+      const nearest = findNearestRoadId([lng, lat], roadPaths, segmentDefs);
+      setFieldInspectorPosition({
+        lng,
+        lat,
+        nearestRoadId: nearest?.segmentId ?? null,
+        nearestRoadName: nearest?.name ?? null,
+      });
+    },
+    [roadPaths, segmentDefs, setFieldInspectorPosition],
   );
 
   const moveDragGhost = useCallback((x: number, y: number) => {
@@ -223,6 +247,24 @@ export default function MapStage() {
             <span className={styles.pegmanIcon} aria-hidden="true">
               <FieldInspectorFigure size={23} animated={false} />
             </span>
+          </button>
+          <button
+            type="button"
+            className={styles.demoBtn}
+            title={pick(language, "示範定位：鄰近事件", "Demo location: near an incident")}
+            aria-label={pick(language, "示範定位：鄰近事件", "Demo location: near an incident")}
+            onClick={() => jumpToDemoLocation("near")}
+          >
+            <AlertTriangle size={12} />
+          </button>
+          <button
+            type="button"
+            className={styles.demoBtn}
+            title={pick(language, "示範定位：遠離事件", "Demo location: far from incidents")}
+            aria-label={pick(language, "示範定位：遠離事件", "Demo location: far from incidents")}
+            onClick={() => jumpToDemoLocation("far")}
+          >
+            <CheckCircle2 size={12} />
           </button>
         </div>
 

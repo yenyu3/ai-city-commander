@@ -15,10 +15,12 @@ import {
 import { PathLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
+import { AlertTriangle } from "lucide-react";
 import { withElevation } from "./geometry";
 import { useAppStore, type SegmentRuntimeState, type StationRuntimeState } from "../../store/appStore";
 import type { RoadPathDef, ViewerMode } from "../../types";
 import { pick, type Language } from "../../i18n";
+import { pathMidpoint } from "../../utils/geoDistance";
 import FieldInspectorFigure from "./FieldInspectorFigure";
 import styles from "./NetworkGraph.module.css";
 
@@ -242,6 +244,27 @@ function NetworkGraph({
   const [placementSeq, setPlacementSeq] = useState(0);
   const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
   const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
+  const alerts = useAppStore((s) => s.alerts);
+
+  // 目前尚未解決的注入事件位置——地圖上顯示跳動的警示圖示，表示「此時此地有事件發生中」。
+  // RD_ 路段取路徑近似中點，BS_ 站點直接取站點座標。事件一旦解決（resolvedAt 有值）就消失。
+  const incidentMarkers = useMemo(() => {
+    const result: { id: string; lng: number; lat: number; title: string }[] = [];
+    for (const a of alerts) {
+      if (a.origin !== "incident" || !a.trackedSegmentId || a.resolvedAt) continue;
+      if (a.trackedSegmentId.startsWith("BS_")) {
+        const coords = stationCoords[a.trackedSegmentId];
+        if (coords) result.push({ id: a.id, lng: coords[0], lat: coords[1], title: a.title });
+      } else {
+        const path = roadPaths.get(a.trackedSegmentId)?.path;
+        if (path && path.length > 0) {
+          const [lng, lat] = pathMidpoint(path);
+          result.push({ id: a.id, lng, lat, title: a.title });
+        }
+      }
+    }
+    return result;
+  }, [alerts, roadPaths, stationCoords]);
   const setFieldInspectorLocateStatus = useAppStore((s) => s.setFieldInspectorLocateStatus);
   // Briefly shown once the camera finishes panning to a newly selected
   // segment, so the operator can tell which road on the map just got
@@ -723,6 +746,13 @@ function NetworkGraph({
             </div>
           </Marker>
         )}
+        {incidentMarkers.map((marker) => (
+          <Marker key={marker.id} longitude={marker.lng} latitude={marker.lat} anchor="bottom">
+            <div className={styles.incidentMarker} title={marker.title} aria-label={marker.title} role="img">
+              <AlertTriangle size={15} />
+            </div>
+          </Marker>
+        ))}
         {stationPoints.map((station) => {
           const isSelected = station.stationId === selectedStationId;
           const iconSize = Math.round(6 * Math.pow(2, mapZoom - 14));

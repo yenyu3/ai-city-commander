@@ -153,6 +153,15 @@ export interface AlertRecord {
   segmentMetrics?: SegmentMetricsSnapshot;
   stationMetrics?: StationMetricsSnapshot;
   reroute?: RerouteSnapshot;
+  /** 僅 origin === "incident" 會設定：追蹤這起事件對應的路段/站點 ID（RD_ 或 BS_ 開頭），
+   *  用來判定「是否已解決」以及「使用者定位是否鄰近此事件」。 */
+  trackedSegmentId?: string;
+  /** 追蹤路段/站點是否曾經真的進入異常狀態——必須先觀察到「曾經惡化」，才能判定後續的
+   *  「已恢復」，避免原本就正常的路段被誤判為已解決。 */
+  wasElevated?: boolean;
+  /** 追蹤路段/站點從異常恢復到正常/可通行狀態的時間點（依實際車流/人流資料判定，非固定
+   *  時間差）；有值時事件時間軸會在此時間額外畫一個綠色「已解決」標記。 */
+  resolvedAt?: string;
 }
 
 export interface FieldInspectorPosition {

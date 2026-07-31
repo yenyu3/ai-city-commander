@@ -30,6 +30,11 @@ export default function AlertLogList() {
                 {pick(language, ALERT_KIND_LABEL[alert.kind].zh, ALERT_KIND_LABEL[alert.kind].en)}
               </span>
               <div className={styles.metaRight}>
+                {alert.resolvedAt && (
+                  <span className={styles.resolved}>
+                    {pick(language, "已解決", "Resolved")} · {formatDisplayTimestamp(alert.resolvedAt, timeOffsetMs)}
+                  </span>
+                )}
                 {viewerMode === "government" && alert.ete !== undefined && (
                   <span className={styles.ete}>ETE {alert.ete} {pick(language, "分", "min")}</span>
                 )}

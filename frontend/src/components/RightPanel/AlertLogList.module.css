@@ -75,6 +75,17 @@
   color: var(--text-dim);
 }
 
+.resolved {
+  flex-shrink: 0;
+  font-family: var(--font-nav);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ok);
+  padding: 1px 7px;
+  border-radius: 99px;
+  background: color-mix(in srgb, var(--ok) 12%, transparent);
+}
+
 .text {
   min-width: 0;
   color: var(--text);

@@ -59,6 +59,13 @@ export interface StructuredEvent {
   sopRef?: string;
 }
 
+/** 使用者定位鄰近（500 公尺內）的某個尚未解決注入事件——見 utils/geoDistance.ts。 */
+export interface NearbyIncidentContext {
+  title: string;
+  distanceMeters: number;
+  actions: string[];
+}
+
 /** 市民模式問答用的即時概況（只含可公開資訊，不含門檻／SOP 條號）。 */
 export interface PublicContext {
   /** 目前非 Normal 或為事故來源的路段，依飽和度由高到低 */
@@ -68,6 +75,12 @@ export interface PublicContext {
   /** 小人（field inspector）目前所在位置最近的路段；沒有小人（未放置/移除/定位失敗）時為 null，
    *  此時所有回答都應退回城市整體概況，不提及使用者自身位置。 */
   nearbyRoad: { name: string; tier: string } | null;
+  /** 定位鄰近（500公尺內）某個尚未解決的注入事件時才有值；比 nearbyRoad 更精確地指出
+   *  「你人就在事件影響範圍」而非只是路段分級。 */
+  nearbyIncident: NearbyIncidentContext | null;
+  /** 有定位、但附近沒有事件時，城市其他地方仍在處理中的事件標題（最多 2 筆），
+   *  讓「周邊良好」的回答仍能提醒使用者留意其他地區。 */
+  otherActiveIncidentTitles: string[];
 }
 
 export interface LLMAdapter {
@@ -78,6 +91,10 @@ export interface LLMAdapter {
     sopExcerpt: string,
     /** 使用者在對話框附加的小人位置 Context Tag 所鄰近的路段；沒有附加時為 null。 */
     nearbyRoad?: { name: string; tier: string } | null,
+    /** 定位鄰近某個尚未解決注入事件時才有值。 */
+    nearbyIncident?: NearbyIncidentContext | null,
+    /** 有定位但附近沒有事件時，城市其他地方仍在處理中的事件標題。 */
+    otherActiveIncidentTitles?: string[],
   ): Promise<string>;
   /** 市民模式：同樣的規則引擎結果，改用白話、去敏感化的說法回覆。 */
   answerPublic(
@@ -223,6 +240,16 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
   const station = ctx.busiestStation;
   const nearby = ctx.nearbyRoad;
 
+  // 定位鄰近某個尚未解決的事件時，這是最具體、最該優先呈現的一句話；有定位但附近沒事件時，
+  // 改用「周邊良好，但其他地方要留意」的說法，而不是完全不提使用者自己的位置狀態。
+  const locationNote = ctx.nearbyIncident
+    ? `您目前位置鄰近正在處理的事件（約 ${Math.round(ctx.nearbyIncident.distanceMeters)} 公尺）：${ctx.nearbyIncident.actions[0] ?? "建議留意現場指示"}`
+    : nearby
+      ? ctx.otherActiveIncidentTitles.length > 0
+        ? `您目前位置周邊路況正常，不過城市其他地區仍有事件處理中，經過時請留意：${ctx.otherActiveIncidentTitles.join("、")}。`
+        : "您目前位置周邊路況正常，市區目前沒有需要留意的重大事件。"
+      : null;
+
   if (/英文|外語|多語|旅客|外國|english|visitor|foreign/i.test(question)) {
     const location = ctx.affectedRoads[0]?.name ?? "市中心";
     return [
@@ -233,6 +260,15 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
   }
 
   if (/避開|避免|哪些區|哪幾|不要去|avoid|which area/i.test(question)) {
+    if (ctx.nearbyIncident) {
+      const others = roads ? `其他建議避開的路段還有：${roads}。` : "";
+      return [
+        `您目前位置正好在事件「${ctx.nearbyIncident.title}」的影響範圍內（約 ${Math.round(ctx.nearbyIncident.distanceMeters)} 公尺），${ctx.nearbyIncident.actions[0] ?? "建議先改道"}。`,
+        others,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
     if (nearby && nearby.tier !== "Normal") {
       const others = roads ? `其他建議避開的路段還有：${roads}。` : "";
       return [`您目前所在的${nearby.name}本身已經${tierPhrase(nearby.tier)}，建議先改走周邊道路或改搭大眾運輸。`, others]
@@ -252,12 +288,24 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
 
   if (/適合|現在|要去|出發|前往|該不該|is it ok|good time|go to|travel/i.test(question)) {
     const station_tail = station ? `另外${station.name}人潮較多，可考慮從鄰近站點進出。` : "";
+    if (ctx.nearbyIncident) {
+      return [
+        `您目前位置鄰近正在處理的事件「${ctx.nearbyIncident.title}」（約 ${Math.round(ctx.nearbyIncident.distanceMeters)} 公尺），建議先改道或延後出發，${ctx.nearbyIncident.actions[0] ?? "依現場指示通行"}。`,
+        station_tail,
+      ]
+        .filter(Boolean)
+        .join("\n");
+    }
     if (nearby) {
       const head =
         nearby.tier === "Normal"
           ? `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}，現在出發沒有問題。`
           : `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}，建議改走周邊道路或改搭捷運，並多預留一點時間。`;
-      return [head, station_tail].filter(Boolean).join("\n");
+      const elsewhere =
+        nearby.tier === "Normal" && ctx.otherActiveIncidentTitles.length > 0
+          ? `不過城市其他地區仍有事件處理中（${ctx.otherActiveIncidentTitles.join("、")}），路經該處請留意。`
+          : "";
+      return [head, elsewhere, station_tail].filter(Boolean).join("\n");
     }
     const head = roads
       ? `${roads}一帶目前比較壅塞，建議改走周邊道路或改搭捷運，並多預留一點時間。`
@@ -266,7 +314,7 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
   }
 
   return [
-    nearby ? `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}。` : null,
+    locationNote ?? (nearby ? `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}。` : null),
     roads ? `目前需要留意的路段有：${roads}。` : "目前主要道路狀況穩定。",
     ctx.activeIncidentCount > 0
       ? `市區有 ${ctx.activeIncidentCount} 件事件處理中，公開資訊會以官方可發布內容為準。`
@@ -313,6 +361,8 @@ export class TemplateLLMAdapter implements LLMAdapter {
     ruleResult: unknown,
     sopExcerpt: string,
     nearbyRoad?: { name: string; tier: string } | null,
+    nearbyIncident?: NearbyIncidentContext | null,
+    otherActiveIncidentTitles: string[] = [],
   ): Promise<string> {
     await delay(500 + Math.random() * 500);
     const rendered = renderGovRuleResult((ruleResult ?? {}) as GovRuleResult);
@@ -320,9 +370,11 @@ export class TemplateLLMAdapter implements LLMAdapter {
     const sopLine = trimmedSop
       ? `\n\n依據 SOP 原文：「${trimmedSop.slice(0, 220)}${trimmedSop.length > 220 ? "…" : ""}」`
       : "";
-    const nearbyLine = nearbyRoad
-      ? `\n\n（已附加現場定位：鄰近${nearbyRoad.name}，目前分級 ${nearbyRoad.tier}）`
-      : "";
+    const nearbyLine = nearbyIncident
+      ? `\n\n（現場定位鄰近已注入事件「${nearbyIncident.title}」，距離約 ${Math.round(nearbyIncident.distanceMeters)} 公尺，建議行動：${nearbyIncident.actions[0] ?? "依現場指示通行"}）`
+      : nearbyRoad
+        ? `\n\n（已附加現場定位：鄰近${nearbyRoad.name}，目前分級 ${nearbyRoad.tier}${otherActiveIncidentTitles.length > 0 ? `；城市其他地區仍有事件處理中：${otherActiveIncidentTitles.join("、")}` : ""}）`
+        : "";
     const body =
       rendered ||
       "這個問題目前沒有偵測到可代入規則引擎計算的具體數字，先提供相關 SOP 條文摘要供參考，您可以補充具體數值（如人數、飽和度、漫遊比例）讓我重新代入計算。";

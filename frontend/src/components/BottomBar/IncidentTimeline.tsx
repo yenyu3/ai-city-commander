@@ -14,6 +14,25 @@ const SPEED_OPTIONS = [
   { label: "2x", ms: BASE_PLAYBACK_SPEED_MS / 2 },
 ];
 
+/** Markers within this many % of the timeline width of the previous marker in the
+ *  same chain are treated as one visual cluster and fanned out vertically — a
+ *  generalization of the old "exact same timestamp" grouping so close-but-not-
+ *  identical timestamps (e.g. a resolved marker landing near another incident's
+ *  trigger marker) never visually overlap either. */
+const CLUSTER_PCT_THRESHOLD = 3;
+
+/** 同一群組內標記的最大垂直展開幅度（px，往上/往下各不超過這個值）——track 高度 40px，
+ *  這個值必須留夠邊界讓標記本體（12px 圓點 + 2px 邊框）不會被裁到軌道外。 */
+const MAX_FAN_OFFSET_PX = 10;
+
+interface TimelineMarker {
+  key: string;
+  timestamp: string;
+  color: string;
+  alert: AlertRecord;
+  isResolution: boolean;
+}
+
 export default function IncidentTimeline() {
   const ticks = useAppStore((s) => s.ticks);
   const tickIndex = useAppStore((s) => s.tickIndex);
@@ -31,7 +50,7 @@ export default function IncidentTimeline() {
   const setPlaybackSpeed = useAppStore((s) => s.setPlaybackSpeed);
   const { language } = useLanguage();
   const trackRef = useRef<HTMLDivElement>(null);
-  const [hovered, setHovered] = useState<AlertRecord | null>(null);
+  const [hovered, setHovered] = useState<TimelineMarker | null>(null);
 
   const start = ticks[0];
   const end = ticks[ticks.length - 1];
@@ -48,23 +67,49 @@ export default function IncidentTimeline() {
   // 城市情報室／AI 決策面板中。
   const incidentAlerts = useMemo(() => alerts.filter((a) => a.origin === "incident"), [alerts]);
 
-  // Alerts that land on the same timestamp render at the same left% and would
-  // otherwise stack exactly on top of each other, leaving only the topmost one
-  // clickable. Fan same-timestamp alerts out vertically so every marker stays
-  // independently clickable/hoverable.
-  const verticalOffsets = useMemo(() => {
-    const groups = new Map<string, AlertRecord[]>();
+  // Each incident-origin alert contributes a "trigger" marker at its own timestamp, and —
+  // once the rule engine detects its tracked segment/station has recovered (appStore.ts's
+  // resolution check) — a second green "resolved" marker at `resolvedAt`. Both share the
+  // same underlying alert so hover/click behave consistently either way.
+  const markers = useMemo<TimelineMarker[]>(() => {
+    const result: TimelineMarker[] = [];
     for (const a of incidentAlerts) {
-      const group = groups.get(a.timestamp);
-      if (group) group.push(a);
-      else groups.set(a.timestamp, [a]);
+      if (!displayedAlertIds.has(a.id)) continue;
+      result.push({ key: `${a.id}:trigger`, timestamp: a.timestamp, color: ALERT_KIND_COLOR[a.kind], alert: a, isResolution: false });
+      if (a.resolvedAt) {
+        result.push({ key: `${a.id}:resolved`, timestamp: a.resolvedAt, color: "var(--ok)", alert: a, isResolution: true });
+      }
+    }
+    return result;
+  }, [incidentAlerts, displayedAlertIds]);
+
+  // Markers landing close together in time render at nearly the same left% and would
+  // otherwise overlap, leaving only the topmost one clickable. Chain-cluster markers
+  // within CLUSTER_PCT_THRESHOLD of the previous one (not just exact-same-timestamp) and
+  // fan each cluster out vertically so every marker stays independently clickable/hoverable.
+  const markerOffsets = useMemo(() => {
+    const sorted = [...markers].sort((a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
+    const groups: TimelineMarker[][] = [];
+    for (const m of sorted) {
+      const pct = timePct(m.timestamp, start, end);
+      const lastGroup = groups[groups.length - 1];
+      const lastPct = lastGroup ? timePct(lastGroup[lastGroup.length - 1].timestamp, start, end) : null;
+      if (lastGroup && lastPct !== null && pct - lastPct <= CLUSTER_PCT_THRESHOLD) {
+        lastGroup.push(m);
+      } else {
+        groups.push([m]);
+      }
     }
     const offsets = new Map<string, number>();
-    for (const group of groups.values()) {
-      group.forEach((a, i) => offsets.set(a.id, (i - (group.length - 1) / 2) * 14));
+    for (const group of groups) {
+      // 每組的總垂直展開幅度固定封頂在 ±MAX_FAN_OFFSET_PX，不管這組有幾個標記擠在一起——
+      // 否則像 22:10~22:30 那種 3~5 個標記全部落在同一群組時，固定 14px 間距會把最外側的
+      // 標記推到軌道（40px 高）範圍之外，變成視覺上「點跑出時間軸」。
+      const gap = group.length > 1 ? Math.min(14, (MAX_FAN_OFFSET_PX * 2) / (group.length - 1)) : 0;
+      group.forEach((m, i) => offsets.set(m.key, (i - (group.length - 1) / 2) * gap));
     }
     return offsets;
-  }, [incidentAlerts]);
+  }, [markers, start, end]);
 
   if (ticks.length === 0) return null;
 
@@ -86,7 +131,6 @@ export default function IncidentTimeline() {
   const playheadPct = hasNext
     ? timePct(ticks[tickIndex + 1], start, end)
     : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
-  const visibleAlerts = incidentAlerts.filter((a) => displayedAlertIds.has(a.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {
     const el = trackRef.current;
@@ -123,23 +167,27 @@ export default function IncidentTimeline() {
           }}
         />
 
-        {visibleAlerts.map((a) => (
+        {markers.map((m) => (
           <button
-            key={a.id}
+            key={m.key}
             type="button"
             className={styles.node}
             style={{
-              left: `${timePct(a.timestamp, start, end)}%`,
-              top: `calc(50% + ${verticalOffsets.get(a.id) ?? 0}px)`,
-              background: ALERT_KIND_COLOR[a.kind],
+              left: `${timePct(m.timestamp, start, end)}%`,
+              top: `calc(50% + ${markerOffsets.get(m.key) ?? 0}px)`,
+              background: m.color,
             }}
             onClick={(e) => {
               e.stopPropagation();
-              seekTime(a.timestamp);
+              seekTime(m.timestamp);
             }}
-            onMouseEnter={() => setHovered(a)}
-            onMouseLeave={() => setHovered((h) => (h?.id === a.id ? null : h))}
-            aria-label={a.title}
+            onMouseEnter={() => setHovered(m)}
+            onMouseLeave={() => setHovered((h) => (h?.key === m.key ? null : h))}
+            aria-label={
+              m.isResolution
+                ? pick(language, `${m.alert.title}（已解決）`, `${m.alert.title} (Resolved)`)
+                : m.alert.title
+            }
           />
         ))}
       </div>
@@ -179,9 +227,11 @@ export default function IncidentTimeline() {
       {hovered && (
         <div className={styles.tooltip}>
           <span className={styles.tooltipKind}>
-            {pick(language, ALERT_KIND_LABEL[hovered.kind].zh, ALERT_KIND_LABEL[hovered.kind].en)}
+            {hovered.isResolution
+              ? pick(language, "已解決", "Resolved")
+              : pick(language, ALERT_KIND_LABEL[hovered.alert.kind].zh, ALERT_KIND_LABEL[hovered.alert.kind].en)}
           </span>
-          <span className={styles.tooltipTitle}>{hovered.title}</span>
+          <span className={styles.tooltipTitle}>{hovered.alert.title}</span>
           <span className={styles.tooltipTime}>{formatDisplayTimestamp(hovered.timestamp, timeOffsetMs)}</span>
         </div>
       )}

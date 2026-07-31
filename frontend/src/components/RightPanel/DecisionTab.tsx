@@ -1,3 +1,4 @@
+import LocationRelevanceCard from "../common/LocationRelevanceCard";
 import DecisionSummary from "./DecisionSummary";
 import styles from "./DecisionTab.module.css";
 import ETEBreakdownCard from "./ETEBreakdownCard";
@@ -9,6 +10,7 @@ import SignalCoordinationSection from "./SignalCoordinationSection";
 export default function DecisionTab() {
   return (
     <div className={styles.wrap}>
+      <LocationRelevanceCard />
       <DecisionSummary />
       <ETEBreakdownCard />
       <section id="decision-reasoning" className={styles.section}>

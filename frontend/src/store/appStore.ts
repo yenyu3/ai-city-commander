@@ -14,7 +14,7 @@ import type {
   TrafficSnapshot,
   ViewerMode,
 } from "../types";
-import { getTier, checkCityResponse, CITY_TRIGGER_SEGMENTS } from "../engine/congestionTier";
+import { getTier, checkCityResponse, CITY_TRIGGER_SEGMENTS, TIER_THRESHOLDS } from "../engine/congestionTier";
 import {
   isAccidentTrigger,
   selectEvacuationRoute,
@@ -24,9 +24,10 @@ import { checkDomeDispersal } from "../engine/domeDispersal";
 import { checkSignalFailure } from "../engine/signalFailure";
 import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
-import { llmAdapter, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
+import { llmAdapter, type NearbyIncidentContext, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
 import { computeTimeOffsetMs, reformatEmbeddedTimestamp, parseTimestamp, timePct } from "../utils/timeUtils";
+import { findNearestTrackedAlert, NEARBY_THRESHOLD_M } from "../utils/geoDistance";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -221,6 +222,49 @@ function computeStationState(
   return result;
 }
 
+/** 車道狀態達此集合，視為「路段仍處於異常狀態」（事故/壅塞尚未排除）。 */
+const SEVERE_LANE_STATUSES = new Set(["Blocked", "Gridlock", "Accident_Impact", "Critical"]);
+
+function isSegmentElevated(seg: SegmentRuntimeState | undefined): boolean {
+  if (!seg) return false;
+  return SEVERE_LANE_STATUSES.has(seg.laneStatus) || seg.saturation >= TIER_THRESHOLDS.B;
+}
+
+function isSegmentRecovered(seg: SegmentRuntimeState | undefined): boolean {
+  if (!seg) return false;
+  return !SEVERE_LANE_STATUSES.has(seg.laneStatus) && seg.saturation < TIER_THRESHOLDS.B;
+}
+
+function toCrowdSnapshotForCheck(s: StationRuntimeState, timestamp: string): CrowdSnapshot {
+  return {
+    timestamp,
+    stationId: s.stationId,
+    locationName: s.name,
+    userCount: s.userCount,
+    stayTimeAvg: s.stayTimeAvg,
+    growthRate: s.growthRate,
+    roamingPct: s.roamingPct,
+  };
+}
+
+/** 事件「已解決」的判定：依真實車流/人流資料判斷追蹤路段/站點是否曾經真的惡化過，
+ *  之後又恢復到正常/可通行狀態——不是固定時間差，而是資料本身真的回復了。 */
+function checkIncidentResolution(
+  trackedSegmentId: string,
+  timestamp: string,
+  segmentsState: Record<string, SegmentRuntimeState>,
+  stationsState: Record<string, StationRuntimeState>,
+): { elevated: boolean; recovered: boolean } {
+  if (trackedSegmentId.startsWith("BS_")) {
+    const station = stationsState[trackedSegmentId];
+    const elevated = station ? checkMrtDiversion(toCrowdSnapshotForCheck(station, timestamp)) : false;
+    const recovered = station ? !elevated && station.growthRate < 0 : false;
+    return { elevated, recovered };
+  }
+  const seg = segmentsState[trackedSegmentId];
+  return { elevated: isSegmentElevated(seg), recovered: isSegmentRecovered(seg) };
+}
+
 function buildAccidentAlert(
   incident: LiveIncident,
   timestamp: string,
@@ -301,6 +345,7 @@ function buildAccidentAlert(
     timestamp,
     kind: "accident",
     origin: "incident",
+    trackedSegmentId: incident.affectedSegment,
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
     actions: [
@@ -359,7 +404,12 @@ function buildAccidentAlert(
 }
 
 /** 把目前的即時狀態壓成市民模式問答需要的可公開概況。 */
-function buildPublicContext(state: AppState, nearbyRoad: { name: string; tier: string } | null): PublicContext {
+function buildPublicContext(
+  state: AppState,
+  nearbyRoad: { name: string; tier: string } | null,
+  nearbyIncident: NearbyIncidentContext | null,
+  otherActiveIncidentTitles: string[],
+): PublicContext {
   const busiest = Object.values(state.stations).sort((a, b) => b.userCount - a.userCount)[0];
   return {
     affectedRoads: Object.values(state.segments)
@@ -369,6 +419,8 @@ function buildPublicContext(state: AppState, nearbyRoad: { name: string; tier: s
     busiestStation: busiest ? { name: busiest.name, userCount: busiest.userCount } : null,
     activeIncidentCount: state.activeIncidents.length,
     nearbyRoad,
+    nearbyIncident,
+    otherActiveIncidentTitles,
   };
 }
 
@@ -379,6 +431,27 @@ function resolveNearbyRoad(
 ): { name: string; tier: string } | null {
   const segment = locationContext?.nearestRoadId ? state.segments[locationContext.nearestRoadId] : undefined;
   return segment ? { name: segment.name, tier: segment.tier } : null;
+}
+
+/** 定位是否鄰近（500 公尺內）某個尚未解決的注入事件——供聊天回答與 LocationRelevanceCard
+ *  共用同一套判定，避免兩處各自重算、結果可能不一致。 */
+export function resolveLocationDecision(
+  state: Pick<AppState, "alerts" | "roadPaths" | "stationCoords">,
+  locationContext: FieldInspectorPosition | null | undefined,
+): { nearbyIncident: NearbyIncidentContext | null; otherActiveIncidentTitles: string[] } {
+  if (!locationContext) return { nearbyIncident: null, otherActiveIncidentTitles: [] };
+  const position: [number, number] = [locationContext.lng, locationContext.lat];
+  const match = findNearestTrackedAlert(position, state.alerts, state.roadPaths, state.stationCoords);
+  const isNear = Boolean(match && match.distanceMeters <= NEARBY_THRESHOLD_M);
+  const nearbyIncident: NearbyIncidentContext | null =
+    isNear && match
+      ? { title: match.alert.title, distanceMeters: match.distanceMeters, actions: match.alert.actions }
+      : null;
+  const otherActiveIncidentTitles = state.alerts
+    .filter((a) => a.origin === "incident" && !a.resolvedAt && (!isNear || a.id !== match?.alert.id))
+    .map((a) => a.title)
+    .slice(0, 2);
+  return { nearbyIncident, otherActiveIncidentTitles };
 }
 
 function pushAlert(alert: AlertRecord) {
@@ -545,6 +618,10 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   seekTime(timestamp) {
     const { ticks, traffic, crowd, segmentDefs, segments: prevSegments, stations: prevStations, allIncidents, injectedIncidentIds } = get();
+    // 事件解決偵測只能在時間「往前走」時才能觀察到真正的恢復——住後拉（scrub 回較早時間點）
+    // 若也跑同一套判定，會把「事故發生前，路段本來就正常」誤判成「已從異常恢復」，
+    // 讓已解決標記出現在比事件本身還早的時間點。用往前/往後的比較把這個方向鎖住。
+    const isMovingForward = parseTimestamp(timestamp) >= parseTimestamp(get().currentTime);
     const idx = ticks.indexOf(timestamp);
     const newIndex = idx === -1 ? get().tickIndex : idx;
 
@@ -871,6 +948,23 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // 事件解決偵測：對每一起尚未標記解決的注入事件，觀察其追蹤路段/站點是否曾經真的
+    // 惡化過，之後又恢復到正常/可通行狀態——只有先觀察到「曾惡化」才會判定「已解決」，
+    // 避免本來就正常的路段被誤判。時間軸會在解決時間額外畫一個綠色標記（見 IncidentTimeline）。
+    // 只在時間往前走時才判定（見上方 isMovingForward 註解），往回拉時間軸不會誤判/覆蓋。
+    if (isMovingForward) {
+      set((s) => ({
+        alerts: s.alerts.map((a) => {
+          if (a.origin !== "incident" || !a.trackedSegmentId || a.resolvedAt) return a;
+          const { elevated, recovered } = checkIncidentResolution(a.trackedSegmentId, timestamp, newSegments, newStations);
+          if (!a.wasElevated) {
+            return elevated ? { ...a, wasElevated: true } : a;
+          }
+          return recovered ? { ...a, resolvedAt: timestamp } : a;
+        }),
+      }));
+    }
+
     set({
       tickIndex: newIndex,
       currentTime: timestamp,
@@ -967,6 +1061,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         timestamp: get().currentTime,
         kind: "signal_failure",
         origin: "incident",
+        trackedSegmentId: incident.affectedSegment,
         title: `${signalSegName} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
         actions: [
@@ -1023,6 +1118,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         timestamp: get().currentTime,
         kind: "accident",
         origin: "incident",
+        trackedSegmentId: incident.affectedSegment,
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,
         actions: ["僅作情境關聯顯示，交由第 3 條捷運分流規則觀察後續是否需要處置"],
@@ -1066,9 +1162,14 @@ export const useAppStore = create<AppState>((set, get) => ({
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
 
     const nearbyRoad = resolveNearbyRoad(get(), locationContext);
+    const { nearbyIncident, otherActiveIncidentTitles } = resolveLocationDecision(get(), locationContext);
     const answer = isPublic
-      ? llmAdapter.answerPublic(question, ruleResult, buildPublicContext(get(), nearbyRoad))
-      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt, nearbyRoad);
+      ? llmAdapter.answerPublic(
+          question,
+          ruleResult,
+          buildPublicContext(get(), nearbyRoad, nearbyIncident, otherActiveIncidentTitles),
+        )
+      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt, nearbyRoad, nearbyIncident, otherActiveIncidentTitles);
 
     answer.then((text) => {
       set((s) => ({

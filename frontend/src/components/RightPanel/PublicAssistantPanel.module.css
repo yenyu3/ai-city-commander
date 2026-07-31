@@ -290,6 +290,17 @@
   color: var(--text-dim);
 }
 
+.advisoryResolved {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  width: fit-content;
+  font-family: var(--font-nav);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  color: var(--ok);
+}
+
 .empty {
   composes: emptyState from "../common/shared.module.css";
 }

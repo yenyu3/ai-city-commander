@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { ChevronDown, Clock3, Send } from "lucide-react";
-import { useAppStore } from "../../store/appStore";
+import { resolveLocationDecision, useAppStore } from "../../store/appStore";
 import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -75,9 +75,36 @@ export default function DecisionSummary() {
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const stations = useAppStore((s) => s.stations);
   const currentTime = useAppStore((s) => s.currentTime);
+  const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
+  const roadPaths = useAppStore((s) => s.roadPaths);
+  const stationCoords = useAppStore((s) => s.stationCoords);
   const { language } = useLanguage();
   const latest = alerts[0];
   const [modalOpen, setModalOpen] = useState(false);
+
+  // 有定位、但附近沒有尚未解決的事件時，把「您所在位置目前狀況良好」融入決策摘要本身的
+  // 灰色摘要框，而不是另外疊一張卡片；鄰近事件的情況維持交給 LocationRelevanceCard 處理
+  // （那個情境本身就該是顯眼獨立的警示，不適合混進日常摘要文字裡）。
+  const locationDecision = resolveLocationDecision({ alerts, roadPaths, stationCoords }, fieldInspectorPosition);
+  const isFarFromEvents = Boolean(fieldInspectorPosition) && !locationDecision.nearbyIncident;
+  const locationNote = isFarFromEvents
+    ? [
+        pick(
+          language,
+          "您所在位置目前狀況良好，周邊路況與人流正常，暫無需留意事件。",
+          "Your location looks clear — roads and crowds nearby are normal, nothing to flag here.",
+        ),
+        locationDecision.otherActiveIncidentTitles.length > 0
+          ? pick(
+              language,
+              `不過城市其他地區仍有事件處理中：${locationDecision.otherActiveIncidentTitles.join("、")}。`,
+              `Other parts of the city still have active incidents: ${locationDecision.otherActiveIncidentTitles.join(", ")}.`,
+            )
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : null;
 
   const multilingualTriggered = checkMultilingualNeeded(
     Object.values(stations).map((st) => ({
@@ -100,7 +127,8 @@ export default function DecisionSummary() {
         <div className={styles.title}>{pick(language, "事件摘要", "Event Summary")}</div>
         <FieldPositionHint />
         <div className={styles.empty}>
-          {pick(language, "城市監控中，尚無事件需要處理", "Monitoring the city — no incident requires action yet")}
+          {locationNote ??
+            pick(language, "城市監控中，尚無事件需要處理", "Monitoring the city — no incident requires action yet")}
         </div>
       </div>
     );
@@ -143,6 +171,7 @@ export default function DecisionSummary() {
           <span>{primaryMetric.label}</span>
         </div>
         <div className={styles.summaryBlock}>
+          {locationNote && <p className={styles.summaryText}>{locationNote}</p>}
           {latest.llmText ? (
             <p className={styles.summaryText}>{latest.llmText}</p>
           ) : (

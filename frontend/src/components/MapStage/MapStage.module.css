@@ -138,6 +138,34 @@
   box-shadow: 0 0 0 2px var(--panel);
 }
 
+/* Demo-only quick-jump location presets — deliberately smaller/dimmer than the real
+   camera/pegman controls above them so they read as a secondary, low-key affordance
+   rather than a primary control a real operator would need to notice. */
+.demoBtn {
+  position: relative;
+  width: 22px;
+  height: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border: none;
+  border-radius: 50%;
+  background: transparent;
+  color: var(--text-dim);
+  opacity: 0.4;
+  transition:
+    opacity var(--transition-fast),
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.demoBtn:hover,
+.demoBtn:focus-visible {
+  opacity: 1;
+  background: color-mix(in srgb, var(--text), transparent 88%);
+  color: var(--text);
+}
+
 .dragGhost {
   position: fixed;
   left: 0;

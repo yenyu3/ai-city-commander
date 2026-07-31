@@ -39,5 +39,15 @@
     "severity": "High",
     "description": "2026-05-20 19:15 兩車擦撞導致敦化南路一段北向車道局部阻塞",
     "timestamp": "2026-05-20 19:15"
+  },
+  {
+    "event_id": "TPE_2026_ACC_005",
+    "type": "Vehicle_Fire",
+    "location": "仁愛路四段與市府路口以東",
+    "affected_segment": "RD_TPE_005",
+    "status": "Restricted",
+    "severity": "High",
+    "description": "2026-05-20 20:35 一輛小客車於仁愛路四段近市府路口自燃，東側車道管制通行",
+    "timestamp": "2026-05-20 20:35"
   }
 ]

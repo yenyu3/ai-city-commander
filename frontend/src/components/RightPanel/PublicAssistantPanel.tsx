@@ -1,13 +1,14 @@
-import { ChevronDown, Clock3 } from "lucide-react";
+import { CheckCircle2, ChevronDown, Clock3 } from "lucide-react";
 import { useMemo } from "react";
 import type { Language } from "../../i18n";
 import { pick, useLanguage } from "../../i18n";
-import { useAppStore } from "../../store/appStore";
+import { resolveLocationDecision, useAppStore } from "../../store/appStore";
 import type { AlertRecord, Tier } from "../../types";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { getPublicAlertText } from "../../utils/publicView";
 import { formatDisplayShortTime } from "../../utils/timeUtils";
 import FieldPositionHint from "../common/FieldPositionHint";
+import LocationRelevanceCard from "../common/LocationRelevanceCard";
 import styles from "./PublicAssistantPanel.module.css";
 
 type Tone = "ok" | "warn" | "crit";
@@ -102,6 +103,9 @@ export default function PublicAssistantPanel() {
   const alerts = useAppStore((s) => s.alerts);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
+  const roadPaths = useAppStore((s) => s.roadPaths);
+  const stationCoords = useAppStore((s) => s.stationCoords);
 
   const topRoads = useMemo(
     () =>
@@ -127,33 +131,60 @@ export default function PublicAssistantPanel() {
     topRoads.find((seg) => seg.tier !== "Normal") ?? null;
   const latestAlert = alerts[0];
 
-  const heroTone: Tone = latestAlert
-    ? ALERT_TONE[latestAlert.kind]
-    : mostAffectedRoad
-      ? tierMeta(mostAffectedRoad.tier, language).tone
-      : "ok";
+  // 有定位、但附近沒有尚未解決的事件時，整張「目前狀態」卡改成反映使用者自己的所在地狀態
+  // （語氣/燈號/文字都改），而不是繼續顯示跟使用者位置無關的最新城市事件；鄰近事件的情況
+  // 交給 LocationRelevanceCard 顯示的獨立警示卡處理，這裡不重複。
+  const locationDecision = resolveLocationDecision({ alerts, roadPaths, stationCoords }, fieldInspectorPosition);
+  const isFarFromEvents = Boolean(fieldInspectorPosition) && !locationDecision.nearbyIncident;
 
-  const heroKindLabel = latestAlert
-    ? pick(
-        language,
-        ALERT_KIND_LABEL[latestAlert.kind].zh,
-        ALERT_KIND_LABEL[latestAlert.kind].en,
-      )
-    : pick(language, "城市狀態", "City status");
+  const heroTone: Tone = isFarFromEvents
+    ? "ok"
+    : latestAlert
+      ? ALERT_TONE[latestAlert.kind]
+      : mostAffectedRoad
+        ? tierMeta(mostAffectedRoad.tier, language).tone
+        : "ok";
 
-  const heroReason = latestAlert
-    ? getPublicAlertText(latestAlert, language)
-    : mostAffectedRoad
+  const heroKindLabel = isFarFromEvents
+    ? pick(language, "您的所在地", "Your location")
+    : latestAlert
       ? pick(
           language,
-          `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
-          `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
+          ALERT_KIND_LABEL[latestAlert.kind].zh,
+          ALERT_KIND_LABEL[latestAlert.kind].en,
         )
-      : pick(
+      : pick(language, "城市狀態", "City status");
+
+  const heroReason = isFarFromEvents
+    ? [
+        pick(
           language,
-          "目前主要道路與人流狀態穩定，可依原計畫移動。",
-          "Roads and crowds are stable. You can continue as planned.",
-        );
+          "您所在位置目前狀況良好，周邊路況與人流正常，暫無需留意事件。",
+          "Your location looks clear — roads and crowds nearby are normal, nothing to flag here.",
+        ),
+        locationDecision.otherActiveIncidentTitles.length > 0
+          ? pick(
+              language,
+              `不過城市其他地區仍有事件處理中：${locationDecision.otherActiveIncidentTitles.join("、")}。`,
+              `Other parts of the city still have active incidents: ${locationDecision.otherActiveIncidentTitles.join(", ")}.`,
+            )
+          : "",
+      ]
+        .filter(Boolean)
+        .join(" ")
+    : latestAlert
+      ? getPublicAlertText(latestAlert, language)
+      : mostAffectedRoad
+        ? pick(
+            language,
+            `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
+            `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
+          )
+        : pick(
+            language,
+            "目前主要道路與人流狀態穩定，可依原計畫移動。",
+            "Roads and crowds are stable. You can continue as planned.",
+          );
 
   const statusWord = STATUS_WORD[heroTone];
   const toneLabel = TONE_LABEL[heroTone];
@@ -184,7 +215,7 @@ export default function PublicAssistantPanel() {
           <strong>{pick(language, statusWord.zh, statusWord.en)}</strong>
           <span>{pick(language, statusWord.sub, statusWord.subEn)}</span>
         </div>
-        {latestAlert?.ete !== undefined && (
+        {!isFarFromEvents && latestAlert?.ete !== undefined && (
           <div className={styles.recoveryRow}>
             <Clock3 size={14} aria-hidden="true" />
             <span>
@@ -225,6 +256,8 @@ export default function PublicAssistantPanel() {
         </div>
       </div>
 
+      <LocationRelevanceCard />
+
       <section id="public-advisory" className={styles.section}>
         <div className={styles.sectionTitleRow}>
           <span className={styles.sectionTitle}>
@@ -254,15 +287,26 @@ export default function PublicAssistantPanel() {
                 <p className={styles.advisoryText}>
                   {getPublicAlertText(alert, language)}
                 </p>
-                {alert.ete !== undefined && (
-                  <span className={styles.advisoryEte}>
-                    <Clock3 size={11} aria-hidden="true" />
+                {alert.resolvedAt ? (
+                  <span className={styles.advisoryResolved}>
+                    <CheckCircle2 size={11} aria-hidden="true" />
                     {pick(
                       language,
-                      `預估 ${alert.ete} 分鐘後恢復通行`,
-                      `Est. ${alert.ete} min until recovery`,
+                      `已於 ${formatDisplayShortTime(alert.resolvedAt, timeOffsetMs)} 恢復正常`,
+                      `Resolved at ${formatDisplayShortTime(alert.resolvedAt, timeOffsetMs)}`,
                     )}
                   </span>
+                ) : (
+                  alert.ete !== undefined && (
+                    <span className={styles.advisoryEte}>
+                      <Clock3 size={11} aria-hidden="true" />
+                      {pick(
+                        language,
+                        `預估 ${alert.ete} 分鐘後恢復通行`,
+                        `Est. ${alert.ete} min until recovery`,
+                      )}
+                    </span>
+                  )
                 )}
               </div>
             ))}
