@@ -25,6 +25,6 @@ mkdir -p "$PACKAGE_DIR/backend/terraform/scripts" \
 cp "$SCRIPT_DIR/seed_handler.py" "$PACKAGE_DIR/"
 cp "$SCRIPT_DIR/load_demo_data.py" "$PACKAGE_DIR/backend/terraform/scripts/"
 cp "$TERRAFORM_DIR/database/schema.sql" "$PACKAGE_DIR/backend/terraform/database/"
-cp "$REPO_ROOT/frontend/public/data/"{city_traffic_flow.csv,signaling_crowd_density.csv,road_network_geometry.json,road_paths.json,station_coords.json,live_incidents.json,emergency_traffic_sop.txt} "$PACKAGE_DIR/frontend/public/data/"
+cp "$REPO_ROOT/frontend/public/data/"{city_traffic_flow.csv,signaling_crowd_density.csv,road_network_geometry.json,road_paths.json,station_coords.json,live_incidents.json} "$PACKAGE_DIR/frontend/public/data/"
 
 echo "Created Lambda package source at $PACKAGE_DIR"
