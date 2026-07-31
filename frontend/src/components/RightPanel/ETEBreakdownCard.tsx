@@ -33,7 +33,8 @@ function useCountUp(target: number) {
 export default function ETEBreakdownCard() {
   const alerts = useAppStore((s) => s.alerts);
   const { language } = useLanguage();
-  const latest = alerts.find((a) => a.kind === "accident" && a.ete !== undefined);
+  const current = alerts[0];
+  const latest = current?.kind === "accident" ? current : undefined;
   const displayEte = useCountUp(latest?.ete ?? 0);
 
   if (!latest || latest.ete === undefined) return null;

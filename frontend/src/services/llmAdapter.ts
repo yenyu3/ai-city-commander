@@ -91,10 +91,28 @@ export interface LLMAdapter {
   ): Record<Lang, string>;
 }
 
-const OPENERS = ["系統偵測顯示，", "根據即時資料研判，", "指揮中心研判，"];
+const OPENERS = [
+  "系統偵測顯示，",
+  "根據即時資料研判，",
+  "指揮中心研判，",
+  "交通控制中心比對感測器數據後確認，",
+  "彙整路網與人流感測資料後研判，",
+  "AI 監控系統即時分析顯示，",
+  "依現場感測器回報與歷史趨勢比對，",
+];
 
 function pick<T>(arr: T[]): T {
   return arr[Math.floor(Math.random() * arr.length)];
+}
+
+// 避免同一個場次連續兩則摘要用到一模一樣的開場白，長時間 demo 讀起來才不會像同一句罐頭台詞複製貼上。
+let lastOpener: string | null = null;
+function pickOpener(): string {
+  if (OPENERS.length <= 1) return OPENERS[0];
+  let choice = pick(OPENERS);
+  while (choice === lastOpener) choice = pick(OPENERS);
+  lastOpener = choice;
+  return choice;
 }
 
 /**
@@ -111,6 +129,53 @@ type PublicRuleResult = {
   tier?: string;
   ete?: number;
 };
+
+type GovRuleResult = {
+  rule?: string;
+  input?: Record<string, unknown>;
+  triggered?: boolean;
+  tier?: string;
+  threshold?: string;
+  ete?: number;
+  base?: number;
+  penalty?: number;
+  breakdown?: string;
+};
+
+/** 政府模式 what-if 問答：把規則引擎重新代入後的結果轉成一句可讀的研判文字，
+ *  取代直接把物件 JSON.stringify 貼進對話框（那樣讀起來像除錯輸出，不像簡報）。 */
+function renderGovRuleResult(result: GovRuleResult): string {
+  switch (result.rule) {
+    case "checkMrtDiversion": {
+      const { userCount, growthRate } = (result.input ?? {}) as { userCount: number; growthRate: number };
+      return result.triggered
+        ? `代入 User_Count=${userCount.toLocaleString()}、Growth_Rate=${growthRate.toFixed(2)} 後，已超過門檻（${result.threshold}），會觸發捷運分流機制。`
+        : `代入 User_Count=${userCount.toLocaleString()}、Growth_Rate=${growthRate.toFixed(2)} 後，未達門檻（${result.threshold}），不會觸發捷運分流機制。`;
+    }
+    case "checkDomeDispersal": {
+      const { historicalPeak, growthRate } = (result.input ?? {}) as { historicalPeak: number; growthRate: number };
+      return result.triggered
+        ? `代入歷史峰值=${historicalPeak.toLocaleString()}、當前 Growth_Rate=${growthRate.toFixed(2)} 後，符合門檻（${result.threshold}），會觸發散場啟動機制。`
+        : `代入歷史峰值=${historicalPeak.toLocaleString()}、當前 Growth_Rate=${growthRate.toFixed(2)} 後，未符合門檻（${result.threshold}），不會觸發散場啟動機制。`;
+    }
+    case "checkMultilingualNeeded": {
+      const { roamingPct } = (result.input ?? {}) as { roamingPct: number };
+      return result.triggered
+        ? `漫遊比例 ${(roamingPct * 100).toFixed(0)}% 已達門檻（${result.threshold}），需同步發布中／英／日／韓多語通報。`
+        : `漫遊比例 ${(roamingPct * 100).toFixed(0)}% 未達門檻（${result.threshold}），暫不需觸發多語通報。`;
+    }
+    case "getTier": {
+      const { saturation } = (result.input ?? {}) as { saturation: number };
+      return `Saturation_Score=${saturation.toFixed(2)}，對應分級為 ${result.tier} 級（${result.threshold}）。`;
+    }
+    case "calcETE": {
+      const { severity, avgSaturation } = (result.input ?? {}) as { severity: string; avgSaturation: number };
+      return `依 ${severity} 等級、平均飽和度 ${avgSaturation} 計算，ETE = ${result.ete} 分鐘（${result.breakdown}）。`;
+    }
+    default:
+      return "";
+  }
+}
 
 /** 問題裡帶了具體數字、規則引擎真的算過時，把結論轉成白話（不揭露門檻）。 */
 function publicRuleAnswer(result: PublicRuleResult): string | null {
@@ -216,7 +281,7 @@ export class TemplateLLMAdapter implements LLMAdapter {
   async summarize(input: StructuredEvent): Promise<string> {
     // 刻意延遲 0.5~1 秒，讓 UI 呈現「規則判定」與「LLM 生成」是分開兩步（見 Dev spec §6）
     await delay(500 + Math.random() * 500);
-    const opener = pick(OPENERS);
+    const opener = pickOpener();
     const { kind, data } = input;
 
     switch (kind) {
@@ -250,14 +315,18 @@ export class TemplateLLMAdapter implements LLMAdapter {
     nearbyRoad?: { name: string; tier: string } | null,
   ): Promise<string> {
     await delay(500 + Math.random() * 500);
-    const resultText =
-      typeof ruleResult === "object"
-        ? JSON.stringify(ruleResult)
-        : String(ruleResult);
+    const rendered = renderGovRuleResult((ruleResult ?? {}) as GovRuleResult);
+    const trimmedSop = sopExcerpt.trim();
+    const sopLine = trimmedSop
+      ? `\n\n依據 SOP 原文：「${trimmedSop.slice(0, 220)}${trimmedSop.length > 220 ? "…" : ""}」`
+      : "";
     const nearbyLine = nearbyRoad
       ? `\n\n（已附加現場定位：鄰近${nearbyRoad.name}，目前分級 ${nearbyRoad.tier}）`
       : "";
-    return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」${nearbyLine}`;
+    const body =
+      rendered ||
+      "這個問題目前沒有偵測到可代入規則引擎計算的具體數字，先提供相關 SOP 條文摘要供參考，您可以補充具體數值（如人數、飽和度、漫遊比例）讓我重新代入計算。";
+    return `針對「${question}」，${body}${sopLine}${nearbyLine}`;
   }
 
   async answerPublic(

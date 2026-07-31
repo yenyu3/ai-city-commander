@@ -1,8 +1,16 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, GripHorizontal, X } from "lucide-react";
 import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import ChatPanel from "../RightPanel/ChatPanel";
 import styles from "./ChatFab.module.css";
+
+const PUBLIC_SUGGESTIONS = [
+  "現在適合出門嗎？",
+  "有哪些區域建議避開？",
+  "現在哪裡人潮比較多？",
+  "可以給我雙語的提醒文字嗎？",
+];
 
 const FAB_SIZE = 52;
 const PANEL_WIDTH = 380;
@@ -101,6 +109,7 @@ function getOpenFabPosition(panel: PanelMetrics): Position {
 }
 
 export default function ChatFab() {
+  const viewerMode = useAppStore((s) => s.viewerMode);
   const [open, setOpen] = useState(false);
   const [fabPosition, setFabPosition] = useState<Position>(() => constrainFabPosition(getDefaultFabPosition()));
   const wasDraggedRef = useRef(false);
@@ -178,7 +187,12 @@ export default function ChatFab() {
           >
             <GripHorizontal size={18} aria-hidden="true" />
           </div>
-          <ChatPanel />
+          <ChatPanel
+            variant={viewerMode}
+            title={viewerMode === "public" ? pick(language, "問問 AI 助手", "Ask the AI Assistant") : undefined}
+            suggestions={viewerMode === "public" ? PUBLIC_SUGGESTIONS : undefined}
+            placeholder={viewerMode === "public" ? pick(language, "輸入您的問題…", "Ask a question…") : undefined}
+          />
         </div>
       )}
       <button

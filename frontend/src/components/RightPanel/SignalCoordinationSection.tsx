@@ -66,7 +66,7 @@ export default function SignalCoordinationSection() {
             <div className={styles.timingHead}>
               <span>{row.intersectionName}</span>
               <span className={styles.timingValues}>
-                {pick(language, "綠燈延長", "Green light")} <strong>+{row.adjustPct}%</strong>
+                {row.metricLabel} <strong>{row.valueText}</strong>
               </span>
             </div>
             <p className={styles.timingGoal}>{row.goal}</p>

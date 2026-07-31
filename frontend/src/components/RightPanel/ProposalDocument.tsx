@@ -154,7 +154,8 @@ export default function ProposalDocument() {
               <thead>
                 <tr>
                   <th>受影響路段</th>
-                  <th>綠燈調整幅度</th>
+                  <th>調整項目</th>
+                  <th>調整幅度</th>
                   <th>目的</th>
                 </tr>
               </thead>
@@ -162,7 +163,8 @@ export default function ProposalDocument() {
                 {plan.signalTimings.map((row) => (
                   <tr key={row.intersectionName}>
                     <td>{row.intersectionName}</td>
-                    <td>+{row.adjustPct}%</td>
+                    <td>{row.metricLabel}</td>
+                    <td>{row.valueText}</td>
                     <td>{row.goal}</td>
                   </tr>
                 ))}

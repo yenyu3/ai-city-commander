@@ -109,6 +109,14 @@ export interface SegmentMetricsSnapshot {
   saturation: number;
 }
 
+/** 事件觸發當下，來源站點的即時人流快照（mrt_diversion/dome_dispersal/multilingual 適用）。 */
+export interface StationMetricsSnapshot {
+  stationName: string;
+  userCount: number;
+  growthRate: number;
+  roamingPct: number;
+}
+
 /** 替代路徑疏散規劃的結構化版本，對應 selectEvacuationRoute 的計算結果（僅 accident 會填入）。 */
 export interface RerouteSnapshot {
   primaryRouteName: string | null;
@@ -127,6 +135,11 @@ export interface AlertRecord {
     | "dome_dispersal"
     | "signal_failure"
     | "multilingual";
+  /** "incident"：由 live_incidents.json / 上傳事件注入產生（accident、signal_failure 皆屬此類）。
+   *  "sensor"：由規則引擎對連續時序資料（車流/人流 CSV）即時判定門檻穿越產生，與上傳事件無關
+   *  （city_response、mrt_diversion、dome_dispersal、multilingual 皆屬此類）。
+   *  事件時間軸只畫 "incident"，讓時間軸的點數與使用者上傳的事件數一致；AI 決策面板仍顯示全部。 */
+  origin: "incident" | "sensor";
   title: string;
   ruleSummary: string;
   /** SOP 規定的實際處置步驟（非觸發條件數據），供「建議行動」區塊顯示。 */
@@ -138,6 +151,7 @@ export interface AlertRecord {
   etePenalty?: number;
   reasoningSteps?: ReasoningStep[];
   segmentMetrics?: SegmentMetricsSnapshot;
+  stationMetrics?: StationMetricsSnapshot;
   reroute?: RerouteSnapshot;
 }
 

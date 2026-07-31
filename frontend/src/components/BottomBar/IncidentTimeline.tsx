@@ -42,13 +42,19 @@ export default function IncidentTimeline() {
     return marks;
   }, [ticks, end]);
 
+  // 時間軸只畫「事件注入」產生的點（origin === "incident"），數量才會跟使用者上傳/注入的
+  // 事件一一對應；規則引擎對車流/人流連續資料判定出的門檻穿越警報（origin === "sensor"，
+  // 如城市壅塞分級、捷運分流、大巨蛋散場、多語通報）不佔用時間軸點位，但仍會完整顯示在
+  // 城市情報室／AI 決策面板中。
+  const incidentAlerts = useMemo(() => alerts.filter((a) => a.origin === "incident"), [alerts]);
+
   // Alerts that land on the same timestamp render at the same left% and would
   // otherwise stack exactly on top of each other, leaving only the topmost one
   // clickable. Fan same-timestamp alerts out vertically so every marker stays
   // independently clickable/hoverable.
   const verticalOffsets = useMemo(() => {
     const groups = new Map<string, AlertRecord[]>();
-    for (const a of alerts) {
+    for (const a of incidentAlerts) {
       const group = groups.get(a.timestamp);
       if (group) group.push(a);
       else groups.set(a.timestamp, [a]);
@@ -58,7 +64,7 @@ export default function IncidentTimeline() {
       group.forEach((a, i) => offsets.set(a.id, (i - (group.length - 1) / 2) * 14));
     }
     return offsets;
-  }, [alerts]);
+  }, [incidentAlerts]);
 
   if (ticks.length === 0) return null;
 
@@ -80,7 +86,7 @@ export default function IncidentTimeline() {
   const playheadPct = hasNext
     ? timePct(ticks[tickIndex + 1], start, end)
     : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
-  const visibleAlerts = alerts.filter((a) => displayedAlertIds.has(a.id));
+  const visibleAlerts = incidentAlerts.filter((a) => displayedAlertIds.has(a.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {
     const el = trackRef.current;

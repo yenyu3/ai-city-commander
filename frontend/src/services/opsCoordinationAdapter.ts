@@ -2,8 +2,10 @@ import type { AlertRecord } from "../types";
 
 export interface SignalTimingRow {
   intersectionName: string;
-  /** 綠燈秒數的調整幅度（沒有原始秒數資料來源，只能提供相對增減，不假設原始值）。 */
-  adjustPct: number;
+  /** 該項調整的量測名稱，依事件種類而異（綠燈延長／人工指揮涵蓋率／看板更新頻率…）。 */
+  metricLabel: string;
+  /** 已格式化好的數值文字（沒有原始秒數資料來源，只能提供相對增減或涵蓋率，不假設原始值）。 */
+  valueText: string;
   goal: string;
 }
 
@@ -63,22 +65,82 @@ function formatPeriod(timestamp: string): string {
   return `${fmt(start)}-${fmt(end)}`;
 }
 
+function clamp(v: number, lo: number, hi: number): number {
+  return Math.min(hi, Math.max(lo, v));
+}
+
+/** 依事件實際的飽和度/成長率/漫遊比例等即時數據，換算出有依據的調整幅度，
+ *  取代單一固定 25% —— 讓同一種事件在不同嚴重程度下顯示不同的建議值。 */
+function deriveSignalTiming(alert: AlertRecord): SignalTimingRow {
+  const intersectionName = KIND_INTERSECTION_NAME[alert.kind];
+  switch (alert.kind) {
+    case "city_response":
+    case "accident": {
+      const saturation = alert.segmentMetrics?.saturation ?? 0.85;
+      const pct = Math.round(clamp(15 + ((saturation - 0.85) / 0.15) * 25, 15, 40));
+      return {
+        intersectionName,
+        metricLabel: "綠燈延長",
+        valueText: `+${pct}%`,
+        goal:
+          alert.kind === "accident"
+            ? "加速主疏散替代路徑車流消化速度"
+            : "淨空觸發路段並加速替代道路車流消化",
+      };
+    }
+    case "mrt_diversion": {
+      const growth = alert.stationMetrics?.growthRate ?? 0.3;
+      const pct = Math.round(clamp(20 + growth * 40, 20, 50));
+      return {
+        intersectionName,
+        metricLabel: "行人號誌通行時間",
+        valueText: `+${pct}%`,
+        goal: "加速站體出入口人流疏散，降低月台聚積風險",
+      };
+    }
+    case "dome_dispersal": {
+      const growth = Math.abs(alert.stationMetrics?.growthRate ?? 0.2);
+      const pct = Math.round(clamp(25 + growth * 30, 25, 45));
+      return {
+        intersectionName,
+        metricLabel: "行人號誌通行時間",
+        valueText: `+${pct}%`,
+        goal: "加速場館周邊人流疏散，配合接駁機制錯開退場人潮",
+      };
+    }
+    case "signal_failure": {
+      return {
+        intersectionName,
+        metricLabel: "人工指揮涵蓋率",
+        valueText: "100%",
+        goal: "以現場人工指揮完全取代故障號誌，維持路口通行安全",
+      };
+    }
+    case "multilingual":
+    default: {
+      const roaming = alert.stationMetrics?.roamingPct ?? 0.3;
+      const pct = Math.round(clamp(30 + roaming * 40, 30, 60));
+      return {
+        intersectionName,
+        metricLabel: "看板／簡訊更新頻率",
+        valueText: `+${pct}%`,
+        goal: "提高多語看板與簡訊更新頻率，確保外籍旅客即時獲悉",
+      };
+    }
+  }
+}
+
 /**
- * MVP 佔位資料：規則引擎目前沒有號誌秒數計算或跨機關派遣邏輯，這裡先用依事件種類
- * 模板化的假資料撐版面。介面維持 Promise 簽章，未來要換成真後端 API 時，
- * 呼叫端（SignalCoordinationSection / ProposalDocument）完全不用改。
+ * MVP 實作：規則引擎目前沒有號誌秒數計算或跨機關派遣邏輯的後端來源，這裡依事件
+ * 實際觸發時的飽和度/人流數據換算出有依據的調整建議。介面維持 Promise 簽章，
+ * 未來要換成真後端 API 時，呼叫端（SignalCoordinationSection / ProposalDocument）
+ * 完全不用改。
  */
 export class TemplateOpsCoordinationAdapter implements OpsCoordinationAdapter {
   async getCoordinationPlan(alert: AlertRecord): Promise<OpsCoordinationPlan> {
     return {
       period: formatPeriod(alert.timestamp),
-      signalTimings: [
-        {
-          intersectionName: KIND_INTERSECTION_NAME[alert.kind],
-          adjustPct: 25,
-          goal: "加速主要疏散替代路徑車流消化速度",
-        },
-      ],
+      signalTimings: [deriveSignalTiming(alert)],
       interAgencyActions: KIND_AGENCIES[alert.kind],
     };
   }

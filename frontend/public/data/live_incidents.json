@@ -29,5 +29,15 @@
     "severity": "Medium",
     "description": "2026-05-20 22:30 信義區部分路段號誌失效，需改由人工交通指揮",
     "timestamp": "2026-05-20 22:30"
+  },
+  {
+    "event_id": "TPE_2026_ACC_004",
+    "type": "Vehicle_Collision",
+    "location": "敦化南路一段與市民大道口以南",
+    "affected_segment": "RD_TPE_006",
+    "status": "Blocked",
+    "severity": "High",
+    "description": "2026-05-20 19:15 兩車擦撞導致敦化南路一段北向車道局部阻塞",
+    "timestamp": "2026-05-20 19:15"
   }
 ]

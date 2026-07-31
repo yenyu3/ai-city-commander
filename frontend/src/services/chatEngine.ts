@@ -36,9 +36,12 @@ export function runWhatIf(question: string): ChatAnswer {
   const sopRefs = sections.map((s) => `SOP 第${s.id}條`);
 
   // 情境 1：捷運 BL17 人數/成長率 what-if
-  if (/BL17|國父紀念館|捷運/.test(question) && /人數|人潮|成長|growth/.test(question)) {
+  if (
+    /BL17|國父紀念館|捷運|北捷|地鐵/.test(question) &&
+    /人數|人潮|成長|growth|擁擠|爆滿|滿了|過站不停|接駁/i.test(question)
+  ) {
     const userCount = parseFirstNumber(question) ?? 0;
-    const growthRate = /成長率/.test(question)
+    const growthRate = /成長/.test(question)
       ? (parsePercentNumber(question) ?? 0)
       : 0;
     const snapshot: CrowdSnapshot = {
@@ -64,7 +67,7 @@ export function runWhatIf(question: string): ChatAnswer {
   }
 
   // 情境 2：大巨蛋散場 what-if
-  if (/大巨蛋|DOME/.test(question)) {
+  if (/大巨蛋|巨蛋|DOME/i.test(question)) {
     const peak = parseFirstNumber(question) ?? 0;
     const growthMatch = question.match(/-?\d+(?:\.\d+)?\s*%/);
     const growthRate = growthMatch ? Number(growthMatch[0].replace("%", "")) / 100 : -0.25;
@@ -103,7 +106,7 @@ export function runWhatIf(question: string): ChatAnswer {
   }
 
   // 情境 3：國際漫遊比例 what-if
-  if (/漫遊|roaming/.test(question) && /%/.test(question)) {
+  if (/漫遊|roaming|外籍旅客|外國旅客|國際旅客/i.test(question) && /%/.test(question)) {
     const pct = parsePercentNumber(question) ?? 0;
     const result = checkMultilingualNeeded([
       {
@@ -129,7 +132,7 @@ export function runWhatIf(question: string): ChatAnswer {
   }
 
   // 情境 4：飽和度分級 what-if
-  if (/飽和度|saturation/.test(question)) {
+  if (/飽和度|飽和|saturation|V\/C/i.test(question)) {
     const sat = (() => {
       const m = question.match(/0\.\d+/);
       if (m) return Number(m[0]);
@@ -153,7 +156,7 @@ export function runWhatIf(question: string): ChatAnswer {
   }
 
   // 情境 5：ETE what-if（給定嚴重度與平均飽和度）
-  if (/ETE|恢復時間|延誤/.test(question)) {
+  if (/ETE|恢復時間|延誤|多久恢復|多久解除|清空時間|clearance/i.test(question)) {
     const severityMatch = question.match(/Critical|High|Medium|重大|嚴重|中度/);
     const severity =
       severityMatch?.[0] === "重大" || severityMatch?.[0] === "嚴重" || severityMatch?.[0] === "Critical"

@@ -50,11 +50,12 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
     ? triggered.find((t) => t.stationId === activeStation) ?? triggered[0]
     : triggered[0];
 
-  const { ete } = calcETE("Medium", 0.7);
+  // 沒有路段飽和度可用（多語通報是人流事件，非車流事件），改以漫遊比例換算出一個
+  // 與該站點實際觸發數據連動的預估值，而非對每個站點都給同一個固定 ETE。
   const messages = current
     ? llmAdapter.generateMultilingual("congestion", {
         location: current.locationName,
-        ete: String(ete),
+        ete: String(calcETE("Medium", 0.5 + current.roamingPct).ete),
       })
     : null;
 

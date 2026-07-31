@@ -21,15 +21,12 @@ export default function MetricsSnapshot() {
   if (!latest) return null;
 
   const metrics = latest.segmentMetrics;
+  const stationMetrics = latest.stationMetrics;
 
   return (
     <div className={styles.wrap}>
       <div className={styles.title}>{pick(language, "數據依據", "Key Metrics")}</div>
-      {!metrics ? (
-        <div className={styles.empty}>
-          {pick(language, "此事件類型無路段流量資料", "No segment flow data for this event type")}
-        </div>
-      ) : (
+      {metrics ? (
         <div className={styles.grid}>
           <div className={styles.tile}>
             <span className={styles.label}>{pick(language, "即時車流量", "Live flow")}</span>
@@ -58,6 +55,40 @@ export default function MetricsSnapshot() {
             <strong>{latest.sopRef ?? "—"}</strong>
             <span className={styles.unit}>{sopTitles(latest.sopRef)}</span>
           </div>
+        </div>
+      ) : stationMetrics ? (
+        <div className={styles.grid}>
+          <div className={styles.tile}>
+            <span className={styles.label}>{pick(language, `${stationMetrics.stationName} 即時人流`, `${stationMetrics.stationName} live crowd`)}</span>
+            <strong>{stationMetrics.userCount.toLocaleString()}</strong>
+            <span className={styles.unit}>{pick(language, "人", "people")}</span>
+          </div>
+          <div className={styles.tile}>
+            <span className={styles.label}>{pick(language, "成長率", "Growth rate")}</span>
+            <strong className={Math.abs(stationMetrics.growthRate) >= 0.3 ? styles.warn : undefined}>
+              {stationMetrics.growthRate > 0 ? "+" : ""}
+              {(stationMetrics.growthRate * 100).toFixed(0)}%
+            </strong>
+            <span className={styles.unit}>
+              {pick(language, "分流門檻 > 30%（或 < -20% 為散場趨勢）", "Diversion threshold > 30% (or < -20% signals dispersal)")}
+            </span>
+          </div>
+          <div className={styles.tile}>
+            <span className={styles.label}>{pick(language, "國際漫遊比例", "International roaming share")}</span>
+            <strong className={stationMetrics.roamingPct >= 0.3 ? styles.crit : undefined}>
+              {(stationMetrics.roamingPct * 100).toFixed(0)}%
+            </strong>
+            <span className={styles.unit}>{pick(language, "多語通報門檻 ≥ 30%", "Multilingual threshold ≥ 30%")}</span>
+          </div>
+          <div className={styles.tile}>
+            <span className={styles.label}>{pick(language, "觸發依據 SOP", "Triggering SOP")}</span>
+            <strong>{latest.sopRef ?? "—"}</strong>
+            <span className={styles.unit}>{sopTitles(latest.sopRef)}</span>
+          </div>
+        </div>
+      ) : (
+        <div className={styles.empty}>
+          {pick(language, "此事件類型無路段流量資料", "No segment flow data for this event type")}
         </div>
       )}
     </div>

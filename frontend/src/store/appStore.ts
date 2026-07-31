@@ -148,7 +148,6 @@ interface AppState {
   firedAlertKeys: Set<string>;
   /** Alert ids ready to surface on-screen (timeline marker, map toast). */
   displayedAlertIds: Set<string>;
-  reasoningLog: ReasoningStep[];
   chatMessages: ChatMessage[];
   fieldInspectorPosition: FieldInspectorPosition | null;
   fieldInspectorLocateStatus: FieldInspectorLocateStatus;
@@ -301,6 +300,7 @@ function buildAccidentAlert(
     id: nextId("alert"),
     timestamp,
     kind: "accident",
+    origin: "incident",
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
     actions: [
@@ -381,14 +381,13 @@ function resolveNearbyRoad(
   return segment ? { name: segment.name, tier: segment.tier } : null;
 }
 
-function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
+function pushAlert(alert: AlertRecord) {
   // The playhead now animates one tick ahead of the committed tickIndex (see
   // IncidentTimeline), landing on a tick's pixel position at exactly the real time that
   // tick is committed here — so revealing the marker/toast immediately is already in step
   // with the animation; no artificial delay needed.
   useAppStore.setState((s) => ({
     alerts: [alert, ...s.alerts],
-    reasoningLog: reasoningSteps ?? s.reasoningLog,
     displayedAlertIds: s.displayedAlertIds.has(alert.id) ? s.displayedAlertIds : new Set(s.displayedAlertIds).add(alert.id),
   }));
 }
@@ -440,7 +439,6 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   firedAlertKeys: new Set(),
   displayedAlertIds: new Set(),
-  reasoningLog: [],
   chatMessages: [],
   fieldInspectorPosition: null,
   fieldInspectorLocateStatus: "idle",
@@ -518,7 +516,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       alerts: [],
       firedAlertKeys: new Set(),
       displayedAlertIds: new Set(),
-      reasoningLog: [],
       isPlaying: true,
       legDurationMs: computeLegDurationMs(ticks, 0, playbackSpeed),
       legStartedAt: Date.now(),
@@ -562,14 +559,43 @@ export const useAppStore = create<AppState>((set, get) => ({
         const result = checkCityResponse(id, nextTier);
         if (result && tryFireOnce(`city_response:${id}:${timestamp}`)) {
           const name = segToName(segmentDefs, id);
+          const prevSat = prevSegments[id]?.saturation ?? 0;
+          const citySteps: ReasoningStep[] = [
+            {
+              order: 1,
+              status: "info",
+              title: "觸發交通擁塞級別判定規則",
+              detail: `${name} 為城市應變觸發路段，Saturation_Score 由 ${prevSat.toFixed(2)} 上升至 ${newSegments[id].saturation.toFixed(2)}`,
+              sopRef: "SOP §1",
+            },
+            {
+              order: 2,
+              status: "pass",
+              title: `達 ${nextTier} 級門檻（${nextTier === "A" ? "癱瘓" : "壅擠"}）`,
+              detail:
+                nextTier === "A"
+                  ? "Saturation_Score >= 0.95，同步觸發第 2 條替代路徑引導"
+                  : "0.85 <= Saturation_Score < 0.95",
+              sopRef: "SOP §1",
+            },
+            {
+              order: 3,
+              status: "final",
+              title: "啟動「長綠燈時制」",
+              detail: `${name} 之替代道路綠燈配時 +25%，並調度警力淨空路口`,
+              sopRef: "SOP §1",
+            },
+          ];
           const alert: AlertRecord = {
             id: nextId("alert"),
             timestamp,
             kind: "city_response",
+            origin: "sensor",
             title: `${name} 觸發 ${nextTier} 級壅塞`,
             ruleSummary: `Saturation_Score=${newSegments[id].saturation.toFixed(2)} → ${nextTier} 級`,
             actions: result.actions,
             sopRef: "SOP §1",
+            reasoningSteps: citySteps,
             segmentMetrics: {
               segmentName: name,
               flowPcuh: newSegments[id].vehicleCount,
@@ -615,18 +641,57 @@ export const useAppStore = create<AppState>((set, get) => ({
       checkMrtDiversion(toCrowdSnapshot(bl17Next, timestamp)) &&
       tryFireOnce(`mrt_diversion:BS_MRT_BL17:${timestamp}`)
     ) {
+      const adjacentStationName = newStations["BS_MRT_BL18"]?.name ?? "捷運市政府站";
+      const byGrowth = bl17Next.growthRate > 0.3;
+      const byCount = bl17Next.userCount > 25000;
+      const mrtSteps: ReasoningStep[] = [
+        {
+          order: 1,
+          status: "info",
+          title: "觸發捷運與接駁分流規則",
+          detail: `${bl17Next.name} User_Count=${bl17Next.userCount.toLocaleString()}、Growth_Rate=${bl17Next.growthRate.toFixed(2)}`,
+          sopRef: "SOP §3",
+        },
+        {
+          order: 2,
+          status: "pass",
+          title:
+            byGrowth && byCount
+              ? "人數與成長率門檻同時成立"
+              : byGrowth
+                ? "成長率超過門檻（Growth_Rate > 0.30）"
+                : "人數超過門檻（User_Count > 25,000）",
+          detail: "門檻：User_Count > 25,000 或 Growth_Rate > 0.30（任一成立即觸發）",
+          sopRef: "SOP §3",
+        },
+        {
+          order: 3,
+          status: "final",
+          title: "啟動列車過站不停與接駁機制",
+          detail: `建議北捷「過站不停」、通知公車處調度接駁專車、引導群眾步行至${adjacentStationName}`,
+          sopRef: "SOP §3",
+        },
+      ];
       const alert: AlertRecord = {
         id: nextId("alert"),
         timestamp,
         kind: "mrt_diversion",
+        origin: "sensor",
         title: `${bl17Next.name} 觸發捷運分流`,
         ruleSummary: `User_Count=${bl17Next.userCount}、Growth_Rate=${bl17Next.growthRate.toFixed(2)}（門檻：>25,000 或 growth>0.30）`,
         actions: [
           "建議北捷「過站不停」",
           "通知公車處調度接駁專車",
-          "引導群眾步行至 BS_MRT_BL18",
+          `引導群眾步行至${adjacentStationName}`,
         ],
         sopRef: "SOP §3",
+        reasoningSteps: mrtSteps,
+        stationMetrics: {
+          stationName: bl17Next.name,
+          userCount: bl17Next.userCount,
+          growthRate: bl17Next.growthRate,
+          roamingPct: bl17Next.roamingPct,
+        },
       };
       pushAlert(alert);
       llmAdapter
@@ -668,17 +733,49 @@ export const useAppStore = create<AppState>((set, get) => ({
       const nowTriggered = checkDomeDispersal(domeHistory, domeCurrentSnapshot);
       if (!wasTriggered && nowTriggered && tryFireOnce(`dome_dispersal:BS_TPE_DOME:${timestamp}`)) {
         const peak = Math.max(0, ...domeHistory.map((d) => d.userCount));
+        const domeAdjacentStationName = newStations["BS_MRT_BL18"]?.name ?? "捷運市政府站";
+        const domeSteps: ReasoningStep[] = [
+          {
+            order: 1,
+            status: "info",
+            title: "觸發大巨蛋散場啟動規則",
+            detail: `${domeNext.name}歷史人流峰值=${peak.toLocaleString()}，當前 Growth_Rate=${domeNext.growthRate.toFixed(2)}`,
+            sopRef: "SOP §4",
+          },
+          {
+            order: 2,
+            status: "pass",
+            title: "峰值與退場趨勢門檻同時成立",
+            detail: "門檻：歷史峰值 User_Count >= 30,000 且當前 Growth_Rate <= -0.20",
+            sopRef: "SOP §4",
+          },
+          {
+            order: 3,
+            status: "final",
+            title: "標記「散場啟動」並提前連動接駁機制",
+            detail: `提前連動第 3 條接駁機制：北捷過站不停、公車處調度接駁專車、引導步行至${domeAdjacentStationName}`,
+            sopRef: "SOP §3 / §4",
+          },
+        ];
         const alert: AlertRecord = {
           id: nextId("alert"),
           timestamp,
           kind: "dome_dispersal",
+          origin: "sensor",
           title: `大巨蛋 散場啟動`,
           ruleSummary: `歷史峰值=${peak}（>=30,000）、當前 Growth_Rate=${domeNext.growthRate.toFixed(2)}（<=-0.20）`,
           actions: [
             "標記「散場啟動」",
-            "提前連動第 3 條接駁機制：北捷過站不停、公車處調度接駁專車、引導步行至 BS_MRT_BL18",
+            `提前連動第 3 條接駁機制：北捷過站不停、公車處調度接駁專車、引導步行至${domeAdjacentStationName}`,
           ],
           sopRef: "SOP §4",
+          reasoningSteps: domeSteps,
+          stationMetrics: {
+            stationName: domeNext.name,
+            userCount: domeNext.userCount,
+            growthRate: domeNext.growthRate,
+            roamingPct: domeNext.roamingPct,
+          },
         };
         pushAlert(alert);
         llmAdapter
@@ -717,10 +814,34 @@ export const useAppStore = create<AppState>((set, get) => ({
     })));
     for (const st of nowMultilingual) {
       if (!prevMultilingualIds.has(st.stationId) && tryFireOnce(`multilingual:${st.stationId}:${timestamp}`)) {
+        const multilingualSteps: ReasoningStep[] = [
+          {
+            order: 1,
+            status: "info",
+            title: "觸發數位通報與多語化規則",
+            detail: `${st.locationName} Roaming_User_Pct=${(st.roamingPct * 100).toFixed(0)}%`,
+            sopRef: "SOP §6",
+          },
+          {
+            order: 2,
+            status: "pass",
+            title: "國際漫遊比例達門檻",
+            detail: "門檻：Roaming_User_Pct >= 30%",
+            sopRef: "SOP §6",
+          },
+          {
+            order: 3,
+            status: "final",
+            title: "產出中／英／日／韓四語通報",
+            detail: "該區域之簡訊與看板訊息須同時含多國語言，時間格式統一為 YYYY-MM-DD HH:MM",
+            sopRef: "SOP §6",
+          },
+        ];
         const alert: AlertRecord = {
           id: nextId("alert"),
           timestamp,
           kind: "multilingual",
+          origin: "sensor",
           title: `${st.locationName} 觸發多語通報`,
           ruleSummary: `Roaming_User_Pct=${(st.roamingPct * 100).toFixed(0)}%（門檻 >=30%）`,
           actions: [
@@ -728,6 +849,13 @@ export const useAppStore = create<AppState>((set, get) => ({
             "發布時間格式統一為 YYYY-MM-DD HH:MM",
           ],
           sopRef: "SOP §6",
+          reasoningSteps: multilingualSteps,
+          stationMetrics: {
+            stationName: st.locationName,
+            userCount: st.userCount,
+            growthRate: st.growthRate,
+            roamingPct: st.roamingPct,
+          },
         };
         pushAlert(alert);
         llmAdapter
@@ -796,7 +924,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().timeOffsetMs,
         segments,
       );
-      pushAlert(alert, alert.reasoningSteps);
+      pushAlert(alert);
       set((s) => ({
         incidentEte: { ...s.incidentEte, [incident.eventId]: alert.ete ?? 0 },
         segments: {
@@ -832,21 +960,33 @@ export const useAppStore = create<AppState>((set, get) => ({
           sopRef: "SOP §5",
         },
       ];
+      const signalSegName = segToName(segmentDefs, incident.affectedSegment);
+      const signalSeg = segments[incident.affectedSegment];
       const alert: AlertRecord = {
         id: nextId("alert"),
         timestamp: get().currentTime,
         kind: "signal_failure",
-        title: `${segToName(segmentDefs, incident.affectedSegment)} 號誌故障`,
+        origin: "incident",
+        title: `${signalSegName} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
         actions: [
           "產出人工指揮派遣建議",
-          `調度警力至 ${segToName(segmentDefs, incident.affectedSegment)}，每路口 2 人`,
-          `CMS 加註：「${segToName(segmentDefs, incident.affectedSegment)} 號誌故障，請依現場指揮通行」`,
+          `調度警力至 ${signalSegName}，每路口 2 人`,
+          `CMS 加註：「${signalSegName} 號誌故障，請依現場指揮通行」`,
         ],
         sopRef: "SOP §5",
         reasoningSteps: steps,
+        ...(signalSeg
+          ? {
+              segmentMetrics: {
+                segmentName: signalSegName,
+                flowPcuh: signalSeg.vehicleCount,
+                saturation: signalSeg.saturation,
+              },
+            }
+          : {}),
       };
-      pushAlert(alert, steps);
+      pushAlert(alert);
       llmAdapter
         .summarize({
           kind: "signal_failure",
@@ -877,17 +1017,29 @@ export const useAppStore = create<AppState>((set, get) => ({
           sopRef: "SOP §3",
         },
       ];
+      const relatedStation = get().stations[incident.affectedSegment];
       const alert: AlertRecord = {
         id: nextId("alert"),
         timestamp: get().currentTime,
         kind: "accident",
+        origin: "incident",
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,
         actions: ["僅作情境關聯顯示，交由第 3 條捷運分流規則觀察後續是否需要處置"],
         sopRef: "SOP §3",
         reasoningSteps: steps,
+        ...(relatedStation
+          ? {
+              stationMetrics: {
+                stationName: relatedStation.name,
+                userCount: relatedStation.userCount,
+                growthRate: relatedStation.growthRate,
+                roamingPct: relatedStation.roamingPct,
+              },
+            }
+          : {}),
       };
-      pushAlert(alert, steps);
+      pushAlert(alert);
     }
   },
 

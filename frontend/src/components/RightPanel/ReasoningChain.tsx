@@ -7,10 +7,10 @@ function splitSopRefs(sopRef: string): string[] {
 }
 
 export default function ReasoningChain() {
-  const reasoningLog = useAppStore((s) => s.reasoningLog);
+  const latest = useAppStore((s) => s.alerts[0]);
   const { language } = useLanguage();
 
-  const sorted = reasoningLog.slice().sort((a, b) => a.order - b.order);
+  const sorted = (latest?.reasoningSteps ?? []).slice().sort((a, b) => a.order - b.order);
   const finalStep = sorted.find((s) => s.status === "final");
   const otherSteps = sorted.filter((s) => s !== finalStep);
   const statusLabel = (status: string) => {

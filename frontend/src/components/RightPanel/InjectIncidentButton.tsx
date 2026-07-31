@@ -6,8 +6,6 @@ import { reformatEmbeddedTimestamp } from "../../utils/timeUtils";
 import type { LiveIncident } from "../../types";
 import styles from "./InjectIncidentButton.module.css";
 
-const DEMO_INJECT_COUNT = 3;
-
 export default function InjectIncidentButton() {
   const allIncidents = useAppStore((s) => s.allIncidents);
   const injectedIncidentIds = useAppStore((s) => s.injectedIncidentIds);
@@ -125,7 +123,7 @@ export default function InjectIncidentButton() {
           <div className={styles.menuTitle}>
             {pick(language, "選擇要注入的事件（Demo）", "Choose an incident to inject (Demo)")}
           </div>
-          {allIncidents.slice(0, DEMO_INJECT_COUNT).map((incident) => {
+          {allIncidents.map((incident) => {
             const injected = injectedIncidentIds.has(incident.eventId);
             return (
               <button
