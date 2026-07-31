@@ -14,8 +14,10 @@ from pathlib import Path
 from .types import RoadSegment
 
 
-def load_segments_from_geometry(path: Path) -> dict[str, RoadSegment]:
-    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+def build_segments_from_raw(raw: list[dict]) -> dict[str, RoadSegment]:
+    """Same construction load_segments_from_geometry does, but from an
+    already-parsed list (e.g. a JSON payload the frontend forwarded), not a
+    file path."""
     name_to_id = {seg["name"]: seg["segment_id"] for seg in raw}
 
     segments: dict[str, RoadSegment] = {}
@@ -36,3 +38,8 @@ def load_segments_from_geometry(path: Path) -> dict[str, RoadSegment]:
             nearby_stations=seg.get("nearby_stations", []),
         )
     return segments
+
+
+def load_segments_from_geometry(path: Path) -> dict[str, RoadSegment]:
+    raw = json.loads(Path(path).read_text(encoding="utf-8"))
+    return build_segments_from_raw(raw)

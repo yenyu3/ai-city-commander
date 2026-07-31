@@ -1,1 +1,5 @@
 pytest
+anthropic       # optional at runtime (agent/llm_client.py imports it lazily); only
+                # needed to exercise AnthropicLLMClient, incl. its unit tests
+psycopg[binary] # needed by db.py + tests/test_db.py (requires a real local
+                # Postgres; see backend/README.md's "本機 DB 測試" section)

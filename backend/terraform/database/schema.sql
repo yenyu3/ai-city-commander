@@ -127,9 +127,16 @@ CREATE TABLE incident_station_impacts (
   PRIMARY KEY (event_id, station_id)
 );
 
--- Persisted output of the existing rule engine.  `reasoning_steps` and
+-- Persisted output of the decision agent.  `reasoning_steps` and
 -- `llm_text` are intentionally flexible/auditable, while the event relation
 -- remains normalized.
+--
+-- `scenario_at` mirrors the `observed_at` / `ingested_at` split already used
+-- by traffic_snapshots / crowd_snapshots: `scenario_at` is the simulated
+-- demo timestamp this decision was evaluated as-of (business time, supplied
+-- by the caller), `created_at` is real wall-clock insert time. Added
+-- 2026-07-31 so a repeated request for the same (event_id, scenario_at) can
+-- be served from cache instead of re-invoking the LLM -- see backend/PIPELINES.md.
 CREATE TABLE response_alerts (
   alert_id               text PRIMARY KEY,
   event_id               text REFERENCES incidents(event_id) ON DELETE SET NULL,
@@ -140,11 +147,60 @@ CREATE TABLE response_alerts (
   sop_section_id         text,
   estimated_delay_min    numeric(8, 2) CHECK (estimated_delay_min >= 0),
   reasoning_steps        jsonb NOT NULL DEFAULT '[]'::jsonb,
+  scenario_at            timestamptz NOT NULL,
   created_at             timestamptz NOT NULL DEFAULT now()
 );
 
 CREATE INDEX response_alerts_event_time_idx
   ON response_alerts (event_id, created_at DESC);
+
+-- Cache lookup key: "has this incident already been checked against this
+-- particular SOP article (alert_kind) as of this simulated time?" Includes
+-- alert_kind (not just event_id+scenario_at) because one incident can
+-- independently trigger more than one SOP article (2026-07-31: evaluate no
+-- longer pre-filters to a single decide_*() by incident.type -- every
+-- applicable check runs and each is cached separately).
+CREATE UNIQUE INDEX response_alerts_event_scenario_kind_idx
+  ON response_alerts (event_id, scenario_at, alert_kind);
+
+-- LLM tier judgment for a single road segment as of one simulated moment
+-- (SOP §1). Separate from response_alerts because it's not tied to an
+-- incident -- GET /api/city-state's periodic per-segment poll needs its own
+-- cache key (segment_id, scenario_at), added 2026-07-31 so that endpoint can
+-- run a real decide_congestion() LLM call per segment instead of the
+-- deterministic get_tier() shortcut, without re-invoking the LLM on every
+-- repeat poll for a scenario time already judged.
+CREATE TABLE congestion_decisions (
+  segment_id             text NOT NULL REFERENCES road_segments(segment_id) ON DELETE CASCADE,
+  scenario_at            timestamptz NOT NULL,
+  triggered              boolean NOT NULL,
+  result                 jsonb NOT NULL DEFAULT '{}'::jsonb,
+  reasoning              text,
+  source                 text NOT NULL,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (segment_id, scenario_at)
+);
+
+-- Same purpose as congestion_decisions but per station, for the crowd-side
+-- SOP judgments (§3 MRT diversion, §4 dome dispersal, §6 multilingual) that
+-- GET /api/city-state must also run on every poll per the brief's Module 1
+-- ("系統需依時間軸自動讀取並展示車流與人流數據" -- crowd data, not just
+-- traffic). `decision_kind` distinguishes the three since a station can be
+-- subject to more than one. `station_id` is NOT a stations FK: the §6
+-- multilingual judgment runs once across all currently-visible stations per
+-- poll (not per station) and is cached under a synthetic key
+-- ("_ALL_STATIONS_"), which a real FK would reject.
+CREATE TABLE crowd_decisions (
+  station_id             text NOT NULL,
+  scenario_at            timestamptz NOT NULL,
+  decision_kind          text NOT NULL,
+  triggered              boolean NOT NULL,
+  result                 jsonb NOT NULL DEFAULT '{}'::jsonb,
+  reasoning              text,
+  source                 text NOT NULL,
+  created_at             timestamptz NOT NULL DEFAULT now(),
+  PRIMARY KEY (station_id, scenario_at, decision_kind)
+);
 
 CREATE TABLE sop_documents (
   sop_document_id        bigint GENERATED ALWAYS AS IDENTITY PRIMARY KEY,

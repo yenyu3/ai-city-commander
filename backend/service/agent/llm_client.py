@@ -43,6 +43,67 @@ class AnthropicLLMClient(LLMClient):
         )
 
 
+class OmniRouteLLMClient(LLMClient):
+    """Talks to a local OmniRoute instance (OpenAI-compatible
+    /v1/chat/completions -- e.g. http://localhost:20128/v1), a multi-provider
+    LLM router used here purely for local development/testing before real
+    Bedrock/Anthropic credentials exist. Uses only the standard library
+    (urllib) so it never adds a runtime dependency.
+
+    Note: the generic `auto`/`auto/claude-sonnet` combos route mostly through
+    OmniRoute's shared no-auth free tiers (theoldllm, opencode,
+    duckduckgo-web), which were all found simultaneously broken/rate-limited
+    (2026-07-31 -- confirmed via ~/.omniroute/logs/application/app.log:
+    "Token rejected (403)" / "refresh failed" / "circuit breaker is open" for
+    all three). Once the user connected their own free Kiro AI account
+    (dashboard → Providers → Kiro AI, no card needed) and it showed up in
+    /v1/models as `kiro/claude-sonnet-4.5`, requests succeeded reliably --
+    that's why the default below targets it by name instead of `auto/*`. If
+    `kiro/claude-sonnet-4.5` isn't connected in a given OmniRoute instance,
+    override via OMNIROUTE_MODEL to whatever *is* actually connected (check
+    `curl $OMNIROUTE_BASE_URL/models` and prefer a named provider connection
+    over an `auto/*` alias, which silently falls through to the shared
+    no-auth pool first).
+    """
+
+    def __init__(self, base_url: str, model: str = "kiro/claude-sonnet-4.5"):
+        self._base_url = base_url.rstrip("/")
+        self._model = model
+
+    def complete(self, system: str, prompt: str, *, max_tokens: int = 1024) -> str:
+        import json
+        import urllib.error
+        import urllib.request
+
+        body = json.dumps(
+            {
+                "model": self._model,
+                "stream": False,
+                "max_tokens": max_tokens,
+                "messages": [
+                    {"role": "system", "content": system},
+                    {"role": "user", "content": prompt},
+                ],
+            }
+        ).encode("utf-8")
+        request = urllib.request.Request(
+            f"{self._base_url}/chat/completions",
+            data=body,
+            headers={"Content-Type": "application/json"},
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(request, timeout=60) as response:
+                payload = json.loads(response.read())
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(f"OmniRoute request failed ({exc.code}): {detail}") from exc
+
+        if "error" in payload:
+            raise RuntimeError(f"OmniRoute error: {payload['error'].get('message')}")
+        return payload["choices"][0]["message"]["content"]
+
+
 class BedrockAgentCoreLLMClient(LLMClient):
     """Placeholder for the eventual AWS Bedrock AgentCore Runtime call.
 
@@ -65,6 +126,12 @@ def get_configured_llm_client() -> Optional[LLMClient]:
     """Returns a ready-to-use LLM client based on environment configuration,
     or None if nothing is configured yet.
 
+    Priority: AgentCore (prod path) > Anthropic direct (a real provider key)
+    > OmniRoute (opt-in local dev/test router -- see OmniRouteLLMClient).
+    OmniRoute is last and requires an explicit OMNIROUTE_BASE_URL so it never
+    accidentally activates outside a dev machine (Lambda can't reach
+    localhost anyway).
+
     Every caller in this package must have a canned-response fallback for
     the None case -- see agent/templates.py and agent/narrator.py.
     """
@@ -75,5 +142,12 @@ def get_configured_llm_client() -> Optional[LLMClient]:
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:
         return AnthropicLLMClient(anthropic_key)
+
+    omniroute_base_url = os.environ.get("OMNIROUTE_BASE_URL")
+    if omniroute_base_url:
+        return OmniRouteLLMClient(
+            omniroute_base_url,
+            model=os.environ.get("OMNIROUTE_MODEL", "kiro/claude-sonnet-4.5"),
+        )
 
     return None

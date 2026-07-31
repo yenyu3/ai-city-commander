@@ -40,6 +40,8 @@ def no_llm_credentials(monkeypatch):
     whatever happens to be in the environment running the suite."""
     monkeypatch.delenv("BEDROCK_AGENTCORE_RUNTIME_ARN", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
+    monkeypatch.delenv("OMNIROUTE_BASE_URL", raising=False)
+    monkeypatch.delenv("OMNIROUTE_MODEL", raising=False)
 
 
 class TestConfiguredClientDetection:
@@ -53,6 +55,92 @@ class TestConfiguredClientDetection:
 
         client = get_configured_llm_client()
         assert isinstance(client, BedrockAgentCoreLLMClient)
+
+    def test_omniroute_only_activates_when_explicitly_configured(self, monkeypatch):
+        from agent.llm_client import OmniRouteLLMClient
+
+        assert get_configured_llm_client() is None
+        monkeypatch.setenv("OMNIROUTE_BASE_URL", "http://localhost:20128/v1")
+        client = get_configured_llm_client()
+        assert isinstance(client, OmniRouteLLMClient)
+
+    def test_anthropic_key_takes_priority_over_omniroute(self, monkeypatch):
+        from agent.llm_client import AnthropicLLMClient
+
+        monkeypatch.setenv("OMNIROUTE_BASE_URL", "http://localhost:20128/v1")
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake")
+        client = get_configured_llm_client()
+        assert isinstance(client, AnthropicLLMClient)
+
+
+class TestOmniRouteLLMClient:
+    """Mocks urllib so these never depend on the local OmniRoute router
+    actually being up/reachable/unrateimited -- see backend/README.md for
+    what its live behavior looked like when last checked."""
+
+    def test_complete_parses_a_successful_response(self, monkeypatch):
+        import json as _json
+
+        from agent.llm_client import OmniRouteLLMClient
+
+        captured_request = {}
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return _json.dumps(
+                    {"choices": [{"message": {"content": "測試回覆"}}]}
+                ).encode("utf-8")
+
+        def fake_urlopen(request, timeout=None):
+            captured_request["url"] = request.full_url
+            captured_request["body"] = _json.loads(request.data)
+            captured_request["timeout"] = timeout
+            return _FakeResponse()
+
+        monkeypatch.setattr("urllib.request.urlopen", fake_urlopen)
+
+        client = OmniRouteLLMClient("http://localhost:20128/v1", model="auto/claude-sonnet")
+        result = client.complete("system prompt", "user prompt", max_tokens=200)
+
+        assert result == "測試回覆"
+        assert captured_request["url"] == "http://localhost:20128/v1/chat/completions"
+        assert captured_request["body"]["model"] == "auto/claude-sonnet"
+        assert captured_request["body"]["stream"] is False
+        assert captured_request["body"]["messages"] == [
+            {"role": "system", "content": "system prompt"},
+            {"role": "user", "content": "user prompt"},
+        ]
+
+    def test_complete_raises_on_error_payload(self, monkeypatch):
+        import json as _json
+
+        from agent.llm_client import OmniRouteLLMClient
+
+        class _FakeResponse:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *args):
+                return False
+
+            def read(self):
+                return _json.dumps(
+                    {"error": {"message": "Maximum combo retry limit reached"}}
+                ).encode("utf-8")
+
+        monkeypatch.setattr(
+            "urllib.request.urlopen", lambda request, timeout=None: _FakeResponse()
+        )
+
+        client = OmniRouteLLMClient("http://localhost:20128/v1")
+        with pytest.raises(RuntimeError, match="Maximum combo retry limit reached"):
+            client.complete("s", "p")
 
 
 class TestTemplatesFallback:
@@ -141,6 +229,36 @@ class TestNarratorWithInjectedFakeClient:
         result = answer_what_if("問題", {"a": 1}, "SOP 原文", llm_client=fake)
         assert result == "假回答"
         assert "問題" in fake.calls[0]["prompt"]
+
+
+class FailingLLMClient(LLMClient):
+    """Simulates a configured-but-unreachable provider, e.g. the ~40%
+    failure rate observed live against the local OmniRoute router."""
+
+    def complete(self, system: str, prompt: str, *, max_tokens: int = 1024) -> str:
+        raise RuntimeError("Maximum combo retry limit reached")
+
+
+class TestNarratorFallsBackOnProviderFailure:
+    """A *configured* client that fails at call time must still degrade to
+    the canned template, not propagate the error -- 'a client exists' must
+    not imply 'a real answer always comes back' (see narrator._complete_or_fallback).
+    """
+
+    def test_summarize_falls_back_when_the_client_raises(self):
+        event = StructuredEvent(
+            kind="mrt_diversion",
+            title="t",
+            data={"stationName": "捷運國父紀念館站", "userCount": "33000", "growthRate": "0.06"},
+        )
+        result = summarize(event, llm_client=FailingLLMClient())
+        assert "捷運國父紀念館站" in result  # same content the pure-template test expects
+
+    def test_answer_what_if_falls_back_when_the_client_raises(self):
+        result = answer_what_if(
+            "若飽和度到 0.96 會怎樣？", {"tier": "A"}, "SOP 第1條...", llm_client=FailingLLMClient()
+        )
+        assert "0.96" in result
 
 
 def _api_gw_event(method: str, path: str, body: dict | None = None) -> dict:

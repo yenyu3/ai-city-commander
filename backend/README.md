@@ -88,6 +88,73 @@ terraform apply
 載入資料包含道路、站點、道路拓撲、車流快照、人流快照、事故與 SOP 文件。
 匯入程式使用主鍵 upsert，因此重跑會更新既有資料，而不會重複新增同一筆 snapshot 或事件。
 
+**已知缺口**：`load_demo_data.py` 目前不會載入 `sop_documents`/`sop_sections`
+（`data/emergency_traffic_sop.txt`），但 `response_alerts.sop_section_id` 有
+FK 指向 `sop_sections`，所以要寫入 `response_alerts` 前必須先手動塞資料，
+否則會撞 `ForeignKeyViolation`。本機測試已經用 `agent/sop_sections.py` 裡
+現成的七條結構化資料補了這塊（見下方「本機 DB 測試」），但 seed script 本身
+還沒補上，需要另外修。
+
+## 本機 DB 測試
+
+不需要真的連 RDS，本機起一個 Postgres 容器就能測 `db.py` 跟所有 DB 相關的
+handler routes：
+
+```bash
+docker run -d --name aicity-pg -e POSTGRES_PASSWORD=aicity -e POSTGRES_DB=aicity \
+  -p 5432:5432 postgres:16
+
+DATABASE_URL='postgresql://postgres:aicity@localhost:5432/aicity' \
+  python3 backend/terraform/scripts/load_demo_data.py
+
+# 補上面提到的 sop_sections 缺口（load_demo_data.py 還沒做這步）：
+cd backend/service
+DATABASE_URL='postgresql://postgres:aicity@localhost:5432/aicity' python3 -c "
+import db
+from agent.sop_sections import SOP_SECTIONS
+conn = db.connect()
+conn.execute(\"INSERT INTO sop_documents (document_name, version, body) VALUES (%s,%s,%s)\",
+             ('emergency_traffic_sop','1','see data/emergency_traffic_sop.txt'))
+doc_id = conn.execute('SELECT sop_document_id FROM sop_documents ORDER BY sop_document_id DESC LIMIT 1').fetchone()[0]
+for s in SOP_SECTIONS:
+    conn.execute('INSERT INTO sop_sections (sop_section_id, sop_document_id, title, body, keywords, display_order) VALUES (%s,%s,%s,%s,%s,%s)',
+                 (s.id, doc_id, s.title, s.text, list(s.keywords), int(s.id)))
+conn.commit()
+"
+
+pip install -r requirements-dev.txt
+DATABASE_URL='postgresql://postgres:aicity@localhost:5432/aicity' pytest tests/ -v
+```
+
+`tests/test_db.py`／`tests/test_handler_db_routes.py` 會在沒偵測到可連線的
+Postgres 時自動 skip（不會讓其他不需要 DB 的測試跟著失敗）。`test_db.py`
+每個測試都在同一個未 commit 的 transaction 裡跑、結束時 rollback，所以不會
+弄髒共用的 demo 資料；`test_handler_db_routes.py` 測的是真正經過兩次獨立
+handler 呼叫才能驗證的行為（例如快取），沒辦法用同一個 transaction 包住，
+改用 `TEST_` 前綴 + 每個測試前後清除來隔離。
+
+`response_alerts.scenario_at`（2026-07-31 新增欄位）：仿照
+`traffic_snapshots`/`crowd_snapshots` 既有的 `observed_at`（模擬時間）
+vs. `ingested_at`（真實寫入時間）分離設計，讓「同一個事件在同一個模擬時間
+有沒有評估過」可以直接查 `(event_id, scenario_at, alert_kind)` 唯一索引，不用
+每次都重新呼叫 LLM——這是本次新增，`schema.sql` 已更新，如果 RDS 上已經跑過
+舊版 schema，需要重新 apply。
+
+### 清快取（測試時很常用）
+
+`response_alerts`／`congestion_decisions`／`crowd_decisions` 都是快取，同一個
+`scenario_at` 只要被判斷過一次就不會再呼叫 LLM——測試時想看到重新判斷（例如
+換了 prompt、換了 model），要先清掉舊的快取。用 `clear_cache.py`：
+
+```bash
+cd backend/service
+export DATABASE_URL='postgresql://postgres:aicity@localhost:5432/aicity'
+
+python3 clear_cache.py --scenario-at "2026-05-20T22:10:00+08:00"  # 清這個模擬時刻的全部快取（三張表）
+python3 clear_cache.py --event-id TPE_2026_ACC_001                # 清某個事件的全部快取（不分時間）
+python3 clear_cache.py --all                                       # 全部清空
+```
+
 ## 部署
 
 先確認 Terraform 為 1.10+，再建置 database-seed Lambda 的 Linux 相容套件：
@@ -107,12 +174,34 @@ terraform apply
 
 `build_seed_lambda.sh` 會將 Linux x86_64 / Python 3.12 相容的 `psycopg`、schema、Demo CSV/JSON 與載入程式打包。這是必要步驟，因為 Lambda 在 Linux 環境執行，而本機可能是 macOS。
 
-## SOP 規則引擎
+## 判斷 vs. 計算 vs. 敘事：三層架構
+
+**方向（2026-07-27 定案）：SOP 判斷（觸發哪條、分級、選哪條路線）由 LLM 決定，
+不是確定性程式碼——LLM 必須參與「決策」本身，不能只負責把已經算好的結果寫成
+白話文。程式碼只做「不涉及判斷」的事：整理原始數據、算候選項的結構性屬性
+（capacity、是否直接相交、是否上游、目前飽和度），真正的分級/觸發/選路
+判斷交給 LLM 讀取這些事實 + SOP 全文後決定，決定與理由同時產出。**
+
+```
+backend/service/
+├── rules/     # 純數值計算 + 【備援】判斷邏輯（無 LLM 時的安全網，不是主路徑）
+└── agent/
+    ├── facts.py            # 組「原始事實」給 LLM（不預先分類/不預先選路）
+    ├── decision_agent.py   # 主要判斷路徑：事實 + SOP 全文 → LLM 決定 + 理由
+    ├── narrator.py         # 純敘事（把已知結果轉白話文，不判斷）
+    ├── templates.py        # narrator 的罐頭文字備援
+    └── llm_client.py       # 可替換 LLM 介面（AgentCore／Anthropic／OmniRoute）
+```
+
+### `rules/`：計算層 + 判斷的備援層
 
 `backend/service/rules/` 是 SOP 七條規則的確定性 Python 實作（飽和度分級、
-ETE 公式、SOP 第2條疏散路徑演算法等），從 `frontend/src/engine/*.ts` 對照
-移植，數值/門檻判斷全部是純程式碼、不經過 LLM——Agent 只負責在這些計算結果
-之上做 SOP 選擇與文字生成。
+ETE 公式、SOP 第2條疏散路徑演算法等），從 `frontend/src/engine/*.ts` 對照移植。
+
+這層現在的角色是**沒有 LLM 可用時的備援**（沒設定憑證、呼叫失敗、或回應不是
+合法 JSON 時自動接手），不是正常情況下的判斷路徑——只要 LLM 可用，判斷結果
+以 LLM 的輸出為準。ETE 公式是例外：純算術、沒有模糊空間，維持由程式碼計算，
+當成一個「已算好的數字」交給 LLM 引用，不算「判斷走哪條 SOP」。
 
 本機測試（不需要 AWS/資料庫，直接對照 `data/` 原始資料集跑）：
 
@@ -134,30 +223,52 @@ pytest tests/ -v
   `road_segment_intersection_refs.intersecting_segment_id` 可為 `NULL` 設計一致），
   避免這個位移問題。
 
-## Agent 文字生成層（`backend/service/agent/`）
+### `agent/facts.py` + `agent/decision_agent.py`：真正的判斷層（LLM 為主）
 
-負責把 `rules/` 算好的結構化結果轉成自然語言（建議書敘述、What-if 回答、多語簡訊）。
-`llm_client.py` 是可替換的 LLM 介面：
+`decision_agent.py::decide()` 是通用的「事實進、決定出」呼叫：把原始事實
+（JSON）+ SOP 七條全文一起丟給 LLM，要求它輸出結構化 JSON
+（`triggered`、`sop_section_id`、`result`、`reasoning`），並指示它「不要重新
+計算數字、只能引用 SOP 原文條款」。`agent/facts.py` 針對六種情境（飽和度分級、
+事故疏散、捷運分流、大巨蛋散場、號誌故障、多語通報）各寫一個 `decide_*()`，
+每個都只組「原始事實」——例如事故情境給的是候選替代路段清單（capacity_vph、
+是否直接相交、是否上游、目前飽和度），**不會**先幫忙選出哪條是主路；那個
+選擇本身就是要 LLM 決定的事。
+
+沒有 LLM、呼叫失敗、或回應解析失敗時，退回 `rules/` 對應的確定性函式（結果
+會標記 `"source": "fallback"` 以便區分）。這是安全網，不是設計上的正常路徑。
+
+### `agent/narrator.py`：純敘事層（不判斷）
+
+`summarize()` / `answer_what_if()` 拿**已經知道的結果**轉成白話文（例如
+`decide_*()` 判斷完之後的結果，或 `rules/` 備援算出的結果），本身不做任何
+判斷。`generate_multilingual()` 完全不用 LLM，純模板——固定格式的 CMS/簡訊
+文字用決定性字串組合比 LLM 翻譯可靠。
+
+`llm_client.py` 是可替換的 LLM 介面，`decide()` 跟 `narrator.py` 共用：
 
 - 有設定 `BEDROCK_AGENTCORE_RUNTIME_ARN` → 走 AgentCore（尚未實作，等 Runtime 部署好）。
-- 有設定 `ANTHROPIC_API_KEY` → 直接呼叫 Anthropic API（本機開發用）。
-- 兩者都沒有 → 全部退回 `templates.py` 的罐頭文字（從 `frontend/src/services/llmAdapter.ts`
-  移植過來的同一套繁中/英/日/韓模板），API 不會因為沒憑證而壞掉。
-
-目前環境還沒有任何一組憑證，所以 `POST /api/agent` 現在跑起來就是純模板輸出。
-等憑證到位後，只要設定對應環境變數即可自動切換到真實 LLM，不用改程式碼。
+- 有設定 `ANTHROPIC_API_KEY` → 直接呼叫 Anthropic API。
+- 有設定 `OMNIROUTE_BASE_URL` → 走本機 OmniRoute 多供應商路由器（純開發測試用，
+  該共用池目前不太穩定，常見 40~60% 失敗率，但失敗一律安全退回備援，不會讓
+  API 出錯）。
+- 都沒有 → 全部退回 `rules/`（判斷）或 `templates.py`（敘事）的確定性結果，
+  API 不會因為沒憑證而壞掉。
 
 `/api/agent` 的請求格式（`{"action": ..., ...}`）：
 
 | action | 欄位 | 回應 |
 | --- | --- | --- |
+| `decide` | `scope`（`congestion`/`accident`/`mrt_diversion`/`dome_dispersal`/`signal_failure`/`multilingual`）+ 各情境對應欄位，見 `handler.py::_handle_decide` | `{"triggered", "sopSectionId", "result", "reasoning", "source"}` |
 | `summarize` | `kind`, `title`, `data`, `sopRef?` | `{"text": "..."}` |
 | `answer_what_if` | `question`, `ruleResult?`, `sopExcerpt?` | `{"text": "..."}` |
 | `generate_multilingual` | `messageType`, `values` | `{"messages": {"zh":..., "en":..., "ja":..., "ko":...}}` |
 
-`retrieve_relevant_sections()`（`sop_sections.py`）目前只是關鍵字比對，是 What-if
-聊天用的暫時性候選檢索，不是 SOP 觸發判定的依據——觸發判定永遠走 `rules/` 的確定性函式。
-之後要做的「用 sub-agent 判斷該走哪條 SOP」還沒實作。
+### 還沒做的
+
+- What-if 聊天的自由文字意圖理解：`retrieve_relevant_sections()`（`sop_sections.py`）
+  目前還是關鍵字比對，沒有改用 LLM/`decide()` 理解問題在問什麼。
+- 多條 SOP 同時觸發時的整合/優先序判斷（例如同一事件同時符合第1條跟第2條）。
+- DB／RDS 串接：`handler.py` 現在資料是吃 request payload，沒有查資料庫。
 
 ## 本機設定檔
 

@@ -113,6 +113,9 @@ SOP_SECTIONS: list[SopSection] = [
 ]
 
 
+FULL_SOP_TEXT = "\n\n".join(f"[SOP 第{s.id}條 {s.title}]\n{s.text}" for s in SOP_SECTIONS)
+
+
 def retrieve_relevant_sections(question: str, top_n: int = 2) -> list[SopSection]:
     scored: list[tuple[int, SopSection]] = []
     for section in SOP_SECTIONS:
