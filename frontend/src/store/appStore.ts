@@ -164,7 +164,7 @@ interface AppState {
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string): void;
   addIncidents(incidents: LiveIncident[]): void;
-  sendChatMessage(question: string, audience?: ViewerMode): void;
+  sendChatMessage(question: string, audience?: ViewerMode, locationContext?: FieldInspectorPosition | null): void;
   setViewerMode(mode: ViewerMode): void;
   toggleMapExpanded(): void;
   setSelectedSegment(id: string | null): void;
@@ -359,11 +359,8 @@ function buildAccidentAlert(
 }
 
 /** 把目前的即時狀態壓成市民模式問答需要的可公開概況。 */
-function buildPublicContext(state: AppState): PublicContext {
+function buildPublicContext(state: AppState, nearbyRoad: { name: string; tier: string } | null): PublicContext {
   const busiest = Object.values(state.stations).sort((a, b) => b.userCount - a.userCount)[0];
-  const inspectorSegment = state.fieldInspectorPosition?.nearestRoadId
-    ? state.segments[state.fieldInspectorPosition.nearestRoadId]
-    : undefined;
   return {
     affectedRoads: Object.values(state.segments)
       .filter((segment) => segment.tier !== "Normal" || segment.isIncidentSource)
@@ -371,8 +368,17 @@ function buildPublicContext(state: AppState): PublicContext {
       .map((segment) => ({ name: segment.name, tier: segment.tier })),
     busiestStation: busiest ? { name: busiest.name, userCount: busiest.userCount } : null,
     activeIncidentCount: state.activeIncidents.length,
-    nearbyRoad: inspectorSegment ? { name: inspectorSegment.name, tier: inspectorSegment.tier } : null,
+    nearbyRoad,
   };
+}
+
+/** 把聊天輸入框上附加的小人位置 Context Tag，解析成路段名稱＋分級，供兩種模式的回答共用。 */
+function resolveNearbyRoad(
+  state: AppState,
+  locationContext: FieldInspectorPosition | null | undefined,
+): { name: string; tier: string } | null {
+  const segment = locationContext?.nearestRoadId ? state.segments[locationContext.nearestRoadId] : undefined;
+  return segment ? { name: segment.name, tier: segment.tier } : null;
 }
 
 function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
@@ -885,7 +891,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }
   },
 
-  sendChatMessage(question, audience = "government") {
+  sendChatMessage(question, audience = "government", locationContext) {
     const isPublic = audience === "public";
     const userMsg: ChatMessage = {
       id: nextId("chat"),
@@ -907,9 +913,10 @@ export const useAppStore = create<AppState>((set, get) => ({
     };
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
 
+    const nearbyRoad = resolveNearbyRoad(get(), locationContext);
     const answer = isPublic
-      ? llmAdapter.answerPublic(question, ruleResult, buildPublicContext(get()))
-      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt);
+      ? llmAdapter.answerPublic(question, ruleResult, buildPublicContext(get(), nearbyRoad))
+      : llmAdapter.answerWhatIf(question, ruleResult, sopExcerpt, nearbyRoad);
 
     answer.then((text) => {
       set((s) => ({

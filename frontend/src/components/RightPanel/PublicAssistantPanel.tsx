@@ -1,13 +1,12 @@
-import { AlertTriangle, ChevronDown, Clock3, MapPin, MessageCircle, Phone, Route, Users } from "lucide-react";
+import { ChevronDown, Clock3 } from "lucide-react";
 import { useMemo } from "react";
-import { useAppStore } from "../../store/appStore";
-import { pick, useLanguage } from "../../i18n";
 import type { Language } from "../../i18n";
+import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import type { AlertRecord, Tier } from "../../types";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { getPublicAlertText } from "../../utils/publicView";
 import { formatDisplayShortTime } from "../../utils/timeUtils";
-import CollapsibleSection from "../common/CollapsibleSection";
 import FieldPositionHint from "../common/FieldPositionHint";
 import styles from "./PublicAssistantPanel.module.css";
 
@@ -27,10 +26,28 @@ const TONE_LABEL: Record<Tone, { zh: string; en: string }> = {
   crit: { zh: "避開", en: "Avoid" },
 };
 
-const STATUS_WORD: Record<Tone, { zh: string; en: string; sub: string; subEn: string }> = {
-  ok: { zh: "可正常通行", en: "Clear to go", sub: "建議通行狀態", subEn: "Recommended travel status" },
-  warn: { zh: "小心慢行", en: "Proceed with care", sub: "建議通行狀態", subEn: "Recommended travel status" },
-  crit: { zh: "建議避開", en: "Avoid the area", sub: "建議通行狀態", subEn: "Recommended travel status" },
+const STATUS_WORD: Record<
+  Tone,
+  { zh: string; en: string; sub: string; subEn: string }
+> = {
+  ok: {
+    zh: "可正常通行",
+    en: "Clear to go",
+    sub: "建議通行狀態",
+    subEn: "Recommended travel status",
+  },
+  warn: {
+    zh: "小心慢行",
+    en: "Proceed with care",
+    sub: "建議通行狀態",
+    subEn: "Recommended travel status",
+  },
+  crit: {
+    zh: "建議避開",
+    en: "Avoid the area",
+    sub: "建議通行狀態",
+    subEn: "Recommended travel status",
+  },
 };
 
 const ALERT_TONE: Record<AlertRecord["kind"], Tone> = {
@@ -43,18 +60,35 @@ const ALERT_TONE: Record<AlertRecord["kind"], Tone> = {
 };
 
 function tierMeta(tier: Tier, language: Language): { tone: Tone; tag: string } {
-  if (tier === "A") return { tone: "crit", tag: pick(language, "壅塞，建議改道", "Congested — reroute") };
-  if (tier === "B") return { tone: "warn", tag: pick(language, "略壅塞", "Moderate delays") };
+  if (tier === "A")
+    return {
+      tone: "crit",
+      tag: pick(language, "壅塞，建議改道", "Congested — reroute"),
+    };
+  if (tier === "B")
+    return { tone: "warn", tag: pick(language, "略壅塞", "Moderate delays") };
   return { tone: "ok", tag: pick(language, "順暢", "Clear") };
 }
 
-function crowdMeta(roamingPct: number, growthRate: number, language: Language): { tone: Tone; tag: string } {
-  if (roamingPct >= 0.3) return { tone: "crit", tag: pick(language, "人潮壅塞", "Very crowded") };
-  if (growthRate > 0.1) return { tone: "warn", tag: pick(language, "人潮增加中", "Crowd building") };
+function crowdMeta(
+  roamingPct: number,
+  growthRate: number,
+  language: Language,
+): { tone: Tone; tag: string } {
+  if (roamingPct >= 0.3)
+    return { tone: "crit", tag: pick(language, "人潮壅塞", "Very crowded") };
+  if (growthRate > 0.1)
+    return {
+      tone: "warn",
+      tag: pick(language, "人潮增加中", "Crowd building"),
+    };
   return { tone: "ok", tag: pick(language, "人潮平穩", "Normal flow") };
 }
 
-function scrollToAnchor(event: React.MouseEvent<HTMLAnchorElement>, id: string) {
+function scrollToAnchor(
+  event: React.MouseEvent<HTMLAnchorElement>,
+  id: string,
+) {
   const target = document.getElementById(id);
   if (!target) return;
   event.preventDefault();
@@ -72,17 +106,25 @@ export default function PublicAssistantPanel() {
   const topRoads = useMemo(
     () =>
       Object.values(segments)
-        .sort((a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.saturation - a.saturation)
+        .sort(
+          (a, b) =>
+            TIER_RANK[a.tier] - TIER_RANK[b.tier] ||
+            b.saturation - a.saturation,
+        )
         .slice(0, 3),
     [segments],
   );
 
   const topStations = useMemo(
-    () => Object.values(stations).sort((a, b) => b.userCount - a.userCount).slice(0, 3),
+    () =>
+      Object.values(stations)
+        .sort((a, b) => b.userCount - a.userCount)
+        .slice(0, 3),
     [stations],
   );
 
-  const mostAffectedRoad = topRoads.find((seg) => seg.tier !== "Normal") ?? null;
+  const mostAffectedRoad =
+    topRoads.find((seg) => seg.tier !== "Normal") ?? null;
   const latestAlert = alerts[0];
 
   const heroTone: Tone = latestAlert
@@ -92,7 +134,11 @@ export default function PublicAssistantPanel() {
       : "ok";
 
   const heroKindLabel = latestAlert
-    ? pick(language, ALERT_KIND_LABEL[latestAlert.kind].zh, ALERT_KIND_LABEL[latestAlert.kind].en)
+    ? pick(
+        language,
+        ALERT_KIND_LABEL[latestAlert.kind].zh,
+        ALERT_KIND_LABEL[latestAlert.kind].en,
+      )
     : pick(language, "城市狀態", "City status");
 
   const heroReason = latestAlert
@@ -103,7 +149,11 @@ export default function PublicAssistantPanel() {
           `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
           `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
         )
-      : pick(language, "目前主要道路與人流狀態穩定，可依原計畫移動。", "Roads and crowds are stable. You can continue as planned.");
+      : pick(
+          language,
+          "目前主要道路與人流狀態穩定，可依原計畫移動。",
+          "Roads and crowds are stable. You can continue as planned.",
+        );
 
   const statusWord = STATUS_WORD[heroTone];
   const toneLabel = TONE_LABEL[heroTone];
@@ -114,7 +164,9 @@ export default function PublicAssistantPanel() {
   return (
     <div className={styles.wrap}>
       <div className={styles.heroCard}>
-        <span className={styles.title}>{pick(language, "目前狀態", "Current Status")}</span>
+        <span className={styles.title}>
+          {pick(language, "目前狀態", "Current Status")}
+        </span>
         <FieldPositionHint />
         <div className={styles.heroHead}>
           <span className={styles.heroKind}>{heroKindLabel}</span>
@@ -146,36 +198,100 @@ export default function PublicAssistantPanel() {
         )}
         <p className={styles.heroReason}>{heroReason}</p>
         <div className={styles.navLinks}>
-          <a href="#public-roads" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-roads")}>
+          <a
+            href="#public-roads"
+            className={styles.navLink}
+            onClick={(e) => scrollToAnchor(e, "public-roads")}
+          >
             <span>{pick(language, "路況", "Roads")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
-          <a href="#public-crowd" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-crowd")}>
+          <a
+            href="#public-crowd"
+            className={styles.navLink}
+            onClick={(e) => scrollToAnchor(e, "public-crowd")}
+          >
             <span>{pick(language, "人潮", "Crowds")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
-          <a href="#public-advisory" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-advisory")}>
+          <a
+            href="#public-advisory"
+            className={styles.navLink}
+            onClick={(e) => scrollToAnchor(e, "public-advisory")}
+          >
             <span>{pick(language, "公告", "Advisories")}</span>
-            <ChevronDown size={12} aria-hidden="true" />
-          </a>
-          <a href="#public-faq" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "public-faq")}>
-            <span>{pick(language, "常見問題", "FAQ")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
         </div>
       </div>
 
+      <section id="public-advisory" className={styles.section}>
+        <div className={styles.sectionTitleRow}>
+          <span className={styles.sectionTitle}>
+            {pick(language, "現場公告", "Live Advisories")}
+          </span>
+        </div>
+        {advisories.length > 0 ? (
+          <div className={styles.advisoryList}>
+            {advisories.map((alert) => (
+              <div key={alert.id} className={styles.advisoryCard}>
+                <div className={styles.advisoryMeta}>
+                  <span
+                    className={styles.advisoryKind}
+                    style={{ color: ALERT_KIND_COLOR[alert.kind] }}
+                  >
+                    {pick(
+                      language,
+                      ALERT_KIND_LABEL[alert.kind].zh,
+                      ALERT_KIND_LABEL[alert.kind].en,
+                    )}
+                  </span>
+                  <span className={styles.advisoryTime}>
+                    <Clock3 size={11} aria-hidden="true" />
+                    {formatDisplayShortTime(alert.timestamp, timeOffsetMs)}
+                  </span>
+                </div>
+                <p className={styles.advisoryText}>
+                  {getPublicAlertText(alert, language)}
+                </p>
+                {alert.ete !== undefined && (
+                  <span className={styles.advisoryEte}>
+                    <Clock3 size={11} aria-hidden="true" />
+                    {pick(
+                      language,
+                      `預估 ${alert.ete} 分鐘後恢復通行`,
+                      `Est. ${alert.ete} min until recovery`,
+                    )}
+                  </span>
+                )}
+              </div>
+            ))}
+          </div>
+        ) : (
+          <p className={styles.empty}>
+            {pick(
+              language,
+              "城市監控中，目前沒有需要留意的公開事件。",
+              "Monitoring the city — no public incidents right now.",
+            )}
+          </p>
+        )}
+      </section>
+
       <section id="public-roads" className={styles.section}>
         <div className={styles.sectionTitleRow}>
-          <Route size={14} aria-hidden="true" />
-          <span className={styles.sectionTitle}>{pick(language, "即時路況", "Road Conditions")}</span>
+          <span className={styles.sectionTitle}>
+            {pick(language, "即時路況", "Road Conditions")}
+          </span>
         </div>
         <div className={styles.tileList}>
           {topRoads.map((seg) => {
             const meta = tierMeta(seg.tier, language);
             return (
               <div key={seg.segmentId} className={styles.tile}>
-                <span className={`${styles.tileRail} ${styles[TILE_RAIL_CLASS[meta.tone]]}`} />
+                <span
+                  className={`${styles.tileRail} ${styles[TILE_RAIL_CLASS[meta.tone]]}`}
+                />
                 <div className={styles.tileMain}>
                   <span className={styles.tileName}>{seg.name}</span>
                   <span className={styles.tileTag}>{meta.tag}</span>
@@ -189,96 +305,33 @@ export default function PublicAssistantPanel() {
 
       <section id="public-crowd" className={styles.section}>
         <div className={styles.sectionTitleRow}>
-          <Users size={14} aria-hidden="true" />
-          <span className={styles.sectionTitle}>{pick(language, "人潮熱點", "Crowd Hotspots")}</span>
+          <span className={styles.sectionTitle}>
+            {pick(language, "人潮熱點", "Crowd Hotspots")}
+          </span>
         </div>
         <div className={styles.tileList}>
           {topStations.map((st) => {
             const meta = crowdMeta(st.roamingPct, st.growthRate, language);
-            const count = st.userCount >= 1000 ? `${(st.userCount / 1000).toFixed(1)}k` : `${st.userCount}`;
+            const count =
+              st.userCount >= 1000
+                ? `${(st.userCount / 1000).toFixed(1)}k`
+                : `${st.userCount}`;
             return (
               <div key={st.stationId} className={styles.tile}>
-                <span className={`${styles.tileRail} ${styles[TILE_RAIL_CLASS[meta.tone]]}`} />
+                <span
+                  className={`${styles.tileRail} ${styles[TILE_RAIL_CLASS[meta.tone]]}`}
+                />
                 <div className={styles.tileMain}>
                   <span className={styles.tileName}>{st.name}</span>
                   <span className={styles.tileTag}>{meta.tag}</span>
                 </div>
-                <span className={styles.tileValue}>{pick(language, `${count} 人`, `${count}`)}</span>
+                <span className={styles.tileValue}>
+                  {pick(language, `${count} 人`, `${count}`)}
+                </span>
               </div>
             );
           })}
         </div>
-      </section>
-
-      <section id="public-advisory" className={styles.section}>
-        <div className={styles.sectionTitleRow}>
-          <AlertTriangle size={14} aria-hidden="true" />
-          <span className={styles.sectionTitle}>{pick(language, "現場公告", "Live Advisories")}</span>
-        </div>
-        {advisories.length > 0 ? (
-          <div className={styles.advisoryList}>
-            {advisories.map((alert) => (
-              <div key={alert.id} className={styles.advisoryCard}>
-                <div className={styles.advisoryMeta}>
-                  <span className={styles.advisoryKind} style={{ color: ALERT_KIND_COLOR[alert.kind] }}>
-                    {pick(language, ALERT_KIND_LABEL[alert.kind].zh, ALERT_KIND_LABEL[alert.kind].en)}
-                  </span>
-                  <span className={styles.advisoryTime}>
-                    <Clock3 size={11} aria-hidden="true" />
-                    {formatDisplayShortTime(alert.timestamp, timeOffsetMs)}
-                  </span>
-                </div>
-                <p className={styles.advisoryText}>{getPublicAlertText(alert, language)}</p>
-                {alert.ete !== undefined && (
-                  <span className={styles.advisoryEte}>
-                    <Clock3 size={11} aria-hidden="true" />
-                    {pick(language, `預估 ${alert.ete} 分鐘後恢復通行`, `Est. ${alert.ete} min until recovery`)}
-                  </span>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <p className={styles.empty}>
-            {pick(language, "城市監控中，目前沒有需要留意的公開事件。", "Monitoring the city — no public incidents right now.")}
-          </p>
-        )}
-      </section>
-
-      <section id="public-faq" className={styles.section}>
-        <CollapsibleSection
-          storageKey="public-prompts"
-          className={styles.collapsible}
-          title={pick(language, "常見問題", "Frequently Asked Questions")}
-        >
-          <div className={styles.prompts}>
-            <span>
-              <MapPin size={13} aria-hidden="true" />
-              {pick(language, "我要去小巨蛋，現在適合嗎？", "Is it okay to go to Taipei Arena now?")}
-            </span>
-            <span>
-              <Route size={13} aria-hidden="true" />
-              {pick(language, "哪幾個區域建議避開？", "Which areas should I avoid?")}
-            </span>
-            <span>
-              <Users size={13} aria-hidden="true" />
-              {pick(language, "哪個捷運站現在人比較少？", "Which MRT station is less crowded right now?")}
-            </span>
-            <span>
-              <AlertTriangle size={13} aria-hidden="true" />
-              {pick(language, "目前有沒有需要注意的事件？", "Are there any incidents I should know about?")}
-            </span>
-            <span>
-              <MessageCircle size={13} aria-hidden="true" />
-              {pick(language, "請幫我產生英文旅客提醒。", "Create an English visitor notice.")}
-            </span>
-          </div>
-        </CollapsibleSection>
-      </section>
-
-      <section className={styles.footer}>
-        <Phone size={14} aria-hidden="true" />
-        <p>{pick(language, "緊急狀況請立即撥打 110（警察）或 119（消防／救護）。", "For emergencies, call 110 (Police) or 119 (Fire/Ambulance) immediately.")}</p>
       </section>
     </div>
   );

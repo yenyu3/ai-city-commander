@@ -76,6 +76,8 @@ export interface LLMAdapter {
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+    /** 使用者在對話框附加的小人位置 Context Tag 所鄰近的路段；沒有附加時為 null。 */
+    nearbyRoad?: { name: string; tier: string } | null,
   ): Promise<string>;
   /** 市民模式：同樣的規則引擎結果，改用白話、去敏感化的說法回覆。 */
   answerPublic(
@@ -245,13 +247,17 @@ export class TemplateLLMAdapter implements LLMAdapter {
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+    nearbyRoad?: { name: string; tier: string } | null,
   ): Promise<string> {
     await delay(500 + Math.random() * 500);
     const resultText =
       typeof ruleResult === "object"
         ? JSON.stringify(ruleResult)
         : String(ruleResult);
-    return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」`;
+    const nearbyLine = nearbyRoad
+      ? `\n\n（已附加現場定位：鄰近${nearbyRoad.name}，目前分級 ${nearbyRoad.tier}）`
+      : "";
+    return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」${nearbyLine}`;
   }
 
   async answerPublic(
