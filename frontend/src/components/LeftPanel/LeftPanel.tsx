@@ -4,9 +4,10 @@ import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import Legend from "./Legend";
 import SegmentList from "./SegmentList";
+import SegmentKpi from "./SegmentKpi";
 import StationList from "./StationList";
-import SaturationTrendChart from "../charts/SaturationTrendChart";
-import CrowdTrendChart from "../charts/CrowdTrendChart";
+// import SaturationTrendChart from "../charts/SaturationTrendChart";
+// import CrowdTrendChart from "../charts/CrowdTrendChart";
 import InfoPopover from "../common/InfoPopover";
 import CollapsibleSection from "../common/CollapsibleSection";
 import AlertLogList from "../RightPanel/AlertLogList";
@@ -25,11 +26,11 @@ export default function SituationTab() {
   const { language } = useLanguage();
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
-  const traffic = useAppStore((s) => s.traffic);
-  const crowd = useAppStore((s) => s.crowd);
-  const segmentDefs = useAppStore((s) => s.segmentDefs);
-  const currentTime = useAppStore((s) => s.currentTime);
-  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  // const traffic = useAppStore((s) => s.traffic);
+  // const crowd = useAppStore((s) => s.crowd);
+  // const segmentDefs = useAppStore((s) => s.segmentDefs);
+  // const currentTime = useAppStore((s) => s.currentTime);
+  // const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const activeIncidents = useAppStore((s) => s.activeIncidents);
 
   const topSegments = useMemo(
@@ -40,10 +41,10 @@ export default function SituationTab() {
     [segments],
   );
 
-  const topStations = useMemo(
-    () => Object.values(stations).sort((a, b) => b.userCount - a.userCount).slice(0, 3),
-    [stations],
-  );
+  // const topStations = useMemo(
+  //   () => Object.values(stations).sort((a, b) => b.userCount - a.userCount).slice(0, 3),
+  //   [stations],
+  // );
 
   const riskSource = useMemo(() => {
     if (activeIncidents.length > 0) {
@@ -89,7 +90,7 @@ export default function SituationTab() {
             <Legend />
           </InfoPopover>
         </div>
-        <SaturationTrendChart
+        {/* <SaturationTrendChart
           traffic={traffic}
           segmentIds={topSegments.map((s) => s.segmentId)}
           segmentDefs={segmentDefs}
@@ -97,7 +98,8 @@ export default function SituationTab() {
           timeOffsetMs={timeOffsetMs}
           compact
           showAxes
-        />
+        /> */}
+        <SegmentKpi />
         <SegmentList />
       </section>
 
@@ -108,14 +110,14 @@ export default function SituationTab() {
             <Legend />
           </InfoPopover>
         </div>
-        <CrowdTrendChart
+        {/* <CrowdTrendChart
           crowd={crowd}
           stationIds={topStations.map((s) => s.stationId)}
           currentTime={currentTime}
           timeOffsetMs={timeOffsetMs}
           compact
           showAxes
-        />
+        /> */}
         <StationList />
       </section>
 

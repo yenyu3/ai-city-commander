@@ -1,13 +1,32 @@
 .wrap {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 0;
   min-height: 0;
 }
 
 .title {
   composes: sectionLabel from "../common/shared.module.css";
-  padding: 0 2px;
+  padding: 0 2px 6px;
+}
+
+.header {
+  display: grid;
+  grid-template-columns: 9px minmax(0, 1fr) 42px 54px 52px;
+  align-items: center;
+  gap: 6px;
+  padding: 0 4px 4px;
+}
+
+.headerCell {
+  font-family: var(--font-nav);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-align: right;
+  white-space: nowrap;
+  color: var(--text-dim);
+  opacity: 0.75;
 }
 
 .list {
@@ -20,7 +39,7 @@
 
 .row {
   display: grid;
-  grid-template-columns: 9px minmax(0, 1fr) 34px 44px 40px;
+  grid-template-columns: 9px minmax(0, 1fr) 42px 54px 52px;
   align-items: center;
   gap: 6px;
   min-height: 34px;

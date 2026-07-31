@@ -62,11 +62,11 @@ export default function SignalCoordinationSection() {
       </div>
       <ul className={styles.timingList}>
         {plan.signalTimings.map((row) => (
-          <li key={row.intersectionName}>
+          <li key={row.intersectionName} className={styles.timingRow}>
             <div className={styles.timingHead}>
               <span>{row.intersectionName}</span>
               <span className={styles.timingValues}>
-                <strong>+{row.adjustPct}%</strong>
+                {pick(language, "綠燈延長", "Green light")} <strong>+{row.adjustPct}%</strong>
               </span>
             </div>
             <p className={styles.timingGoal}>{row.goal}</p>
@@ -82,11 +82,13 @@ export default function SignalCoordinationSection() {
           const Icon = AGENCY_ICON[action.icon];
           return (
             <li key={action.agency} className={styles.agencyItem}>
-              <div className={styles.agencyHead}>
-                <Icon size={14} aria-hidden="true" />
-                <span>{action.agency}</span>
+              <div className={styles.iconWrap}>
+                <Icon size={20} aria-hidden="true" />
               </div>
-              <p>{action.text}</p>
+              <div>
+                <div className={styles.agencyHead}>{action.agency}</div>
+                <p>{action.text}</p>
+              </div>
             </li>
           );
         })}

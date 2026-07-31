@@ -1,5 +1,5 @@
-import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import styles from "./SegmentList.module.css";
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
@@ -10,13 +10,31 @@ export default function SegmentList() {
   const setSelectedSegment = useAppStore((s) => s.setSelectedSegment);
   const { language } = useLanguage();
   const list = Object.values(segments).sort(
-    (a, b) => TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.saturation - a.saturation,
+    (a, b) =>
+      TIER_RANK[a.tier] - TIER_RANK[b.tier] || b.saturation - a.saturation,
   );
 
   return (
     <div className={styles.wrap}>
       <div className={styles.title}>
-        {pick(language, `路段飽和度清單（${list.length}）`, `Segment Saturation (${list.length})`)}
+        {pick(
+          language,
+          `路段飽和度清單`,
+          `Segment Saturation (${list.length})`,
+        )}
+      </div>
+      <div className={styles.header}>
+        <span />
+        <span className={styles.headerCell}>{pick(language, "", "")}</span>
+        <span className={styles.headerCell}>
+          {pick(language, "飽和度", "Sat.")}
+        </span>
+        <span className={styles.headerCell}>
+          {pick(language, "速度", "Speed")}
+        </span>
+        <span className={styles.headerCell}>
+          {pick(language, "車輛數", "Vehicles")}
+        </span>
       </div>
       <div className={styles.list}>
         {list.map((seg) => (
@@ -27,12 +45,16 @@ export default function SegmentList() {
             tabIndex={0}
             aria-pressed={seg.segmentId === selectedSegmentId}
             onClick={() =>
-              setSelectedSegment(seg.segmentId === selectedSegmentId ? null : seg.segmentId)
+              setSelectedSegment(
+                seg.segmentId === selectedSegmentId ? null : seg.segmentId,
+              )
             }
             onKeyDown={(e) => {
               if (e.key === "Enter" || e.key === " ") {
                 e.preventDefault();
-                setSelectedSegment(seg.segmentId === selectedSegmentId ? null : seg.segmentId);
+                setSelectedSegment(
+                  seg.segmentId === selectedSegmentId ? null : seg.segmentId,
+                );
               }
             }}
             title={pick(
@@ -48,7 +70,9 @@ export default function SegmentList() {
             </span>
             <span className={styles.sat}>{seg.saturation.toFixed(2)}</span>
             <span className={styles.speed}>{seg.avgSpeed}km/h</span>
-            <span className={styles.vehicles}>{seg.vehicleCount.toLocaleString()}</span>
+            <span className={styles.vehicles}>
+              {seg.vehicleCount.toLocaleString()}
+            </span>
           </div>
         ))}
       </div>

@@ -24,19 +24,23 @@ export default function AlertLogList() {
       <div className={styles.list}>
         {alerts.map((alert) => (
           <div key={alert.id} className={styles.row}>
-            <span className={styles.time}>{formatDisplayTimestamp(alert.timestamp, timeOffsetMs)}</span>
-            <span className={styles.kind} style={{ color: ALERT_KIND_COLOR[alert.kind] }}>
-              {pick(language, ALERT_KIND_LABEL[alert.kind].zh, ALERT_KIND_LABEL[alert.kind].en)}
-            </span>
+            <div className={styles.meta}>
+              <span className={styles.time}>{formatDisplayTimestamp(alert.timestamp, timeOffsetMs)}</span>
+              <span className={styles.kind} style={{ color: ALERT_KIND_COLOR[alert.kind] }}>
+                {pick(language, ALERT_KIND_LABEL[alert.kind].zh, ALERT_KIND_LABEL[alert.kind].en)}
+              </span>
+              <div className={styles.metaRight}>
+                {viewerMode === "government" && alert.ete !== undefined && (
+                  <span className={styles.ete}>ETE {alert.ete} {pick(language, "分", "min")}</span>
+                )}
+                {viewerMode === "government" && alert.sopRef && (
+                  <span className={styles.sop}>{alert.sopRef}</span>
+                )}
+              </div>
+            </div>
             <span className={styles.text}>
               {viewerMode === "public" ? getPublicAlertText(alert, language) : alert.llmText || alert.title}
             </span>
-            {viewerMode === "government" && alert.sopRef && <span className={styles.sop}>{alert.sopRef}</span>}
-            {viewerMode === "government" && alert.ete !== undefined && (
-              <span className={styles.ete}>
-                ETE {alert.ete} {pick(language, "分", "min")}
-              </span>
-            )}
           </div>
         ))}
       </div>
