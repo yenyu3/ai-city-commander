@@ -70,6 +70,7 @@ function getPrimaryMetric(
 export default function DecisionSummary() {
   const alerts = useAppStore((s) => s.alerts);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const isJudging = useAppStore((s) => s.isJudging);
   const { language } = useLanguage();
   const latest = alerts[0];
 
@@ -79,7 +80,14 @@ export default function DecisionSummary() {
         <div className={styles.title}>{pick(language, "事件摘要", "Event Summary")}</div>
         <FieldPositionHint />
         <div className={styles.empty}>
-          {pick(language, "城市監控中，尚無事件需要處理", "Monitoring the city — no incident requires action yet")}
+          {isJudging ? (
+            <p className={styles.aiLoading}>
+              <span className={styles.spinner} aria-hidden="true" />
+              {pick(language, "AI 判斷中…", "AI judgment in progress…")}
+            </p>
+          ) : (
+            pick(language, "城市監控中，尚無事件需要處理", "Monitoring the city — no incident requires action yet")
+          )}
         </div>
       </div>
     );
@@ -105,6 +113,12 @@ export default function DecisionSummary() {
             <Clock3 size={14} aria-hidden="true" />
             {formatDisplayTimestamp(latest.timestamp, timeOffsetMs)}
           </span>
+          {isJudging && (
+            <span className={styles.aiLoading}>
+              <span className={styles.spinner} aria-hidden="true" />
+              {pick(language, "AI 重新判斷中…", "AI re-judging…")}
+            </span>
+          )}
           <span className={styles.kind}>{kindLabel}</span>
         </div>
         <div className={styles.primaryMetric}>

@@ -1,9 +1,7 @@
 import { useState } from "react";
 import { Check, Plus, Send } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
-import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
-import { calcETE } from "../../engine/ete";
-import { llmAdapter } from "../../services/llmAdapter";
+import { activeLlmAdapter as llmAdapter } from "../../services/activeLlmAdapter";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./MultilingualPreview.module.css";
 
@@ -16,18 +14,9 @@ const LANGS: { code: "zh" | "en" | "ja" | "ko"; label: string }[] = [
 
 export default function MultilingualPreview() {
   const stations = useAppStore((s) => s.stations);
-  const currentTime = useAppStore((s) => s.currentTime);
-  const triggered = checkMultilingualNeeded(
-    Object.values(stations).map((st) => ({
-      timestamp: currentTime,
-      stationId: st.stationId,
-      locationName: st.name,
-      userCount: st.userCount,
-      stayTimeAvg: st.stayTimeAvg,
-      growthRate: st.growthRate,
-      roamingPct: st.roamingPct,
-    })),
-  );
+  // multilingualTriggered comes from the backend's decide_multilingual()
+  // (GET /api/city-state), not a local recomputation -- see appStore.ts.
+  const triggered = Object.values(stations).filter((st) => st.multilingualTriggered);
 
   const [activeStation, setActiveStation] = useState<string | null>(null);
   const [selectedLangs, setSelectedLangs] = useState<Set<"zh" | "en" | "ja" | "ko">>(
@@ -50,10 +39,12 @@ export default function MultilingualPreview() {
     ? triggered.find((t) => t.stationId === activeStation) ?? triggered[0]
     : triggered[0];
 
-  const { ete } = calcETE("Medium", 0.7);
+  // Placeholder duration for this message-template preview only -- not a
+  // real ETE calculation tied to any specific incident (that only happens
+  // via decide_accident()'s ete field, see appStore.ts).
   const messages = llmAdapter.generateMultilingual("congestion", {
-    location: current.locationName,
-    ete: String(ete),
+    location: current.name,
+    ete: "20",
   });
   const selectedCount = selectedLangs.size;
 
@@ -78,7 +69,7 @@ export default function MultilingualPreview() {
             className={`${styles.stationTab} ${current.stationId === st.stationId ? styles.stationActive : ""}`}
             onClick={() => setActiveStation(st.stationId)}
           >
-            {st.locationName}
+            {st.name}
           </button>
         ))}
       </div>
@@ -135,7 +126,7 @@ export default function MultilingualPreview() {
       <section className={styles.noticeBlock}>
         <div className={styles.noticeHeader}>
           <span>{pick(language, "發布通知", "Publish Notice")}</span>
-          <strong>{current.locationName}</strong>
+          <strong>{current.name}</strong>
         </div>
         {LANGS.filter((l) => selectedLangs.has(l.code)).map((l) => (
           <div key={l.code} className={styles.noticeRow}>

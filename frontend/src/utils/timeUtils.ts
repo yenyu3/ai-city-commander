@@ -2,6 +2,13 @@ export function parseTimestamp(ts: string): number {
   return new Date(ts.replace(" ", "T")).getTime();
 }
 
+/** "2026-05-20 21:00" (demo dataset's Taipei-local, no-timezone format) ->
+ * "2026-05-20T21:00:00+08:00" (ISO8601 the backend's scenarioAt expects). */
+export function toScenarioAt(rawTimestamp: string): string {
+  if (!rawTimestamp) return new Date().toISOString();
+  return `${rawTimestamp.replace(" ", "T")}:00+08:00`;
+}
+
 export function timePct(ts: string, start: string, end: string): number {
   const s = parseTimestamp(start);
   const e = parseTimestamp(end);

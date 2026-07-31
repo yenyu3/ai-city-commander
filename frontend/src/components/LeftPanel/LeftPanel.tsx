@@ -29,6 +29,7 @@ export default function SituationTab() {
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const activeIncidents = useAppStore((s) => s.activeIncidents);
+  const isJudging = useAppStore((s) => s.isJudging);
 
   const topSegments = useMemo(
     () =>
@@ -66,7 +67,10 @@ export default function SituationTab() {
   return (
     <div className={styles.wrap}>
       <div className={styles.riskCard}>
-        <span className={styles.riskLabel}>{riskSource.label}</span>
+        <span className={styles.riskLabel}>
+          {riskSource.label}
+          {isJudging && ` · ${pick(language, "AI 判斷中…", "AI judging…")}`}
+        </span>
         <span className={styles.riskValue}>{riskSource.value}</span>
         <div className={styles.riskLinks}>
           <a href="#section-roads" className={styles.riskLink} onClick={(e) => scrollToAnchor(e, "section-roads")}>

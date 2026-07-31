@@ -69,16 +69,25 @@ export interface PublicContext {
 
 export interface LLMAdapter {
   summarize(input: StructuredEvent): Promise<string>;
+  /**
+   * `ruleResult`/`sopExcerpt` come from the frontend's local chatEngine.ts
+   * regex engine -- TemplateLLMAdapter (offline demo mode) narrates them
+   * directly. BackendLLMAdapter ignores both and calls the real backend
+   * chat endpoint instead (full SOP text, LLM decides), using `scenarioAt`
+   * for situational context; TemplateLLMAdapter ignores `scenarioAt`.
+   */
   answerWhatIf(
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+    scenarioAt?: string,
   ): Promise<string>;
   /** 市民模式：同樣的規則引擎結果，改用白話、去敏感化的說法回覆。 */
   answerPublic(
     question: string,
     ruleResult: unknown,
     context: PublicContext,
+    scenarioAt?: string,
   ): Promise<string>;
   generateMultilingual(
     type: MessageType,
