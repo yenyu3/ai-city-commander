@@ -6,11 +6,14 @@
 
 export interface ApiMeta {
   scenarioAt: string;
+  resolvedScenarioAt?: string;
+  ageMinutes?: number;
   generatedAt?: string;
   retrievedAt?: string;
   decisionGeneratedAt?: string;
   dataMode: string;
   source?: string;
+  cacheStatus?: string;
 }
 
 export interface ApiErrorBody {
@@ -120,8 +123,8 @@ export interface ApiReasoningStep {
 }
 
 export interface ApiAiDecisionSummary {
-  kind: string;
-  title: string;
+  kind?: string;
+  title?: string;
   aiText: string;
   sopRefs?: string[];
 }
@@ -159,6 +162,48 @@ export interface ApiDecisionResponse {
   meta: ApiMeta;
   aiDecision: ApiAiDecision;
 }
+
+export interface ApiDecisionListItem {
+  decisionId: string;
+  sopSectionId?: string;
+  kind: string;
+  locationId: string;
+  eventId: string | null;
+  summary: {
+    aiText: string;
+    sopRefs?: string[];
+  };
+  recommendedActions: string[];
+  estimatedRecovery: unknown;
+  reroute: ApiReroute | null;
+  publicMessage?: string;
+}
+
+export interface ApiDecisionListResponse {
+  meta: ApiMeta;
+  focus?: { locationId: string };
+  situationSummary?: string;
+  decisions: ApiDecisionListItem[];
+}
+
+export interface ApiDecisionProcessingResponse {
+  meta: ApiMeta;
+  focus?: { locationId: string };
+  processing: {
+    jobId: string;
+    status: "queued" | "processing" | "ready" | "failed" | string;
+    processor?: string;
+    queuedAt?: string;
+    retryAfterSeconds?: number;
+    errorMessage?: string;
+  };
+  message?: string;
+}
+
+export type ApiDecisionQueryResponse =
+  | ApiDecisionResponse
+  | ApiDecisionListResponse
+  | ApiDecisionProcessingResponse;
 
 // 5. POST /api/chat/messages
 export interface ApiChatRuleResult {

@@ -5,7 +5,7 @@ import type {
   ApiCityStateResponse,
   ApiCreateIncidentRequest,
   ApiCreateIncidentResponse,
-  ApiDecisionResponse,
+  ApiDecisionQueryResponse,
   ApiErrorResponse,
   ApiPublicationRequest,
   ApiPublicationResponse,
@@ -100,9 +100,9 @@ export function getIncidentReport(
 export async function getDecision(
   scenarioAt: string,
   locationId: string,
-): Promise<ApiDecisionResponse | null> {
+): Promise<ApiDecisionQueryResponse | null> {
   try {
-    return await apiFetch<ApiDecisionResponse>(
+    return await apiFetch<ApiDecisionQueryResponse>(
       `/decisions?scenarioAt=${encodeURIComponent(scenarioAt)}&locationId=${encodeURIComponent(locationId)}`,
     );
   } catch (err) {

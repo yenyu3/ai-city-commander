@@ -131,6 +131,10 @@ export interface AlertRecord {
   timestamp: string;
   /** 觸發此 alert 的原始事件 eventId（若有），用來在 api 模式下比對 GET /api/decisions 的結果。 */
   sourceIncidentId?: string;
+  /** Backend decision snapshot id, used to update an existing API-driven alert. */
+  decisionId?: string;
+  /** The locationId used when querying GET /api/decisions. */
+  decisionLocationId?: string;
   kind:
     | "city_response"
     | "accident"
@@ -143,6 +147,7 @@ export interface AlertRecord {
   /** SOP 規定的實際處置步驟（非觸發條件數據），供「建議行動」區塊顯示。 */
   actions: string[];
   llmText?: string;
+  publicMessage?: string;
   sopRef?: string;
   ete?: number;
   eteBase?: number;

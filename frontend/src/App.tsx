@@ -59,7 +59,7 @@ function App() {
         <div className={styles.mapColumn}>
           <div className={styles.mapCard}>
             <MapStage />
-            {viewerMode === "government" && <BottomBar />}
+            <BottomBar />
           </div>
         </div>
         <div className={styles.tabColumn}>

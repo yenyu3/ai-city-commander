@@ -17,7 +17,7 @@ interface TimelineMarker {
 }
 import styles from "./IncidentTimeline.module.css";
 
-const BASE_PLAYBACK_SPEED_MS = 1500;
+const BASE_PLAYBACK_SPEED_MS = 3000;
 const SPEED_OPTIONS = [
   { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
   { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },

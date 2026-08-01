@@ -32,9 +32,11 @@ import * as apiClient from "../services/apiClient";
 import {
   adaptChatAnswer,
   adaptCrowd,
+  adaptDecisionListItemToPartialAlert,
   adaptDecisionToPartialAlert,
   adaptTraffic,
 } from "../services/apiAdapter";
+import type { ApiDecisionListItem, ApiDecisionQueryResponse } from "../types/api";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -111,6 +113,9 @@ function getInitialViewerMode(): ViewerMode {
 const API_SCENARIO_START = "2026-05-20 17:00";
 const API_SCENARIO_END = "2026-05-20 23:00";
 const API_SCENARIO_STEP_MINUTES = 15;
+const DECISION_REFRESH_INTERVAL_MINUTES = 30;
+const DECISION_REFRESH_INTERVAL_MS = DECISION_REFRESH_INTERVAL_MINUTES * 60 * 1000;
+const decisionRequestKeys = new Set<string>();
 
 function buildApiScenarioTicks(): string[] {
   const [date, startTime] = API_SCENARIO_START.split(" ");
@@ -467,6 +472,167 @@ function mergeApiSegmentData(
   };
 }
 
+function shouldRefreshDecisionAt(timestamp: string): boolean {
+  const elapsedMs = parseTimestamp(timestamp) - parseTimestamp(API_SCENARIO_START);
+  return elapsedMs >= 0 && elapsedMs % DECISION_REFRESH_INTERVAL_MS === 0;
+}
+
+function collectDecisionLocationIds(state: AppState): string[] {
+  const ids = new Set<string>();
+
+  if (state.selectedStationId) ids.add(state.selectedStationId);
+  if (state.selectedSegmentId) ids.add(state.selectedSegmentId);
+
+  for (const alert of state.alerts) {
+    if (alert.decisionLocationId) ids.add(alert.decisionLocationId);
+    if (alert.trackedSegmentId) ids.add(alert.trackedSegmentId);
+  }
+
+  for (const segment of Object.values(state.segments)) {
+    if (
+      segment.tier !== "Normal" ||
+      segment.laneStatus === "Blocked" ||
+      segment.laneStatus === "Critical" ||
+      segment.saturation >= 0.85
+    ) {
+      ids.add(segment.segmentId);
+    }
+  }
+
+  for (const station of Object.values(state.stations)) {
+    if (station.userCount >= 25000 || station.growthRate >= 0.3 || station.roamingPct >= 0.3) {
+      ids.add(station.stationId);
+    }
+  }
+
+  if (ids.size === 0) {
+    const firstSegmentId = state.segmentDefs.keys().next().value as string | undefined;
+    const firstStationId = Object.keys(state.stationNames)[0];
+    if (firstSegmentId) ids.add(firstSegmentId);
+    else if (firstStationId) ids.add(firstStationId);
+  }
+
+  return [...ids];
+}
+
+function isDecisionProcessing(
+  res: ApiDecisionQueryResponse,
+): res is Extract<ApiDecisionQueryResponse, { processing: unknown }> {
+  return "processing" in res && !("aiDecision" in res) && !("decisions" in res);
+}
+
+function isDecisionList(
+  res: ApiDecisionQueryResponse,
+): res is Extract<ApiDecisionQueryResponse, { decisions: unknown }> {
+  return "decisions" in res;
+}
+
+function resolveDecisionLocationName(locationId: string, state: AppState): string {
+  return state.segmentDefs.get(locationId)?.name ?? state.stationNames[locationId] ?? locationId;
+}
+
+function upsertDecisionAlert(
+  timestamp: string,
+  locationId: string,
+  decisionId: string,
+  partial: Partial<AlertRecord>,
+): void {
+  useAppStore.setState((s) => {
+    const existing = s.alerts.find(
+      (a) => a.decisionId === decisionId || a.decisionLocationId === locationId,
+    );
+    const alert: AlertRecord = {
+      id: existing?.id ?? nextId("alert"),
+      timestamp,
+      decisionId,
+      decisionLocationId: locationId,
+      kind: partial.kind ?? "accident",
+      title: partial.title ?? resolveDecisionLocationName(locationId, s),
+      ruleSummary: partial.publicMessage ?? partial.llmText ?? partial.title ?? locationId,
+      actions: partial.actions ?? [],
+      llmText: partial.llmText,
+      publicMessage: partial.publicMessage,
+      sopRef: partial.sopRef,
+      reasoningSteps: partial.reasoningSteps,
+      reroute: partial.reroute,
+    };
+
+    if (existing) {
+      return {
+        alerts: s.alerts.map((a) => (a.id === existing.id ? { ...a, ...alert } : a)),
+        activeAlertId: existing.id,
+        reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+      };
+    }
+
+    return {
+      alerts: [alert, ...s.alerts],
+      activeAlertId: alert.id,
+      displayedAlertIds: new Set(s.displayedAlertIds).add(alert.id),
+      reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+    };
+  });
+}
+
+function scheduleDecisionRetry(timestamp: string, locationId: string, retryAfterSeconds = 10): void {
+  window.setTimeout(() => {
+    decisionRequestKeys.delete(`${toScenarioAt(timestamp)}:${locationId}`);
+    void refreshDecisionForLocation(timestamp, locationId);
+  }, Math.max(1, retryAfterSeconds) * 1000);
+}
+
+async function refreshDecisionForLocation(timestamp: string, locationId: string): Promise<void> {
+  const scenarioAt = toScenarioAt(timestamp);
+  const requestKey = `${scenarioAt}:${locationId}`;
+  if (decisionRequestKeys.has(requestKey)) return;
+  decisionRequestKeys.add(requestKey);
+
+  try {
+    const res = await apiClient.getDecision(scenarioAt, locationId);
+    if (!res) return;
+    if (useAppStore.getState().currentTime !== timestamp) return;
+
+    if (isDecisionProcessing(res)) {
+      if (res.processing.status !== "failed") {
+        scheduleDecisionRetry(timestamp, locationId, res.processing.retryAfterSeconds);
+      }
+      return;
+    }
+
+    if (isDecisionList(res)) {
+      const state = useAppStore.getState();
+      const decisionsToRender: ApiDecisionListItem[] = res.decisions;
+      for (const decision of decisionsToRender) {
+        const partial = adaptDecisionListItemToPartialAlert(
+          decision,
+          resolveDecisionLocationName(decision.locationId, state),
+        );
+        upsertDecisionAlert(timestamp, decision.locationId, decision.decisionId, partial);
+      }
+      return;
+    }
+
+    const partial = adaptDecisionToPartialAlert(res.aiDecision);
+    upsertDecisionAlert(
+      timestamp,
+      res.aiDecision.locationContext.locationId,
+      res.aiDecision.decisionId,
+      partial,
+    );
+  } catch (err) {
+    console.warn("[appStore] GET /api/decisions failed; keeping local decision state", err);
+  }
+}
+
+function refreshDecisionsFromApi(timestamp: string): void {
+  const state = useAppStore.getState();
+  if (DATA_SOURCE !== "api" || !shouldRefreshDecisionAt(timestamp)) return;
+
+  for (const locationId of collectDecisionLocationIds(state)) {
+    void refreshDecisionForLocation(timestamp, locationId);
+  }
+}
+
 /**
  * api 模式下，在本地（demo 資料集算出的）segments/stations 已經同步 commit 之後，
  * 背景打 GET /api/city-state 拿真正的即時數值來升級畫面。demo 的 ticks 時間軸仍是
@@ -522,6 +688,7 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
         stations,
       };
     });
+    refreshDecisionsFromApi(timestamp);
   } catch (err) {
     console.warn("[appStore] GET /api/city-state failed; keeping clean state", err);
   }
@@ -540,12 +707,33 @@ async function pollDecisionForIncident(eventId: string, locationId: string, scen
     try {
       const res = await apiClient.getDecision(scenarioAt, locationId);
       if (!res) continue; // DECISION_NOT_READY，再重試
-      const partial = adaptDecisionToPartialAlert(res.aiDecision);
+      if (isDecisionProcessing(res)) continue;
+      let partial: Partial<AlertRecord>;
+      let decisionId: string;
+      let decisionLocationId: string;
+      if (isDecisionList(res)) {
+        const decision = res.decisions.find((d) => d.locationId === locationId) ?? res.decisions[0];
+        if (!decision) continue;
+        partial = adaptDecisionListItemToPartialAlert(
+          decision,
+          resolveDecisionLocationName(decision.locationId, useAppStore.getState()),
+        );
+        decisionId = decision.decisionId;
+        decisionLocationId = decision.locationId;
+      } else {
+        partial = adaptDecisionToPartialAlert(res.aiDecision);
+        decisionId = res.aiDecision.decisionId;
+        decisionLocationId = res.aiDecision.locationContext.locationId;
+      }
       useAppStore.setState((s) => {
         const existing = s.alerts.find((a) => a.sourceIncidentId === eventId);
         if (existing) {
           return {
-            alerts: s.alerts.map((a) => (a.sourceIncidentId === eventId ? { ...a, ...partial } : a)),
+            alerts: s.alerts.map((a) =>
+              a.sourceIncidentId === eventId
+                ? { ...a, ...partial, decisionId, decisionLocationId }
+                : a,
+            ),
           };
         }
 
@@ -554,11 +742,14 @@ async function pollDecisionForIncident(eventId: string, locationId: string, scen
           id: alertId,
           timestamp: scenarioAt,
           sourceIncidentId: eventId,
+          decisionId,
+          decisionLocationId,
           kind: partial.kind ?? "accident",
           title: partial.title ?? eventId,
           ruleSummary: partial.llmText ?? partial.title ?? eventId,
           actions: partial.actions ?? [],
           llmText: partial.llmText,
+          publicMessage: partial.publicMessage,
           sopRef: partial.sopRef,
           reasoningSteps: partial.reasoningSteps,
           reroute: partial.reroute,
@@ -589,7 +780,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tickIndex: 0,
   currentTime: "",
   isPlaying: false,
-  playbackSpeed: 1500,
+  playbackSpeed: 3000,
   legDurationMs: 0,
   legStartedAt: 0,
   frozenPlayheadPct: null,
@@ -624,6 +815,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const data = await loadAllData();
       if (DATA_SOURCE === "api") {
+        decisionRequestKeys.clear();
         const ticks = buildApiScenarioTicks();
         const firstTime = ticks[0];
         set({
@@ -718,6 +910,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (ticks.length === 0) return;
     const firstTime = ticks[0];
     if (DATA_SOURCE === "api") {
+      decisionRequestKeys.clear();
       set({
         tickIndex: 0,
         currentTime: firstTime,
@@ -1333,6 +1526,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.localStorage.setItem("viewerMode", mode);
     }
     set({ viewerMode: mode });
+    refreshDecisionsFromApi(get().currentTime);
   },
 
   toggleMapExpanded() {

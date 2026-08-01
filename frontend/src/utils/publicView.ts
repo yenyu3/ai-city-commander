@@ -9,6 +9,7 @@ import { pick } from "../i18n";
  * arrives. Fall back to the generic, already-translated alert-kind label instead.
  */
 export function getPublicAlertText(alert: AlertRecord, language: Language): string {
+  if (alert.publicMessage) return alert.publicMessage;
   if (alert.llmText) return alert.llmText;
   const label = ALERT_KIND_LABEL[alert.kind];
   return pick(language, `${label.zh}，官方摘要準備中…`, `${label.en} — preparing official summary…`);

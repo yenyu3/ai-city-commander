@@ -13,6 +13,7 @@ import type {
   ApiAiDecision,
   ApiChatAnswer,
   ApiCrowdItem,
+  ApiDecisionListItem,
   ApiReroute,
   ApiTrafficItem,
 } from "../types/api";
@@ -78,6 +79,7 @@ const KNOWN_ALERT_KINDS: AlertRecord["kind"][] = [
 ];
 
 function coerceAlertKind(kind: string): AlertRecord["kind"] {
+  if (kind === "congestion") return "city_response";
   if ((KNOWN_ALERT_KINDS as string[]).includes(kind)) return kind as AlertRecord["kind"];
   console.warn(`[apiAdapter] Unknown decision kind "${kind}"; falling back to "accident"`);
   return "accident";
@@ -107,8 +109,8 @@ function adaptReroute(reroute: ApiReroute | null): RerouteSnapshot | undefined {
  */
 export function adaptDecisionToPartialAlert(decision: ApiAiDecision): Partial<AlertRecord> {
   const partial: Partial<AlertRecord> = {
-    kind: coerceAlertKind(decision.summary.kind),
-    title: decision.summary.title,
+    kind: coerceAlertKind(decision.summary.kind ?? "accident"),
+    title: decision.summary.title ?? decision.locationContext.locationName,
     llmText: decision.summary.aiText,
   };
 
@@ -123,6 +125,29 @@ export function adaptDecisionToPartialAlert(decision: ApiAiDecision): Partial<Al
   if (decision.reasoningSteps.length > 0) {
     partial.reasoningSteps = decision.reasoningSteps.map((s) => ({ ...s }));
   }
+
+  return partial;
+}
+
+export function adaptDecisionListItemToPartialAlert(
+  decision: ApiDecisionListItem,
+  locationName: string,
+): Partial<AlertRecord> {
+  const partial: Partial<AlertRecord> = {
+    kind: coerceAlertKind(decision.kind),
+    title: locationName,
+    llmText: decision.summary.aiText,
+    publicMessage: decision.publicMessage,
+  };
+
+  if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
+    partial.sopRef = decision.summary.sopRefs.join(" / ");
+  }
+  if (decision.recommendedActions.length > 0) {
+    partial.actions = decision.recommendedActions;
+  }
+  const reroute = adaptReroute(decision.reroute);
+  if (reroute) partial.reroute = reroute;
 
   return partial;
 }
