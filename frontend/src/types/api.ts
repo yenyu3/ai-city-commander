@@ -45,10 +45,42 @@ export interface ApiCrowdItem {
   roamingUserPct: number;
 }
 
+export interface ApiIncidentImpact {
+  segmentId?: string;
+  stationId?: string;
+  role?: string;
+}
+
+export interface ApiCityIncident {
+  eventId: string;
+  type: string;
+  location: string;
+  status: string;
+  severity: string;
+  description: string;
+  occurredAt: string;
+  affectedSegmentId?: string;
+  affectedRoad?: string;
+  roadImpacts?: ApiIncidentImpact[];
+  stationImpacts?: ApiIncidentImpact[];
+}
+
+export interface ApiCityAlert {
+  alertId: string;
+  eventId?: string;
+  kind: string;
+  title: string;
+  summary: string;
+  eteMinutes?: number;
+  createdAt: string;
+}
+
 export interface ApiCityStateResponse {
   meta: ApiMeta;
   traffic: ApiTrafficItem[];
   crowd: ApiCrowdItem[];
+  activeIncidents?: ApiCityIncident[];
+  alerts?: ApiCityAlert[];
 }
 
 // 2. POST /api/incidents

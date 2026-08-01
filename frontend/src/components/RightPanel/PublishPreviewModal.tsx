@@ -53,6 +53,10 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
     ? triggered.find((t) => t.stationId === activeStation) ?? triggered[0]
     : triggered[0];
 
+  // 已知佔位值：multilingual（漫遊比例）alert 在整個規則引擎裡從未計算 ete/eteBase/etePenalty
+  // （只有 accident 類型的 alert 會算，見 appStore.ts 的 buildAccidentAlert），所以這裡沒有真實
+  // 資料可用——不是後端 API 缺口，而是「人流分流通報的 ETE 該怎麼算」尚未有產品/規則定義。
+  // 見 docs/frontend-mock-data-inventory.md。
   const { ete } = calcETE("Medium", 0.7);
   const messages = current
     ? llmAdapter.generateMultilingual("congestion", {

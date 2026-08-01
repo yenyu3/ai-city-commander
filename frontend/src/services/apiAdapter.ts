@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CrowdSnapshot,
   LaneStatus,
+  LiveIncident,
   RerouteSnapshot,
   RoadSegment,
   Tier,
@@ -12,6 +13,8 @@ import type {
 import type {
   ApiAiDecision,
   ApiChatAnswer,
+  ApiCityAlert,
+  ApiCityIncident,
   ApiCrowdItem,
   ApiReroute,
   ApiTrafficItem,
@@ -52,6 +55,44 @@ export function adaptCrowd(
     stayTimeAvgMinutes: item.stayTimeAvgMinutes,
     growthRate: item.growthRate,
     roamingUserPct: item.roamingUserPct,
+  }));
+}
+
+
+function getIncidentAffectedSegmentId(item: ApiCityIncident): string {
+  return (
+    item.affectedSegmentId ??
+    item.roadImpacts?.find((impact) => impact.segmentId)?.segmentId ??
+    item.stationImpacts?.find((impact) => impact.stationId)?.stationId ??
+    ""
+  );
+}
+
+export function adaptCityIncidents(items: ApiCityIncident[] = []): LiveIncident[] {
+  return items.map((item) => ({
+    eventId: item.eventId,
+    type: item.type,
+    location: item.location,
+    affectedSegmentId: getIncidentAffectedSegmentId(item),
+    affectedRoad: item.affectedRoad,
+    status: item.status,
+    severity: item.severity,
+    description: item.description,
+    occurredAt: item.occurredAt,
+  }));
+}
+
+export function adaptCityAlerts(items: ApiCityAlert[] = []): AlertRecord[] {
+  return items.map((item) => ({
+    id: item.alertId,
+    timestamp: item.createdAt,
+    sourceIncidentId: item.eventId,
+    kind: coerceAlertKind(item.kind),
+    title: item.title,
+    ruleSummary: item.summary,
+    actions: [],
+    llmText: item.summary,
+    ete: item.eteMinutes,
   }));
 }
 

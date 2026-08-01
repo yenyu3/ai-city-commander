@@ -6,6 +6,7 @@ import type {
   RoadSegment,
   TrafficSnapshot,
 } from "../types";
+import { DATA_SOURCE } from "../config";
 
 export interface LoadedData {
   traffic: TrafficSnapshot[];
@@ -40,6 +41,7 @@ function parsePercent(raw: string): number {
 }
 
 async function loadTraffic(): Promise<TrafficSnapshot[]> {
+  if (DATA_SOURCE === "api") return [];
   const csv = await fetchText("/data/city_traffic_flow.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   return rows.map((r) => ({
@@ -54,6 +56,7 @@ async function loadTraffic(): Promise<TrafficSnapshot[]> {
 }
 
 async function loadCrowd(): Promise<CrowdSnapshot[]> {
+  if (DATA_SOURCE === "api") return [];
   const csv = await fetchText("/data/signaling_crowd_density.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   return rows.map((r) => ({
@@ -69,10 +72,10 @@ async function loadCrowd(): Promise<CrowdSnapshot[]> {
 
 /**
  * 後端目前沒有 reference-data API（見 docs/frontend-backend-coordination-issues.md 第 3 項），
- * city-state 的 crowd item 也不含站名，因此站名對照表暫時從既有 demo CSV 衍生，
- * demo/api 兩種模式共用。
+ * demo 模式才從既有 CSV 衍生站名；api 模式不補 demo 站名，直接顯示後端 stationId。
  */
 async function loadStationNames(): Promise<Record<string, string>> {
+  if (DATA_SOURCE === "api") return {};
   const csv = await fetchText("/data/signaling_crowd_density.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   const names: Record<string, string> = {};
@@ -141,6 +144,7 @@ interface RawIncident {
 }
 
 async function loadIncidents(): Promise<LiveIncident[]> {
+  if (DATA_SOURCE === "api") return [];
   const json = await fetchText("/data/live_incidents.json");
   const raw: RawIncident[] = JSON.parse(json);
   return raw.map((i) => ({
@@ -202,7 +206,7 @@ export async function loadAllData(): Promise<LoadedData> {
     loadCrowd(),
     loadSegments(),
     loadIncidents(),
-    fetchText("/data/emergency_traffic_sop.txt"),
+    DATA_SOURCE === "api" ? Promise.resolve("") : fetchText("/data/emergency_traffic_sop.txt"),
     loadRoadPaths(),
     loadStationCoords(),
     loadStationNames(),

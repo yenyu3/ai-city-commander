@@ -61,8 +61,18 @@ const STATION_ICON_CATEGORY: Record<string, string> = {
   BS_SS_PARK: "park",
 };
 
+/**
+ * Icon lookup only — NOT the list of stations that get rendered (see `stationPoints`,
+ * which iterates `stationCoords` instead). A station id that isn't in the explicit
+ * map above (e.g. one added by a future reference-data API) still gets a best-effort
+ * icon from its id prefix rather than disappearing from the map.
+ */
 function stationIconSrc(stationId: string): string {
-  return `/icon/${STATION_ICON_CATEGORY[stationId] ?? "metro"}.png`;
+  const known = STATION_ICON_CATEGORY[stationId];
+  if (known) return `/icon/${known}.png`;
+  if (stationId.startsWith("BS_MRT_")) return "/icon/metro.png";
+  if (stationId.startsWith("BS_BUS_")) return "/icon/bus.png";
+  return "/icon/metro.png";
 }
 
 interface RoadPath {
@@ -367,7 +377,10 @@ function NetworkGraph({
 
   const stationPoints = useMemo<StationPoint[]>(
     () =>
-      Object.keys(STATION_ICON_CATEGORY).flatMap((stationId) => {
+      // Rendered stations are driven by `stationCoords` (the actual known coordinates),
+      // not `STATION_ICON_CATEGORY` — that table is icon lookup only, so a station id
+      // outside the current 9-entry demo set still shows up on the map.
+      Object.keys(stationCoords).flatMap((stationId) => {
         const position = stationCoords[stationId];
         if (!position) return [];
         const runtime = stations.find((s) => s.stationId === stationId);

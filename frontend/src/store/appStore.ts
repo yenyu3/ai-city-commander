@@ -29,7 +29,14 @@ import { runWhatIf } from "../services/chatEngine";
 import { computeTimeOffsetMs, reformatEmbeddedTimestamp, parseTimestamp, timePct, toScenarioAt } from "../utils/timeUtils";
 import { DATA_SOURCE } from "../config";
 import * as apiClient from "../services/apiClient";
-import { adaptChatAnswer, adaptCrowd, adaptDecisionToPartialAlert, adaptTraffic } from "../services/apiAdapter";
+import {
+  adaptChatAnswer,
+  adaptCityAlerts,
+  adaptCityIncidents,
+  adaptCrowd,
+  adaptDecisionToPartialAlert,
+  adaptTraffic,
+} from "../services/apiAdapter";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -103,6 +110,10 @@ function getInitialViewerMode(): ViewerMode {
   return saved === "public" || saved === "government" ? saved : "government";
 }
 
+function getLiveScenarioAt(): string {
+  return new Date().toISOString();
+}
+
 interface AppState {
   isLoading: boolean;
   loadError: string | null;
@@ -133,7 +144,7 @@ interface AppState {
   crowd: CrowdSnapshot[];
   segmentDefs: Map<string, RoadSegment>;
   allIncidents: LiveIncident[];
-  /** 站名對照表（見 loadData.ts loadStationNames 註記：後端尚無 reference-data API，暫由 demo CSV 衍生）。 */
+  /** 站名對照表；api 模式不補 demo 站名，後端未提供時直接顯示 stationId。 */
   stationNames: Record<string, string>;
 
   segments: Record<string, SegmentRuntimeState>;
@@ -451,6 +462,8 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
 
     const trafficRows = adaptTraffic(res.traffic, segmentDefs);
     const crowdRows = adaptCrowd(res.crowd, stationNames);
+    const activeIncidents = adaptCityIncidents(res.activeIncidents);
+    const alerts = adaptCityAlerts(res.alerts);
     const trafficBySegment = new Map(trafficRows.map((t) => [t.segmentId, t] as const));
 
     useAppStore.setState((s) => {
@@ -458,7 +471,7 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
       for (const [id, seg] of Object.entries(s.segments)) {
         segments[id] = mergeApiSegmentData(seg, trafficBySegment.get(id));
       }
-      const stations: Record<string, StationRuntimeState> = { ...s.stations };
+      const stations: Record<string, StationRuntimeState> = {};
       for (const c of crowdRows) {
         stations[c.stationId] = {
           stationId: c.stationId,
@@ -469,10 +482,24 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
           stayTimeAvg: c.stayTimeAvgMinutes,
         };
       }
-      return { segments, stations };
+      return {
+        traffic: trafficRows,
+        crowd: crowdRows,
+        segments,
+        stations,
+        activeIncidents,
+        alerts,
+        displayedAlertIds: new Set(alerts.map((alert) => alert.id)),
+        incidentEte: Object.fromEntries(
+          alerts
+            .filter((alert) => alert.sourceIncidentId && alert.ete !== undefined)
+            .map((alert) => [alert.sourceIncidentId as string, alert.ete as number]),
+        ),
+        reasoningLog: alerts[0]?.reasoningSteps ?? [],
+      };
     });
   } catch (err) {
-    console.warn("[appStore] GET /api/city-state 失敗，維持本地資料集算出的快照", err);
+    console.warn("[appStore] GET /api/city-state failed; keeping clean state", err);
   }
 }
 
@@ -490,12 +517,37 @@ async function pollDecisionForIncident(eventId: string, locationId: string, scen
       const res = await apiClient.getDecision(scenarioAt, locationId);
       if (!res) continue; // DECISION_NOT_READY，再重試
       const partial = adaptDecisionToPartialAlert(res.aiDecision);
-      useAppStore.setState((s) => ({
-        alerts: s.alerts.map((a) => (a.sourceIncidentId === eventId ? { ...a, ...partial } : a)),
-      }));
+      useAppStore.setState((s) => {
+        const existing = s.alerts.find((a) => a.sourceIncidentId === eventId);
+        if (existing) {
+          return {
+            alerts: s.alerts.map((a) => (a.sourceIncidentId === eventId ? { ...a, ...partial } : a)),
+          };
+        }
+
+        const alertId = nextId("alert");
+        const alert: AlertRecord = {
+          id: alertId,
+          timestamp: scenarioAt,
+          sourceIncidentId: eventId,
+          kind: partial.kind ?? "accident",
+          title: partial.title ?? eventId,
+          ruleSummary: partial.llmText ?? partial.title ?? eventId,
+          actions: partial.actions ?? [],
+          llmText: partial.llmText,
+          sopRef: partial.sopRef,
+          reasoningSteps: partial.reasoningSteps,
+          reroute: partial.reroute,
+        };
+        return {
+          alerts: [alert, ...s.alerts],
+          displayedAlertIds: new Set(s.displayedAlertIds).add(alertId),
+          reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+        };
+      });
       return;
     } catch (err) {
-      console.warn("[appStore] GET /api/decisions 失敗，維持本地 rule engine 結果", err);
+      console.warn("[appStore] GET /api/decisions failed; no local decision fallback was generated", err);
       return;
     }
   }
@@ -547,6 +599,39 @@ export const useAppStore = create<AppState>((set, get) => ({
   async init() {
     try {
       const data = await loadAllData();
+      if (DATA_SOURCE === "api") {
+        const requestedAt = getLiveScenarioAt();
+        set({
+          isLoading: false,
+          traffic: [],
+          crowd: [],
+          segmentDefs: data.segments,
+          allIncidents: [],
+          stationNames: data.stationNames,
+          ticks: [requestedAt],
+          tickIndex: 0,
+          currentTime: requestedAt,
+          legDurationMs: 0,
+          legStartedAt: Date.now(),
+          timeOffsetMs: 0,
+          segments: computeSegmentState(data.segments, [], requestedAt),
+          stations: {},
+          roadPaths: data.roadPaths,
+          stationCoords: data.stationCoords,
+          mapCenter: data.mapCenter,
+          activeIncidents: [],
+          injectedIncidentIds: new Set(),
+          incidentEte: {},
+          alerts: [],
+          firedAlertKeys: new Set(),
+          displayedAlertIds: new Set(),
+          reasoningLog: [],
+          chatMessages: [],
+        });
+        void refreshCityStateFromApi(requestedAt);
+        return;
+      }
+
       const tickSet = new Set<string>();
       data.traffic.forEach((t) => tickSet.add(t.observedAt));
       data.crowd.forEach((c) => tickSet.add(c.observedAt));
@@ -684,6 +769,27 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const newSegments = computeSegmentState(segmentDefs, traffic, timestamp);
     const newStations = computeStationState(crowd, timestamp);
+
+    if (DATA_SOURCE === "api") {
+      set({
+        tickIndex: newIndex,
+        currentTime: timestamp,
+        segments: newSegments,
+        stations: newStations,
+        legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
+        legStartedAt: Date.now(),
+        frozenPlayheadPct: null,
+        activeIncidents: [],
+        injectedIncidentIds: new Set(),
+        incidentEte: {},
+        alerts: [],
+        firedAlertKeys: new Set(),
+        displayedAlertIds: new Set(),
+        reasoningLog: [],
+      });
+      void refreshCityStateFromApi(timestamp);
+      return;
+    }
 
     // §4.1 城市觸發路段：tier 由未觸發變為觸發時彈出告警
     for (const id of CITY_TRIGGER_SEGMENTS) {
@@ -904,10 +1010,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       activeAlertId,
     });
 
-    if (DATA_SOURCE === "api") {
-      void refreshCityStateFromApi(timestamp);
-    }
-
     // 事件自動注入：時鐘走到事件時間點時自動注入（同時仍保留手動按鈕注入能力）
     for (const incident of allIncidents) {
       if (incident.occurredAt <= timestamp && !injectedIncidentIds.has(incident.eventId)) {
@@ -926,40 +1028,51 @@ export const useAppStore = create<AppState>((set, get) => ({
   },
 
   submitIncident(incident) {
-    // 樂觀本地注入：不論 demo/api 模式都先用本地 rule engine 立即產生結果，維持既有互動感。
+    if (DATA_SOURCE === "api") {
+      const scenarioAt = toScenarioAt(get().currentTime || getLiveScenarioAt());
+      apiClient
+        .createIncident({
+          context: { scenarioAt },
+          incident: {
+            eventId: incident.eventId,
+            type: incident.type,
+            location: incident.location,
+            affectedSegmentId: incident.affectedSegmentId,
+            status: incident.status,
+            severity: incident.severity,
+            description: incident.description,
+            occurredAt: toScenarioAt(incident.occurredAt),
+          },
+        })
+        .then((res) => {
+          const submittedIncident: LiveIncident = {
+            ...incident,
+            processing: res.processing,
+          };
+          set((s) => ({
+            allIncidents: [
+              ...s.allIncidents,
+              ...(!s.allIncidents.some((e) => e.eventId === submittedIncident.eventId)
+                ? [submittedIncident]
+                : []),
+            ],
+            activeIncidents: [
+              ...s.activeIncidents,
+              ...(!s.activeIncidents.some((e) => e.eventId === submittedIncident.eventId)
+                ? [submittedIncident]
+                : []),
+            ],
+          }));
+          void pollDecisionForIncident(incident.eventId, incident.affectedSegmentId, scenarioAt);
+        })
+        .catch((err) => {
+          console.warn("[appStore] POST /api/incidents failed; no local demo result was generated", err);
+        });
+      return;
+    }
+
     get().addIncidents([incident]);
     get().injectIncident(incident.eventId);
-
-    if (DATA_SOURCE !== "api") return;
-
-    const scenarioAt = toScenarioAt(get().currentTime);
-    apiClient
-      .createIncident({
-        context: { scenarioAt },
-        incident: {
-          eventId: incident.eventId,
-          type: incident.type,
-          location: incident.location,
-          affectedSegmentId: incident.affectedSegmentId,
-          status: incident.status,
-          severity: incident.severity,
-          description: incident.description,
-          occurredAt: toScenarioAt(incident.occurredAt),
-        },
-      })
-      .then((res) => {
-        set((s) => ({
-          activeIncidents: s.activeIncidents.map((i) =>
-            i.eventId === incident.eventId ? { ...i, processing: res.processing } : i,
-          ),
-        }));
-        // 注入事件與 GET /api/decisions 的關係尚未由後端確認（見協調文件第 2 項），
-        // 這裡用受影響路段/站點 id 當作 locationId 嘗試查詢，拿不到就維持本地結果。
-        void pollDecisionForIncident(incident.eventId, incident.affectedSegmentId, scenarioAt);
-      })
-      .catch((err) => {
-        console.warn("[appStore] POST /api/incidents 失敗，維持本地 rule engine 結果", err);
-      });
   },
 
   injectIncident(incidentId, suppressToast = false) {
