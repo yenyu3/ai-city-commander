@@ -478,46 +478,13 @@ function shouldRefreshDecisionAt(timestamp: string): boolean {
 }
 
 function collectDecisionLocationIds(state: AppState): string[] {
-  const ids = new Set<string>();
-
-  // 小人（現場定位）代表使用者目前關心的地點，優先查詢，跟 Chat 的 userLocation 邏輯一致。
+  // 小人在場：只查小人所在路段
   if (state.fieldInspectorPosition?.nearestRoadId) {
-    ids.add(state.fieldInspectorPosition.nearestRoadId);
+    return [state.fieldInspectorPosition.nearestRoadId];
   }
 
-  if (state.selectedStationId) ids.add(state.selectedStationId);
-  if (state.selectedSegmentId) ids.add(state.selectedSegmentId);
-
-  for (const alert of state.alerts) {
-    if (alert.decisionLocationId) ids.add(alert.decisionLocationId);
-    if (alert.trackedSegmentId) ids.add(alert.trackedSegmentId);
-  }
-
-  for (const segment of Object.values(state.segments)) {
-    if (
-      segment.tier !== "Normal" ||
-      segment.laneStatus === "Blocked" ||
-      segment.laneStatus === "Critical" ||
-      segment.saturation >= 0.85
-    ) {
-      ids.add(segment.segmentId);
-    }
-  }
-
-  for (const station of Object.values(state.stations)) {
-    if (station.userCount >= 25000 || station.growthRate >= 0.3 || station.roamingPct >= 0.3) {
-      ids.add(station.stationId);
-    }
-  }
-
-  if (ids.size === 0) {
-    const firstSegmentId = state.segmentDefs.keys().next().value as string | undefined;
-    const firstStationId = Object.keys(state.stationNames)[0];
-    if (firstSegmentId) ids.add(firstSegmentId);
-    else if (firstStationId) ids.add(firstStationId);
-  }
-
-  return [...ids];
+  // 小人不在：打 global
+  return ["global"];
 }
 
 function isDecisionProcessing(
@@ -636,9 +603,11 @@ async function refreshDecisionForLocation(timestamp: string, locationId: string)
 
 function refreshDecisionsFromApi(timestamp: string): void {
   const state = useAppStore.getState();
-  if (DATA_SOURCE !== "api" || !shouldRefreshDecisionAt(timestamp)) return;
+  if (DATA_SOURCE !== "api") return;
 
   const ids = collectDecisionLocationIds(state);
+  if (ids.length === 0) return;
+
   console.log(`[DEBUG] refreshDecisionsFromApi timestamp=${timestamp} ids=${JSON.stringify(ids)}`);
   for (const locationId of ids) {
     void refreshDecisionForLocation(timestamp, locationId);
@@ -1030,13 +999,6 @@ export const useAppStore = create<AppState>((set, get) => ({
         legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
         legStartedAt: Date.now(),
         frozenPlayheadPct: null,
-        activeIncidents: [],
-        injectedIncidentIds: new Set(),
-        incidentEte: {},
-        alerts: [],
-        firedAlertKeys: new Set(),
-        displayedAlertIds: new Set(),
-        reasoningLog: [],
       });
       void refreshCityStateFromApi(timestamp);
       return;
@@ -1541,7 +1503,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       window.localStorage.setItem("viewerMode", mode);
     }
     set({ viewerMode: mode });
-    refreshDecisionsFromApi(get().currentTime);
   },
 
   toggleMapExpanded() {
@@ -1558,6 +1519,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFieldInspectorPosition(position) {
     set({ fieldInspectorPosition: position });
+    // set 是同步的，完成後 get() 已能拿到新的 position
+    refreshDecisionsFromApi(get().currentTime);
   },
 
   setFieldInspectorLocateStatus(status) {
