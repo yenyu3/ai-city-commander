@@ -1,10 +1,9 @@
 """Pluggable LLM client used by the narrator layer (agent/narrator.py).
 
 Concrete providers are imported lazily, inside their constructor, so this
-module has zero hard dependencies at import time -- relevant right now
-because this environment has neither a working AWS credential nor an
-Anthropic API key configured yet. Until one of them is set, every caller
-falls back to agent/templates.py's canned text (see get_configured_llm_client).
+module has zero hard dependencies at import time. Until one is configured
+(see get_configured_llm_client), every caller falls back to
+agent/templates.py's canned text.
 """
 from __future__ import annotations
 
@@ -104,6 +103,45 @@ class OmniRouteLLMClient(LLMClient):
         return payload["choices"][0]["message"]["content"]
 
 
+class BedrockLLMClient(LLMClient):
+    """Direct Amazon Bedrock model invocation via boto3's Converse API --
+    the production path once deployed to Lambda (2026-08-01: hackathon has
+    started, deploying for real).
+
+    Deliberately uses IAM Role auth, not an API key or Anthropic key: no
+    credential is read or stored here at all. boto3 resolves the caller's
+    identity through the standard AWS credential chain -- inside Lambda that
+    means the function's execution role (temporary, auto-rotated,
+    auto-injected by AWS, nothing for us to configure or leak); for local
+    dev it falls back to whatever `aws configure`/`AWS_PROFILE` resolves to
+    on this machine. Requires the execution role to have `bedrock:InvokeModel`
+    (see backend/terraform/iam.tf) and that the AWS account has completed the
+    one-time Anthropic model use-case form in the Bedrock console.
+    """
+
+    def __init__(self, model_id: str, region: Optional[str] = None):
+        import boto3  # optional dependency, only needed on this path
+
+        self._model_id = model_id
+        self._client = boto3.client("bedrock-runtime", region_name=region)
+
+    def complete(self, system: str, prompt: str, *, max_tokens: int = 1024) -> str:
+        from botocore.exceptions import BotoCoreError, ClientError
+
+        try:
+            response = self._client.converse(
+                modelId=self._model_id,
+                system=[{"text": system}],
+                messages=[{"role": "user", "content": [{"text": prompt}]}],
+                inferenceConfig={"maxTokens": max_tokens},
+            )
+        except (BotoCoreError, ClientError) as exc:
+            raise RuntimeError(f"Bedrock request failed: {exc}") from exc
+
+        blocks = response["output"]["message"]["content"]
+        return "".join(block["text"] for block in blocks if "text" in block)
+
+
 class BedrockAgentCoreLLMClient(LLMClient):
     """Placeholder for the eventual AWS Bedrock AgentCore Runtime call.
 
@@ -126,11 +164,13 @@ def get_configured_llm_client() -> Optional[LLMClient]:
     """Returns a ready-to-use LLM client based on environment configuration,
     or None if nothing is configured yet.
 
-    Priority: AgentCore (prod path) > Anthropic direct (a real provider key)
-    > OmniRoute (opt-in local dev/test router -- see OmniRouteLLMClient).
-    OmniRoute is last and requires an explicit OMNIROUTE_BASE_URL so it never
-    accidentally activates outside a dev machine (Lambda can't reach
-    localhost anyway).
+    Priority (2026-08-01, hackathon deployment): AgentCore (only if a runtime
+    ARN was actually deployed) > Bedrock direct via IAM role (the real prod
+    path now) > Anthropic direct key (kept only for whoever still has one
+    set; not the recommended path) > OmniRoute (opt-in local dev/test
+    router, being phased out -- see OmniRouteLLMClient). OmniRoute is last
+    and requires an explicit OMNIROUTE_BASE_URL so it never accidentally
+    activates outside a dev machine (Lambda can't reach localhost anyway).
 
     Every caller in this package must have a canned-response fallback for
     the None case -- see agent/templates.py and agent/narrator.py.
@@ -138,6 +178,10 @@ def get_configured_llm_client() -> Optional[LLMClient]:
     agentcore_arn = os.environ.get("BEDROCK_AGENTCORE_RUNTIME_ARN")
     if agentcore_arn:
         return BedrockAgentCoreLLMClient(agentcore_arn)
+
+    bedrock_model_id = os.environ.get("BEDROCK_MODEL_ID")
+    if bedrock_model_id:
+        return BedrockLLMClient(bedrock_model_id, region=os.environ.get("AWS_REGION"))
 
     anthropic_key = os.environ.get("ANTHROPIC_API_KEY")
     if anthropic_key:

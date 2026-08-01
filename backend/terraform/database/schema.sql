@@ -144,6 +144,11 @@ CREATE TABLE response_alerts (
   title                  text NOT NULL,
   rule_summary           text NOT NULL,
   llm_text               text,
+  -- Citizen-facing text, produced by the same decide() call as llm_text but
+  -- written for the public audience -- no SOP citations/thresholds/internal
+  -- ops details (see data/api.md line 638 and the public/internal S3 bucket
+  -- split). Never derive the public view by truncating llm_text.
+  public_message         text,
   sop_section_id         text,
   estimated_delay_min    numeric(8, 2) CHECK (estimated_delay_min >= 0),
   reasoning_steps        jsonb NOT NULL DEFAULT '[]'::jsonb,
@@ -176,6 +181,9 @@ CREATE TABLE congestion_decisions (
   triggered              boolean NOT NULL,
   result                 jsonb NOT NULL DEFAULT '{}'::jsonb,
   reasoning              text,
+  -- See response_alerts.public_message -- same citizen-facing/no-internal-
+  -- detail contract, produced in the same decide() call as `reasoning`.
+  public_message         text,
   source                 text NOT NULL,
   created_at             timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (segment_id, scenario_at)
@@ -197,6 +205,9 @@ CREATE TABLE crowd_decisions (
   triggered              boolean NOT NULL,
   result                 jsonb NOT NULL DEFAULT '{}'::jsonb,
   reasoning              text,
+  -- See response_alerts.public_message -- same citizen-facing/no-internal-
+  -- detail contract, produced in the same decide() call as `reasoning`.
+  public_message         text,
   source                 text NOT NULL,
   created_at             timestamptz NOT NULL DEFAULT now(),
   PRIMARY KEY (station_id, scenario_at, decision_kind)

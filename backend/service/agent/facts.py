@@ -51,6 +51,9 @@ def decide_congestion(
             result={"tier": tier, "actions": city.actions if city is not None else []},
             reasoning="(fallback：無可用 LLM，依 SOP 第1條門檻值以確定性規則計算)",
             source="fallback",
+            public_message=(
+                f"{segment_name}周邊車流壅塞，建議改道通行或提前規劃行程。" if city is not None else ""
+            ),
         )
 
     return decide(
@@ -118,10 +121,15 @@ def decide_accident(
                 result={},
                 reasoning="(fallback：無可用 LLM，依 SOP 第2條規則計算)",
                 source="fallback",
+                public_message=(
+                    f"{incident.location}路段封閉中，請改道通行並多預留通勤時間。" if triggered else ""
+                ),
             )
         route = _rules_accident.select_evacuation_route(
             incident.affected_segment, incident.location, segments, saturation
         )
+        alt_seg = segments.get(route.main_route) if route.main_route else None
+        detour_text = f"，建議改道經{alt_seg.name}通行" if alt_seg is not None else "，請改道通行"
         return Decision(
             triggered=True,
             sop_section_id="2",
@@ -136,6 +144,7 @@ def decide_accident(
             },
             reasoning="(fallback：無可用 LLM，依 SOP 第2條規則計算)",
             source="fallback",
+            public_message=f"{incident.location}路段封閉中{detour_text}，並多預留通勤時間。",
         )
 
     decision = decide(
@@ -197,6 +206,11 @@ def decide_mrt_diversion(
             result={},
             reasoning="(fallback：無可用 LLM，依 SOP 第3條規則計算)",
             source="fallback",
+            public_message=(
+                f"{snapshot.location_name}人潮較多，列車可能過站不停，建議改往鄰近站點或搭乘接駁車。"
+                if triggered
+                else ""
+            ),
         )
 
     return decide(
@@ -225,6 +239,9 @@ def decide_dome_dispersal(
             result={},
             reasoning="(fallback：無可用 LLM，依 SOP 第4條規則計算)",
             source="fallback",
+            public_message=(
+                "場館周邊人潮增加，建議提前規劃離場動線，或稍後再離開。" if triggered else ""
+            ),
         )
 
     return decide(
@@ -252,6 +269,9 @@ def decide_signal_failure(
             result={},
             reasoning="(fallback：無可用 LLM，依 SOP 第5條規則計算)",
             source="fallback",
+            public_message=(
+                "號誌故障中，請依現場人員指揮通行，行經時多加留意。" if triggered else ""
+            ),
         )
 
     return decide(
@@ -284,6 +304,9 @@ def decide_multilingual(
             result={"stations": [s.station_id for s in matched]},
             reasoning="(fallback：無可用 LLM，依 SOP 第6條規則計算)",
             source="fallback",
+            public_message=(
+                "此區域已提供中英日韓多語言資訊播報，如需協助請洽現場工作人員。" if matched else ""
+            ),
         )
 
     return decide(

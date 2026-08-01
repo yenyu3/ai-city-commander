@@ -231,6 +231,7 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
                     "cityResponseTriggered": decision.triggered,
                     "cityResponseActions": decision.result.get("actions", []),
                     "reasoning": decision.reasoning,
+                    "publicMessage": decision.public_message,
                     "source": decision.source,
                 }
             )
@@ -257,12 +258,14 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
                 mrt = _mrt_decision(conn, c, scenario_at)
                 entry["mrtDiversionTriggered"] = mrt.triggered
                 entry["mrtDiversionReasoning"] = mrt.reasoning
+                entry["mrtDiversionPublicMessage"] = mrt.public_message
                 entry["mrtDiversionSource"] = mrt.source
             # SOP §4：只有 BS_TPE_DOME 適用。
             if c.station_id == "BS_TPE_DOME":
                 dome = _dome_decision(conn, c.station_id, scenario_at)
                 entry["domeDispersalTriggered"] = dome.triggered
                 entry["domeDispersalReasoning"] = dome.reasoning
+                entry["domeDispersalPublicMessage"] = dome.public_message
                 entry["domeDispersalSource"] = dome.source
             crowd_out.append(entry)
 
@@ -304,6 +307,7 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
             "multilingualJudgment": {
                 "triggered": multilingual_decision.triggered,
                 "reasoning": multilingual_decision.reasoning,
+                "publicMessage": multilingual_decision.public_message,
                 "source": multilingual_decision.source,
             },
             "activeIncidents": active_incidents_out,
@@ -402,6 +406,10 @@ def _decision_to_dict(decision: Decision) -> dict[str, Any]:
         "sopSectionId": decision.sop_section_id,
         "result": decision.result,
         "reasoning": decision.reasoning,
+        # Citizen-facing text -- see data/api.md line 638 and
+        # response_alerts.public_message. Never fall back to `reasoning`
+        # here; empty string means "no public-safe text for this decision".
+        "publicMessage": decision.public_message,
         "source": decision.source,
     }
 

@@ -32,6 +32,18 @@ resource "aws_iam_role_policy" "lambda" {
         Effect   = "Allow"
         Action   = ["bedrock-agentcore:InvokeAgentRuntime"]
         Resource = var.bedrock_agentcore_runtime_arn
+      }],
+      # Auth for BedrockLLMClient is the Lambda's own execution role -- no
+      # key/secret to manage or leak, AWS injects+rotates these credentials
+      # automatically. Resource is left as "*" (hackathon time constraint,
+      # not a real security boundary since the action list itself is
+      # already narrow): the exact ARN shape differs between bare
+      # foundation-model IDs and cross-region inference profile IDs, and
+      # locking to one would break if the model ID changes.
+      var.bedrock_model_id == null ? [] : [{
+        Effect   = "Allow"
+        Action   = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        Resource = "*"
       }]
     )
   })

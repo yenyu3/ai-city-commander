@@ -39,6 +39,7 @@ def no_llm_credentials(monkeypatch):
     it explicitly injects a FakeLLMClient -- keeps results independent of
     whatever happens to be in the environment running the suite."""
     monkeypatch.delenv("BEDROCK_AGENTCORE_RUNTIME_ARN", raising=False)
+    monkeypatch.delenv("BEDROCK_MODEL_ID", raising=False)
     monkeypatch.delenv("ANTHROPIC_API_KEY", raising=False)
     monkeypatch.delenv("OMNIROUTE_BASE_URL", raising=False)
     monkeypatch.delenv("OMNIROUTE_MODEL", raising=False)
@@ -71,6 +72,30 @@ class TestConfiguredClientDetection:
         monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake")
         client = get_configured_llm_client()
         assert isinstance(client, AnthropicLLMClient)
+
+    def test_bedrock_only_activates_when_explicitly_configured(self, monkeypatch):
+        from agent.llm_client import BedrockLLMClient
+
+        assert get_configured_llm_client() is None
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        client = get_configured_llm_client()
+        assert isinstance(client, BedrockLLMClient)
+
+    def test_bedrock_takes_priority_over_anthropic_key(self, monkeypatch):
+        from agent.llm_client import BedrockLLMClient
+
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-fake")
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        client = get_configured_llm_client()
+        assert isinstance(client, BedrockLLMClient)
+
+    def test_agentcore_arn_takes_priority_over_bedrock(self, monkeypatch):
+        from agent.llm_client import BedrockAgentCoreLLMClient
+
+        monkeypatch.setenv("BEDROCK_MODEL_ID", "apac.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        monkeypatch.setenv("BEDROCK_AGENTCORE_RUNTIME_ARN", "arn:aws:bedrock-agentcore:...")
+        client = get_configured_llm_client()
+        assert isinstance(client, BedrockAgentCoreLLMClient)
 
 
 class TestOmniRouteLLMClient:
@@ -140,6 +165,66 @@ class TestOmniRouteLLMClient:
 
         client = OmniRouteLLMClient("http://localhost:20128/v1")
         with pytest.raises(RuntimeError, match="Maximum combo retry limit reached"):
+            client.complete("s", "p")
+
+
+class TestBedrockLLMClient:
+    """Mocks boto3 so these never make a real AWS call or need real
+    credentials -- BedrockLLMClient's whole point is that it authenticates
+    via the caller's IAM role/profile, which this test environment doesn't
+    have configured."""
+
+    def test_complete_parses_a_successful_converse_response(self, monkeypatch):
+        from agent.llm_client import BedrockLLMClient
+
+        captured_call = {}
+
+        class _FakeBedrockRuntimeClient:
+            def converse(self, **kwargs):
+                captured_call.update(kwargs)
+                return {"output": {"message": {"content": [{"text": "測試回覆"}]}}}
+
+        class _FakeBoto3Module:
+            @staticmethod
+            def client(service_name, region_name=None):
+                captured_call["service_name"] = service_name
+                captured_call["region_name"] = region_name
+                return _FakeBedrockRuntimeClient()
+
+        monkeypatch.setitem(__import__("sys").modules, "boto3", _FakeBoto3Module())
+
+        client = BedrockLLMClient("apac.anthropic.claude-sonnet-4-5-20250929-v1:0", region="ap-northeast-1")
+        result = client.complete("system prompt", "user prompt", max_tokens=200)
+
+        assert result == "測試回覆"
+        assert captured_call["service_name"] == "bedrock-runtime"
+        assert captured_call["region_name"] == "ap-northeast-1"
+        assert captured_call["modelId"] == "apac.anthropic.claude-sonnet-4-5-20250929-v1:0"
+        assert captured_call["system"] == [{"text": "system prompt"}]
+        assert captured_call["messages"] == [{"role": "user", "content": [{"text": "user prompt"}]}]
+        assert captured_call["inferenceConfig"] == {"maxTokens": 200}
+
+    def test_complete_raises_on_client_error(self, monkeypatch):
+        from botocore.exceptions import ClientError
+
+        from agent.llm_client import BedrockLLMClient
+
+        class _FakeBedrockRuntimeClient:
+            def converse(self, **kwargs):
+                raise ClientError(
+                    {"Error": {"Code": "AccessDeniedException", "Message": "not authorized"}},
+                    "Converse",
+                )
+
+        class _FakeBoto3Module:
+            @staticmethod
+            def client(service_name, region_name=None):
+                return _FakeBedrockRuntimeClient()
+
+        monkeypatch.setitem(__import__("sys").modules, "boto3", _FakeBoto3Module())
+
+        client = BedrockLLMClient("apac.anthropic.claude-sonnet-4-5-20250929-v1:0")
+        with pytest.raises(RuntimeError, match="not authorized"):
             client.complete("s", "p")
 
 

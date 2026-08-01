@@ -77,7 +77,7 @@ flowchart LR
         F2["不做任何分類/選擇判斷"]
     end
     subgraph "2. 判斷 agent/decision_agent.py"
-        D1["LLM：事實 + SOP七條全文<br/>→ 決定 triggered/sop_section_id/result<br/>+ 理由，同一次呼叫產出"]
+        D1["LLM：事實 + SOP七條全文<br/>→ 決定 triggered/sop_section_id/result<br/>+ 理由(reasoning)+民眾版文字(public_message)<br/>同一次呼叫產出"]
         D2["LLM 不可用或失敗<br/>→ 退回 rules/ 的確定性函式<br/>(source=fallback)"]
     end
     subgraph "3. 敘事 agent/narrator.py"
@@ -96,6 +96,15 @@ flowchart LR
 第二層——如果前端想把 `decide` 的 `result`/`reasoning` 包裝成更長的「建議書」全文，
 可以把它塞進 `summarize` 的 `data` 欄位讓 narrator 再潤一次；如果 `decide` 的
 `reasoning` 已經夠用，也可以跳過 `summarize` 直接呈現。
+
+**`reasoning` 跟 `public_message` 是兩種受眾，不是兩次呼叫**（這點跟上面「判斷/敘事分兩次」
+不衝突）：兩者都是 `decide()` 同一次 LLM 呼叫的輸出。`reasoning` 給政府/指揮官看，
+引用 SOP 條號、門檻數字、內部處置細節；`public_message` 給一般民眾看，只講行動建議，
+不能出現 SOP 條號、門檻數字、規則名稱或警力/號誌等內部調度細節（見 `data/api.md`
+第638行的 chat 端點政府/民眾模式區隔，以及 public/internal 兩個 S3 bucket 的權限設計）。
+未觸發（`triggered=false`）時 `public_message` 為空字串。前端絕對不能把 `reasoning`
+拿去顯示給民眾模式看，也不能用截斷/精簡 `reasoning` 的方式湊出民眾版文字——那等於
+繞過這個區隔，一樣會洩漏內部推理內容。
 
 ## 快取：同一個事件、同一個模擬時間、同一種 SOP 檢查，不重複呼叫 LLM
 
@@ -154,7 +163,8 @@ flowchart LR
 ```
 **facts 丟給 LLM 的內容**：`{"segment_id","segment_name","saturation_score","is_city_trigger_segment"}` ——不含 `tier`。
 
-**response**：`{"triggered","sopSectionId","result":{"tier","actions"},"reasoning","source"}`
+**response**：`{"triggered","sopSectionId","result":{"tier","actions"},"reasoning","publicMessage","source"}`
+（`publicMessage` 是給民眾看的一句話，例如「附近路段車流壅塞，建議改道通行」——不含 tier 字母、SOP 條號）
 
 ---
 
@@ -201,6 +211,9 @@ flowchart TD
 不是程式碼算好塞進去的。
 
 **response 的 `result`**：`{"main_route","secondary_routes","excluded":[{"segment_id","reason"}],"congestion_warning","recommend_public_transit"}`
++ 同一次呼叫另外還有 `reasoning`（給指揮官，含候選路線篩選細節）與 `publicMessage`
+（給民眾，例如「光復南路南下因路面塌陷全線封閉，請改道市民大道」——不含 segment_id、
+candidate 篩選理由等內部細節）。
 
 **正氣橋型未對應路口**：`road_network_geometry.json` 裡引用但不在 15 個追蹤路段內的路名
 （如正氣橋），在 `rules/network_loader.py` 建圖時保留位置、標記 `None`，不會被靜默濾掉
@@ -278,7 +291,7 @@ facts 給每個站點的 `roaming_pct` 原始值，LLM 決定哪些站點達標�
 
 ```mermaid
 flowchart LR
-    A["Decision<br/>(result + reasoning)"] --> B["summarize()<br/>組 StructuredEvent"]
+    A["Decision<br/>(result + reasoning + public_message)"] --> B["summarize()<br/>組 StructuredEvent"]
     B --> C{"LLM 可用？"}
     C -- 是 --> D["LLM 用一段話說明<br/>判定結果與處置動作"]
     C -- 否/失敗 --> E["templates.py 罐頭文字"]
@@ -301,7 +314,7 @@ flowchart LR
    快取，都沒命中 → 從 `road_segments`/`traffic_snapshots` 組 facts →
    `decide_accident()` 判斷觸發 SOP§2、選出主路 `RD_TPE_004`；同時
    `decide_signal_failure()` 判斷不觸發 SOP§5 → 兩筆都寫回 `response_alerts` →
-   回傳 `aiDecisions: [{alertKind:"accident",triggered:true,...}, {alertKind:"signal_failure",triggered:false,...}]`
+   回傳 `aiDecisions: [{alertKind:"accident",triggered:true,reasoning:"...",publicMessage:"...",...}, {alertKind:"signal_failure",triggered:false,publicMessage:"",...}]`
    （實測：對照 `data/` 原始資料集跑出的 fallback 結果跟 `test_rules.py` 的黃金案例
    完全一致：`main_route=RD_TPE_004, secondary=RD_TPE_005`）
 3. 前端再次帶同一個 `scenarioAt` 呼叫同一個 `evaluate` → 直接命中快取，不重新呼叫 LLM

@@ -227,12 +227,21 @@ pytest tests/ -v
 
 `decision_agent.py::decide()` 是通用的「事實進、決定出」呼叫：把原始事實
 （JSON）+ SOP 七條全文一起丟給 LLM，要求它輸出結構化 JSON
-（`triggered`、`sop_section_id`、`result`、`reasoning`），並指示它「不要重新
+（`triggered`、`sop_section_id`、`result`、`reasoning`、`public_message`），並指示它「不要重新
 計算數字、只能引用 SOP 原文條款」。`agent/facts.py` 針對六種情境（飽和度分級、
 事故疏散、捷運分流、大巨蛋散場、號誌故障、多語通報）各寫一個 `decide_*()`，
 每個都只組「原始事實」——例如事故情境給的是候選替代路段清單（capacity_vph、
 是否直接相交、是否上游、目前飽和度），**不會**先幫忙選出哪條是主路；那個
 選擇本身就是要 LLM 決定的事。
+
+`reasoning` 跟 `public_message` 是同一次呼叫產出的兩個受眾版本：`reasoning`
+給交通控制中心指揮官看，引用 SOP 條號、門檻數字與內部處置細節；
+`public_message` 給一般民眾看，只講對民眾有用的行動建議（改道、預留時間等），
+不能出現 SOP 條號、門檻數字或警力/號誌等內部調度資訊（對照 `data/api.md`
+第638行 chat 端點的政府/民眾模式區隔，以及 public/internal 兩個 S3 bucket
+的權限設計）。前端 `utils/publicView.ts::getPublicAlertText()` 只能讀
+`publicMessage`，不可以讀 `reasoning`/`llmText`。未觸發時 `public_message`
+應為空字串。
 
 沒有 LLM、呼叫失敗、或回應解析失敗時，退回 `rules/` 對應的確定性函式（結果
 會標記 `"source": "fallback"` 以便區分）。這是安全網，不是設計上的正常路徑。
@@ -247,18 +256,32 @@ pytest tests/ -v
 `llm_client.py` 是可替換的 LLM 介面，`decide()` 跟 `narrator.py` 共用：
 
 - 有設定 `BEDROCK_AGENTCORE_RUNTIME_ARN` → 走 AgentCore（尚未實作，等 Runtime 部署好）。
-- 有設定 `ANTHROPIC_API_KEY` → 直接呼叫 Anthropic API。
+- 有設定 `BEDROCK_MODEL_ID` → 直接呼叫 Bedrock（`BedrockLLMClient`，走 `boto3` 的
+  `converse()` API）。**這是 2026-08-01 起的正式部署路徑**，用 IAM Role 認證，
+  不是 API key/access key——不讀取、不儲存任何憑證，`boto3` 會自動走標準 AWS
+  憑證鏈：部署到 Lambda 後自動用該函式的 execution role（暫時性、AWS 自動輪替，
+  見 `terraform/iam.tf` 的 `bedrock:InvokeModel` 權限），本機開發則用
+  `aws configure`/`AWS_PROFILE` 解析出的憑證。第一次呼叫前，AWS 帳號要先在
+  Bedrock console 的 Model catalog 對 Anthropic 模型送出一次性的 use case 表單
+  （每帳號一次，送出後立即生效）。本機測試需要 `AWS_REGION`（例如
+  `ap-northeast-1`）；部署到 Lambda 後不用設，Lambda 會自動注入該函式的部署區域
+  （`AWS_REGION` 是 Lambda 保留變數，Terraform 不能自己設）。
+- 有設定 `ANTHROPIC_API_KEY` → 直接呼叫 Anthropic API（保留給還留著這組 key 的人，
+  非建議路徑）。
 - 有設定 `OMNIROUTE_BASE_URL` → 走本機 OmniRoute 多供應商路由器（純開發測試用，
   該共用池目前不太穩定，常見 40~60% 失敗率，但失敗一律安全退回備援，不會讓
-  API 出錯）。
+  API 出錯；**逐步淘汰中**，改用 Bedrock）。
 - 都沒有 → 全部退回 `rules/`（判斷）或 `templates.py`（敘事）的確定性結果，
   API 不會因為沒憑證而壞掉。
+
+優先順序：AgentCore（若真的部署了 Runtime）> Bedrock（IAM Role）> Anthropic
+直接 key > OmniRoute。
 
 `/api/agent` 的請求格式（`{"action": ..., ...}`）：
 
 | action | 欄位 | 回應 |
 | --- | --- | --- |
-| `decide` | `scope`（`congestion`/`accident`/`mrt_diversion`/`dome_dispersal`/`signal_failure`/`multilingual`）+ 各情境對應欄位，見 `handler.py::_handle_decide` | `{"triggered", "sopSectionId", "result", "reasoning", "source"}` |
+| `decide` | `scope`（`congestion`/`accident`/`mrt_diversion`/`dome_dispersal`/`signal_failure`/`multilingual`）+ 各情境對應欄位，見 `handler.py::_handle_decide` | `{"triggered", "sopSectionId", "result", "reasoning", "publicMessage", "source"}` |
 | `summarize` | `kind`, `title`, `data`, `sopRef?` | `{"text": "..."}` |
 | `answer_what_if` | `question`, `ruleResult?`, `sopExcerpt?` | `{"text": "..."}` |
 | `generate_multilingual` | `messageType`, `values` | `{"messages": {"zh":..., "en":..., "ja":..., "ko":...}}` |

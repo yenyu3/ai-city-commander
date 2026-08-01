@@ -1,5 +1,9 @@
 pytest
 anthropic       # optional at runtime (agent/llm_client.py imports it lazily); only
                 # needed to exercise AnthropicLLMClient, incl. its unit tests
+boto3           # optional at runtime (agent/llm_client.py imports it lazily); only
+                # needed to exercise BedrockLLMClient, incl. its unit tests --
+                # NOT needed in the deployed Lambda zip, AWS's Python 3.12
+                # runtime image ships boto3 already
 psycopg[binary] # needed by db.py + tests/test_db.py (requires a real local
                 # Postgres; see backend/README.md's "本機 DB 測試" section)

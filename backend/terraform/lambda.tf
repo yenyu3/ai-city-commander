@@ -18,6 +18,11 @@ resource "aws_lambda_function" "api" {
     variables = {
       DATABASE_SECRET_ARN           = aws_secretsmanager_secret.database.arn
       BEDROCK_AGENTCORE_RUNTIME_ARN = coalesce(var.bedrock_agentcore_runtime_arn, "")
+      # AWS_REGION is reserved by Lambda (auto-set to the function's deployed
+      # region) -- Terraform would reject trying to set it ourselves. boto3
+      # picks it up automatically, so BedrockLLMClient's region param stays
+      # unset in prod; local dev sets AWS_REGION manually (see README).
+      BEDROCK_MODEL_ID = coalesce(var.bedrock_model_id, "")
     }
   }
 

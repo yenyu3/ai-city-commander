@@ -315,7 +315,7 @@ def fetch_cached_decision(
     """
     row = conn.execute(
         """
-        SELECT rule_summary, llm_text, sop_section_id, reasoning_steps
+        SELECT rule_summary, llm_text, public_message, sop_section_id, reasoning_steps
         FROM response_alerts
         WHERE event_id = %(event_id)s AND scenario_at = %(scenario_at)s
           AND alert_kind = %(alert_kind)s
@@ -331,6 +331,7 @@ def fetch_cached_decision(
         result=result.get("result", {}),
         reasoning=row["llm_text"] or "",
         source=result.get("source", "cache"),
+        public_message=row["public_message"] or "",
     )
 
 
@@ -350,13 +351,14 @@ def save_decision(
     conn.execute(
         """
         INSERT INTO response_alerts
-            (alert_id, event_id, alert_kind, title, rule_summary, llm_text,
+            (alert_id, event_id, alert_kind, title, rule_summary, llm_text, public_message,
              sop_section_id, reasoning_steps, scenario_at)
         VALUES (%(alert_id)s, %(event_id)s, %(alert_kind)s, %(title)s, %(rule_summary)s,
-                %(llm_text)s, %(sop_section_id)s, %(reasoning_steps)s, %(scenario_at)s)
+                %(llm_text)s, %(public_message)s, %(sop_section_id)s, %(reasoning_steps)s, %(scenario_at)s)
         ON CONFLICT (event_id, scenario_at, alert_kind) DO UPDATE SET
             rule_summary = EXCLUDED.rule_summary,
             llm_text = EXCLUDED.llm_text,
+            public_message = EXCLUDED.public_message,
             sop_section_id = EXCLUDED.sop_section_id,
             title = EXCLUDED.title
         """,
@@ -370,6 +372,7 @@ def save_decision(
                 ensure_ascii=False,
             ),
             "llm_text": decision.reasoning,
+            "public_message": decision.public_message,
             "sop_section_id": decision.sop_section_id,
             "reasoning_steps": "[]",
             "scenario_at": scenario_at,
@@ -385,7 +388,7 @@ def fetch_cached_congestion_decision(
     incident (see congestion_decisions in schema.sql)."""
     row = conn.execute(
         """
-        SELECT triggered, result, reasoning, source
+        SELECT triggered, result, reasoning, public_message, source
         FROM congestion_decisions
         WHERE segment_id = %(segment_id)s AND scenario_at = %(scenario_at)s
         """,
@@ -399,6 +402,7 @@ def fetch_cached_congestion_decision(
         result=row["result"],
         reasoning=row["reasoning"] or "",
         source=row["source"],
+        public_message=row["public_message"] or "",
     )
 
 
@@ -407,12 +411,13 @@ def save_congestion_decision(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO congestion_decisions (segment_id, scenario_at, triggered, result, reasoning, source)
-        VALUES (%(segment_id)s, %(scenario_at)s, %(triggered)s, %(result)s, %(reasoning)s, %(source)s)
+        INSERT INTO congestion_decisions (segment_id, scenario_at, triggered, result, reasoning, public_message, source)
+        VALUES (%(segment_id)s, %(scenario_at)s, %(triggered)s, %(result)s, %(reasoning)s, %(public_message)s, %(source)s)
         ON CONFLICT (segment_id, scenario_at) DO UPDATE SET
             triggered = EXCLUDED.triggered,
             result = EXCLUDED.result,
             reasoning = EXCLUDED.reasoning,
+            public_message = EXCLUDED.public_message,
             source = EXCLUDED.source
         """,
         {
@@ -421,6 +426,7 @@ def save_congestion_decision(
             "triggered": decision.triggered,
             "result": json.dumps(decision.result, ensure_ascii=False),
             "reasoning": decision.reasoning,
+            "public_message": decision.public_message,
             "source": decision.source,
         },
     )
@@ -434,7 +440,7 @@ def fetch_cached_crowd_decision(
     crowd_decisions in schema.sql."""
     row = conn.execute(
         """
-        SELECT triggered, result, reasoning, source
+        SELECT triggered, result, reasoning, public_message, source
         FROM crowd_decisions
         WHERE station_id = %(station_id)s AND scenario_at = %(scenario_at)s
           AND decision_kind = %(decision_kind)s
@@ -449,6 +455,7 @@ def fetch_cached_crowd_decision(
         result=row["result"],
         reasoning=row["reasoning"] or "",
         source=row["source"],
+        public_message=row["public_message"] or "",
     )
 
 
@@ -462,12 +469,13 @@ def save_crowd_decision(
 ) -> None:
     conn.execute(
         """
-        INSERT INTO crowd_decisions (station_id, scenario_at, decision_kind, triggered, result, reasoning, source)
-        VALUES (%(station_id)s, %(scenario_at)s, %(decision_kind)s, %(triggered)s, %(result)s, %(reasoning)s, %(source)s)
+        INSERT INTO crowd_decisions (station_id, scenario_at, decision_kind, triggered, result, reasoning, public_message, source)
+        VALUES (%(station_id)s, %(scenario_at)s, %(decision_kind)s, %(triggered)s, %(result)s, %(reasoning)s, %(public_message)s, %(source)s)
         ON CONFLICT (station_id, scenario_at, decision_kind) DO UPDATE SET
             triggered = EXCLUDED.triggered,
             result = EXCLUDED.result,
             reasoning = EXCLUDED.reasoning,
+            public_message = EXCLUDED.public_message,
             source = EXCLUDED.source
         """,
         {
@@ -477,6 +485,7 @@ def save_crowd_decision(
             "triggered": decision.triggered,
             "result": json.dumps(decision.result, ensure_ascii=False),
             "reasoning": decision.reasoning,
+            "public_message": decision.public_message,
             "source": decision.source,
         },
     )

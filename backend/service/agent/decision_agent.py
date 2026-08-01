@@ -36,6 +36,12 @@ class Decision:
     result: dict[str, Any] = field(default_factory=dict)
     reasoning: str = ""
     source: str = "llm"  # "llm" or "fallback"
+    # Citizen-facing text, produced in the SAME call as `reasoning` (see
+    # data/api.md line 638: public audience "不揭露內部 SOP、規則門檻或內部
+    # 推理內容") -- never derive this by truncating/reusing `reasoning`,
+    # which is written for the government/internal audience and cites SOP
+    # articles, thresholds and internal ops details the public must not see.
+    public_message: str = ""
 
 
 _SYSTEM_PROMPT = (
@@ -49,7 +55,11 @@ _SYSTEM_PROMPT = (
     '   {"triggered": true 或 false, "sop_section_id": "純數字字串（例如 "2"）或 null，'
     '不要加「第」「條」「SOP」「§」等文字或符號", '
     '"result": {...依情境而定的決定欄位，見指示...}, '
-    '"reasoning": "繁體中文說明你的判斷依據，需引用 SOP 條號與關鍵數字"}'
+    '"reasoning": "繁體中文說明你的判斷依據，給交通控制中心指揮官看，'
+    '需引用 SOP 條號、門檻數字與內部處置細節", '
+    '"public_message": "給一般民眾看的一句話繁體中文提醒，只講對民眾有用的行動建議'
+    '（例如改道、預留時間、避開哪一區），絕對不能出現 SOP 條號、門檻數字、規則名稱、'
+    '警力／號誌等內部調度細節；若 triggered 為 false 則留空字串"}'
 )
 
 
@@ -86,6 +96,7 @@ def decide(
             result=parsed.get("result", {}) or {},
             reasoning=parsed.get("reasoning", ""),
             source="llm",
+            public_message=parsed.get("public_message", "") or "",
         )
     except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
         print(
