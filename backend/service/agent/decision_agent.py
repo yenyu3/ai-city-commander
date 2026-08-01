@@ -115,12 +115,15 @@ def decide(
     )
     try:
         # decide_accident's JSON is the heaviest case (main_route/secondary_routes/
-        # multiple excluded candidates each with a reason, plus a full reasoning
-        # and public_message) -- 1500 truncated mid-string on a real call
-        # (2026-08-01: "Unterminated string" JSONDecodeError, silently fell
-        # back to rules/ since decide()'s except-clause catches parse failures).
-        # Sized for that worst case since every scope shares this one call.
-        raw = client.complete(system=_SYSTEM_PROMPT, prompt=prompt, max_tokens=3000)
+        # multiple excluded candidates each with a reason, a full reasoningSteps
+        # array, and public_message) -- 1500 truncated mid-string on a real call,
+        # then 3000 truncated again on a later real call (2026-08-02: both were
+        # "Unterminated string" JSONDecodeErrors, silently falling back to rules/
+        # since decide()'s except-clause catches parse failures). Matches the
+        # ceiling narrate_for_focus/answer_chat needed for the same reason
+        # (long reasoningSteps arrays) -- sized for the worst case since every
+        # scope shares this one call.
+        raw = client.complete(system=_SYSTEM_PROMPT, prompt=prompt, max_tokens=8000)
         parsed = _parse_json_response(raw)
         return Decision(
             triggered=bool(parsed["triggered"]),
@@ -178,4 +181,12 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Same long-JSON trailing-comma slip caught live in
+        # router_agent.py/chat.py's _parse_json_response -- one retry with
+        # trailing commas stripped before giving up and falling back. Does
+        # NOT recover a genuinely truncated response (unterminated string),
+        # which max_tokens above is sized to avoid in the first place.
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
