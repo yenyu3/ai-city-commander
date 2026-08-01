@@ -480,6 +480,11 @@ function shouldRefreshDecisionAt(timestamp: string): boolean {
 function collectDecisionLocationIds(state: AppState): string[] {
   const ids = new Set<string>();
 
+  // 小人（現場定位）代表使用者目前關心的地點，優先查詢，跟 Chat 的 userLocation 邏輯一致。
+  if (state.fieldInspectorPosition?.nearestRoadId) {
+    ids.add(state.fieldInspectorPosition.nearestRoadId);
+  }
+
   if (state.selectedStationId) ids.add(state.selectedStationId);
   if (state.selectedSegmentId) ids.add(state.selectedSegmentId);
 
@@ -584,7 +589,12 @@ function scheduleDecisionRetry(timestamp: string, locationId: string, retryAfter
 async function refreshDecisionForLocation(timestamp: string, locationId: string): Promise<void> {
   const scenarioAt = toScenarioAt(timestamp);
   const requestKey = `${scenarioAt}:${locationId}`;
-  if (decisionRequestKeys.has(requestKey)) return;
+  if (decisionRequestKeys.has(requestKey)) {
+    console.log(`[DEBUG] refreshDecisionForLocation DEDUPED key=${requestKey}`);
+    return;
+  }
+  console.log(`[DEBUG] refreshDecisionForLocation FIRING key=${requestKey}`);
+  console.trace(`[DEBUG] call stack for ${requestKey}`);
   decisionRequestKeys.add(requestKey);
 
   try {
@@ -628,7 +638,9 @@ function refreshDecisionsFromApi(timestamp: string): void {
   const state = useAppStore.getState();
   if (DATA_SOURCE !== "api" || !shouldRefreshDecisionAt(timestamp)) return;
 
-  for (const locationId of collectDecisionLocationIds(state)) {
+  const ids = collectDecisionLocationIds(state);
+  console.log(`[DEBUG] refreshDecisionsFromApi timestamp=${timestamp} ids=${JSON.stringify(ids)}`);
+  for (const locationId of ids) {
     void refreshDecisionForLocation(timestamp, locationId);
   }
 }
@@ -812,9 +824,11 @@ export const useAppStore = create<AppState>((set, get) => ({
   fieldInspectorLocateStatus: "idle",
 
   async init() {
+    console.log(`[DEBUG] init() called at ${Date.now()}`);
     try {
       const data = await loadAllData();
       if (DATA_SOURCE === "api") {
+        console.log(`[DEBUG] decisionRequestKeys.clear() from init(), had ${decisionRequestKeys.size} keys`);
         decisionRequestKeys.clear();
         const ticks = buildApiScenarioTicks();
         const firstTime = ticks[0];
@@ -910,6 +924,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     if (ticks.length === 0) return;
     const firstTime = ticks[0];
     if (DATA_SOURCE === "api") {
+      console.log(`[DEBUG] decisionRequestKeys.clear() from restart(), had ${decisionRequestKeys.size} keys`);
       decisionRequestKeys.clear();
       set({
         tickIndex: 0,

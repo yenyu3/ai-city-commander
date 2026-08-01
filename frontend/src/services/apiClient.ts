@@ -101,6 +101,7 @@ export async function getDecision(
   scenarioAt: string,
   locationId: string,
 ): Promise<ApiDecisionQueryResponse | null> {
+  console.log(`[DEBUG] apiClient.getDecision FETCH scenarioAt=${scenarioAt} locationId=${locationId} at ${Date.now()}`);
   try {
     return await apiFetch<ApiDecisionQueryResponse>(
       `/decisions?scenarioAt=${encodeURIComponent(scenarioAt)}&locationId=${encodeURIComponent(locationId)}`,
