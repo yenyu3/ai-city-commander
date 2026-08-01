@@ -102,9 +102,6 @@ export default function DecisionSummary({ showSummary = false }: { showSummary?:
               <span className={styles.eventTitle}>{narrativeSummary.headline}</span>
             </div>
           )}
-          <div className={styles.summaryBlock}>
-            <p className={styles.summaryText}>{narrativeSummary.text}</p>
-          </div>
           {narrativeSummary.sopRefs && narrativeSummary.sopRefs.length > 0 && (
             <div className={styles.metaRow}>
               <span className={styles.kind}>{narrativeSummary.sopRefs.join(" / ")}</span>

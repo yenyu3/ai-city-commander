@@ -17,7 +17,6 @@ export default function SituationOverview() {
         {pick(language, "周邊情勢摘要", "Situation Overview")}
       </span>
       {summary.headline && <strong className={styles.headline}>{summary.headline}</strong>}
-      <p className={styles.text}>{summary.text}</p>
     </div>
   );
 }
