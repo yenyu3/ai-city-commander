@@ -109,7 +109,7 @@ function getInitialViewerMode(): ViewerMode {
   return saved === "public" || saved === "government" ? saved : "government";
 }
 
-export const DEFAULT_PLAYBACK_SPEED_MS = 1500;
+export const DEFAULT_PLAYBACK_SPEED_MS = 500;
 
 const API_SCENARIO_START = "2026-05-20 17:00";
 const API_SCENARIO_END = "2026-05-20 23:00";

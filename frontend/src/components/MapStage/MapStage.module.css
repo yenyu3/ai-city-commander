@@ -101,7 +101,11 @@
   border: 1px solid var(--soft-border);
   border-radius: 999px;
   background: color-mix(in srgb, var(--panel), transparent 12%);
+  color: var(--text);
   backdrop-filter: blur(14px);
+  -webkit-backdrop-filter: blur(14px);
+  cursor: pointer;
+  touch-action: manipulation;
 }
 
 .iconBtn,
@@ -195,16 +199,16 @@
 .switch {
   position: relative;
   flex-shrink: 0;
+  display: block;
   width: 38px;
   height: 22px;
   border: 0;
   border-radius: 999px;
   background: var(--soft-border);
-  cursor: pointer;
   transition: background var(--transition-fast);
 }
 
-.switch[aria-checked="true"] {
+.displayToggle[aria-checked="true"] .switch {
   background: var(--text);
 }
 
@@ -220,7 +224,7 @@
   transition: transform var(--transition-fast);
 }
 
-.switch[aria-checked="true"] .switchKnob {
+.displayToggle[aria-checked="true"] .switchKnob {
   transform: translateX(16px);
 }
 
@@ -242,6 +246,9 @@
 
   .displayToggle {
     align-self: flex-start;
+    min-height: 44px;
+    padding: 8px 8px 8px 14px;
+    gap: 10px;
   }
 }
 
@@ -254,18 +261,58 @@
 
   .layerControls {
     right: 12px;
+    top: 12px;
+    flex-direction: row;
+    align-items: center;
+    gap: 6px;
+    padding: 7px;
   }
 
   .iconBtn,
   .activeIconBtn,
   .pegmanBtn,
   .activePegmanBtn {
-    width: var(--icon-btn-md);
-    height: var(--icon-btn-md);
+    width: 44px;
+    height: 44px;
+  }
+
+  .iconBtn svg,
+  .activeIconBtn svg {
+    width: 22px;
+    height: 22px;
+    stroke-width: 2.4;
+  }
+
+  .pegmanBtn,
+  .activePegmanBtn {
+    margin-top: 0;
+  }
+
+  .pegmanIcon {
+    width: 27px;
+    height: 34px;
   }
 
   .bottomOverlay {
     left: 12px;
     bottom: 12px;
+  }
+
+  .toggleLabel {
+    font-size: 14px;
+  }
+
+  .switch {
+    width: 48px;
+    height: 28px;
+  }
+
+  .switchKnob {
+    width: 24px;
+    height: 24px;
+  }
+
+  .displayToggle[aria-checked="true"] .switchKnob {
+    transform: translateX(20px);
   }
 }

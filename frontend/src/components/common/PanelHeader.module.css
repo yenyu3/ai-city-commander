@@ -78,3 +78,27 @@
   color: var(--bg);
   border-color: var(--text);
 }
+
+.btn svg,
+.actionBtn svg {
+  display: block;
+  flex: 0 0 auto;
+  stroke-width: 2.4;
+}
+
+@media (max-width: 820px) {
+  .btn {
+    display: none;
+  }
+
+  .actionBtn {
+    display: inline-flex;
+    width: 44px;
+    height: 44px;
+  }
+
+  .actionBtn svg {
+    width: 20px;
+    height: 20px;
+  }
+}

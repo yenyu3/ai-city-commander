@@ -2,6 +2,7 @@
   display: flex;
   flex-direction: column;
   height: 100vh;
+  height: 100dvh;
   width: 100vw;
   overflow: hidden;
   background:
@@ -75,8 +76,10 @@
      though programmatic scrollTo() still appears to work. */
   .app {
     height: 100vh;
+    height: 100dvh;
     overflow-y: auto;
     overflow-x: hidden;
+    -webkit-overflow-scrolling: touch;
   }
 
   .body,
@@ -86,7 +89,7 @@
       "map"
       "tabs";
     align-content: start;
-    padding: 14px;
+    padding: 14px 14px calc(96px + env(safe-area-inset-bottom));
     gap: 14px;
   }
 
@@ -106,5 +109,16 @@
   .mapCard {
     min-height: 620px;
     overflow: visible;
+  }
+}
+
+@media (max-width: 480px) {
+  .body,
+  .body[data-mode="public"] {
+    padding: 12px 10px calc(108px + env(safe-area-inset-bottom));
+  }
+
+  .mapCard {
+    min-height: 560px;
   }
 }

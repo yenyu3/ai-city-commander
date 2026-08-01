@@ -20,7 +20,6 @@ import styles from "./IncidentTimeline.module.css";
 const BASE_PLAYBACK_SPEED_MS = DEFAULT_PLAYBACK_SPEED_MS;
 const SPEED_OPTIONS = [
   { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
-  { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },
   { label: "2x", ms: BASE_PLAYBACK_SPEED_MS / 2 },
 ];
 
@@ -168,7 +167,7 @@ export default function IncidentTimeline() {
           onClick={() => (isPlaying ? pause() : play())}
           aria-label={isPlaying ? pick(language, "暫停", "Pause") : pick(language, "播放", "Play")}
         >
-          {isPlaying ? <Pause size={14} fill="currentColor" /> : <Play size={14} fill="currentColor" />}
+          {isPlaying ? <Pause size={18} fill="currentColor" /> : <Play size={18} fill="currentColor" />}
         </button>
         <button
           type="button"
@@ -177,7 +176,7 @@ export default function IncidentTimeline() {
           aria-label={pick(language, "重播", "Replay")}
           title={pick(language, "重播（清除所有事件點並從頭開始）", "Replay (clears all markers and restarts)")}
         >
-          <RotateCcw size={14} />
+          <RotateCcw size={18} />
         </button>
         <div className={styles.speedGroup}>
           {SPEED_OPTIONS.map((s) => (
