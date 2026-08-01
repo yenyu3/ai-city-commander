@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Play, Pause, RotateCcw } from "lucide-react";
-import { useAppStore } from "../../store/appStore";
+import { DEFAULT_PLAYBACK_SPEED_MS, useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayShortTime, formatDisplayTimestamp, parseTimestamp, timePct } from "../../utils/timeUtils";
@@ -17,7 +17,7 @@ interface TimelineMarker {
 }
 import styles from "./IncidentTimeline.module.css";
 
-const BASE_PLAYBACK_SPEED_MS = 1500;
+const BASE_PLAYBACK_SPEED_MS = DEFAULT_PLAYBACK_SPEED_MS;
 const SPEED_OPTIONS = [
   { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
   { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },
@@ -34,6 +34,7 @@ export default function IncidentTimeline() {
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
   const legDurationMs = useAppStore((s) => s.legDurationMs);
   const frozenPlayheadPct = useAppStore((s) => s.frozenPlayheadPct);
+  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const play = useAppStore((s) => s.play);
   const pause = useAppStore((s) => s.pause);
   const restart = useAppStore((s) => s.restart);
@@ -102,7 +103,6 @@ export default function IncidentTimeline() {
   const playheadPct = hasNext
     ? timePct(ticks[tickIndex + 1], start, end)
     : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
-  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const visibleMarkers = markers.filter((m) => displayedAlertIds.has(m.alert.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {

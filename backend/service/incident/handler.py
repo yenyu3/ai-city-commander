@@ -16,11 +16,10 @@ decision-vs-incident (see decision_routing.py's run_incident_flow). This is
 best-effort/non-blocking, same as before -- if it fails, the report simply
 isn't warm when the government queries it (still "processing").
 
-Always returns 202 -- per the doc, this never waits for judgment/report/
-publication to finish. `publication.status` stays "pending": there's no
-emergency-report/notice-generation pipeline built yet (see report/handler.py
-and publication/handler.py's own docstrings), so reporting it as "pending"
-is honest; nothing here fabricates a "published" status.
+Always returns 202: AI judgment and the internal report remain asynchronous.
+The public-safe notice and its daily manifest entry are written before the
+response so citizen clients polling CloudFront can discover the event without
+waiting for the longer internal decision/report pipeline.
 """
 from __future__ import annotations
 
@@ -88,6 +87,29 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         ContentType="application/json; charset=utf-8",
     )
 
+    # Publish the public-safe notice immediately. Frontends poll this day's
+    # CloudFront-served manifest and fetch this immutable notice by noticeId.
+    notice_id = f"PUB_{event_id}_v1"
+    public_notice = {
+        "noticeId": notice_id,
+        "alertId": event_id,
+        "eventId": event_id,
+        "publishedAt": context["scenarioAt"],
+        "location": incident.location,
+        "type": incident.type,
+        "severity": incident.severity,
+        "languages": ["zh"],
+        "messages": {
+            "zh": f"{incident.location}發生交通事件，請改道通行並預留額外時間。",
+        },
+    }
+    manifest_key, notice_key = s3_common.publish_public_notice(
+        date=date,
+        notice_id=notice_id,
+        alert_id=event_id,
+        notice=public_notice,
+    )
+
     # Best-effort cache warm -- not required for correctness (a GET
     # /api/decisions that lands before this finishes just computes it itself
     # instead of hitting a warm cache). mode="incident" tells the shared
@@ -112,9 +134,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "queuedAt": context["scenarioAt"],
             },
             "publication": {
-                "status": "pending",
-                "expectedNoticeId": f"PUB_{event_id}",
-                "publicManifestUrl": f"/public/{date}/manifest.json",
+                "status": "published",
+                "noticeId": notice_id,
+                "publicManifestUrl": f"/{manifest_key}",
+                "publicNoticeUrl": f"/{notice_key}",
             },
         },
     )

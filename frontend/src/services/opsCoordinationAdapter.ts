@@ -67,6 +67,10 @@ function formatPeriod(timestamp: string): string {
  * MVP 佔位資料：規則引擎目前沒有號誌秒數計算或跨機關派遣邏輯，這裡先用依事件種類
  * 模板化的假資料撐版面。介面維持 Promise 簽章，未來要換成真後端 API 時，
  * 呼叫端（SignalCoordinationSection / ProposalDocument）完全不用改。
+ *
+ * 阻塞原因：`GET /api/decisions` 的 `signalCoordination`/`crossSystemCoordination` 目前
+ * 範例仍是空物件 `{}`，沒有欄位可對照。見 docs/frontend-backend-coordination-issues.md 第 11 項、
+ * docs/frontend-mock-data-inventory.md。呼叫端已加上「初步建議」UI 提示，避免被誤認為真實後端資料。
  */
 export class TemplateOpsCoordinationAdapter implements OpsCoordinationAdapter {
   async getCoordinationPlan(alert: AlertRecord): Promise<OpsCoordinationPlan> {

@@ -1,4 +1,3 @@
-import { useLanguage } from "../../i18n";
 import DecisionSummary from "./DecisionSummary";
 import styles from "./DecisionTab.module.css";
 import ETEBreakdownCard from "./ETEBreakdownCard";
@@ -6,12 +5,12 @@ import MetricsSnapshot from "./MetricsSnapshot";
 import ReasoningChain from "./ReasoningChain";
 import RerouteSection from "./RerouteSection";
 import SignalCoordinationSection from "./SignalCoordinationSection";
+import SituationOverview from "./SituationOverview";
 
 export default function DecisionTab() {
-  const { language } = useLanguage();
-
   return (
     <div className={styles.wrap}>
+      <SituationOverview />
       <DecisionSummary />
       <ETEBreakdownCard />
       <section id="decision-reasoning" className={styles.section}>

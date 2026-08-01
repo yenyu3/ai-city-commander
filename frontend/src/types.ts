@@ -8,23 +8,27 @@ export type LaneStatus =
   | "Partial_Open";
 
 export interface TrafficSnapshot {
-  timestamp: string; // "2026-05-20 21:00"
+  observedAt: string; // "2026-05-20 21:00" (demo) / ISO 8601 (api), 對應後端 observedAt
   segmentId: string; // "RD_TPE_001"
+  /** 前端本地 join 補上的展示欄位（segmentDefs 查表），並非後端 city-state API 直接提供。 */
   roadName: string;
-  avgSpeed: number;
+  avgSpeedKph: number;
   vehicleCount: number;
   saturationScore: number; // 0~1+
   laneStatus: LaneStatus;
+  /** 後端 city-state traffic item 可能已附上壅塞分級，demo 模式維持本地 getTier() 計算。 */
+  tier?: Tier;
 }
 
 export interface CrowdSnapshot {
-  timestamp: string;
+  observedAt: string;
   stationId: string; // "BS_MRT_BL17"
+  /** 前端本地 join 補上的展示欄位（站名查表），並非後端 city-state API 直接提供。 */
   locationName: string;
   userCount: number;
-  stayTimeAvg: number;
+  stayTimeAvgMinutes: number;
   growthRate: number; // -1 ~ +N
-  roamingPct: number; // 0~1 decimal (parsed from "8%")
+  roamingUserPct: number; // 0~1 decimal (parsed from "8%")
 }
 
 export interface RoadSegment {
@@ -56,12 +60,21 @@ export interface LiveIncident {
   eventId: string;
   type: string;
   location: string;
-  affectedSegment: string; // RD_ or BS_ prefixed
+  affectedSegmentId: string; // RD_ or BS_ prefixed
+  /** 新版後端 API request/response 範例未包含此欄位，僅 demo 資料/展示用。 */
   affectedRoad?: string;
   status: IncidentStatus;
   severity: IncidentSeverity;
   description: string;
-  timestamp: string;
+  occurredAt: string;
+  /** POST /api/incidents 202 and GET /api/incidents/{eventId}/report processing state. */
+  processing?: { jobId: string; status: string; retryAfterSeconds?: number };
+  /** GET /api/incidents/{eventId}/report ready response. Kept for status/display only; /internal URLs are not browser-readable. */
+  reportDownloadUrl?: string;
+  /** POST /api/incidents 202 回應 publication.publicManifestUrl（後端相對路徑），demo 模式不會有值。 */
+  publicManifestUrl?: string;
+  /** POST /api/incidents 202 回應 publication.publicNoticeUrl，公告已產生時直接可用的完整連結，優先於 publicManifestUrl。 */
+  publicNoticeUrl?: string;
 }
 
 export type Tier = "Normal" | "B" | "A";
@@ -120,6 +133,12 @@ export interface RerouteSnapshot {
 export interface AlertRecord {
   id: string;
   timestamp: string;
+  /** 觸發此 alert 的原始事件 eventId（若有），incident report polling uses this in api mode. */
+  sourceIncidentId?: string;
+  /** Backend decision snapshot id, used to update an existing API-driven alert. */
+  decisionId?: string;
+  /** The locationId used when querying GET /api/decisions. */
+  decisionLocationId?: string;
   kind:
     | "city_response"
     | "accident"
@@ -132,6 +151,7 @@ export interface AlertRecord {
   /** SOP 規定的實際處置步驟（非觸發條件數據），供「建議行動」區塊顯示。 */
   actions: string[];
   llmText?: string;
+  publicMessage?: string;
   sopRef?: string;
   ete?: number;
   eteBase?: number;
@@ -147,6 +167,10 @@ export interface AlertRecord {
   wasElevated?: boolean;
   /** 事件解決的時間戳記 */
   resolvedAt?: string;
+  /** 對應 LiveIncident.publicManifestUrl（後端相對路徑），供民眾模式「現場公告」連到官方公告用。 */
+  publicManifestUrl?: string;
+  /** 對應 LiveIncident.publicNoticeUrl，公告已產生時直接可用的完整連結，優先於 publicManifestUrl。 */
+  publicNoticeUrl?: string;
 }
 
 export interface FieldInspectorPosition {
@@ -167,6 +191,10 @@ export interface ChatMessage {
   audience: ViewerMode;
   sopRefs?: string[];
   ruleResult?: unknown;
+  /** 政府端提問的逐步推理鏈（POST /api/chat/messages 的 answer.reasoningSteps）；
+   *  民眾模式後端固定回空陣列，所以實際上只有政府對話會有內容。 */
+  reasoningSteps?: ReasoningStep[];
+  isPending?: boolean;
   createdAt: number;
 }
 

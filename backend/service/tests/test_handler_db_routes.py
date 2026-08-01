@@ -28,6 +28,7 @@ DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:aicity@localhost:5432/aicity"
 )
 _BUCKET = "test-internal-results"
+_PUBLIC_BUCKET = "test-public-results"
 
 try:
     _probe = psycopg.connect(DATABASE_URL, connect_timeout=2)
@@ -45,12 +46,14 @@ pytestmark = pytest.mark.skipif(
 def clean_test_rows(monkeypatch):
     monkeypatch.setenv("DATABASE_URL", DATABASE_URL)
     monkeypatch.setenv("INTERNAL_RESULTS_BUCKET", _BUCKET)
+    monkeypatch.setenv("PUBLIC_RESULTS_BUCKET", _PUBLIC_BUCKET)
     monkeypatch.delenv("DECISION_GENERATOR_WORKER_FUNCTION_NAME", raising=False)
     _delete_test_rows()
     with moto.mock_aws():
         import boto3
 
         boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=_BUCKET)
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=_PUBLIC_BUCKET)
         yield
         # worker_invoke.py's local fallback runs decision-generator-worker in
         # a background daemon thread (no real Lambda to invoke asynchronously
@@ -151,7 +154,8 @@ class TestIncidentCreate:
         parsed = json.loads(result["body"])
         assert parsed["incident"]["eventId"] == "TEST_EVT_CREATE"
         assert parsed["processing"]["status"] == "queued"
-        assert parsed["publication"]["status"] == "pending"
+        assert parsed["publication"]["status"] == "published"
+        assert parsed["publication"]["noticeId"] == "PUB_TEST_EVT_CREATE_v1"
 
         conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
         fetched = db.fetch_incident(conn, "TEST_EVT_CREATE")
@@ -164,6 +168,22 @@ class TestIncidentCreate:
             Bucket=_BUCKET, Key="incidents/2026-05-20/TEST_EVT_CREATE.json"
         )
         assert json.loads(obj["Body"].read())["incident"]["eventId"] == "TEST_EVT_CREATE"
+
+        manifest = boto3.client("s3", region_name="us-east-1").get_object(
+            Bucket=_PUBLIC_BUCKET, Key="public/2026-05-20/manifest.json"
+        )
+        assert json.loads(manifest["Body"].read())["notices"] == [{
+            "noticeId": "PUB_TEST_EVT_CREATE_v1",
+            "alertId": "TEST_EVT_CREATE",
+            "noticeKey": "public/2026-05-20/notices/PUB_TEST_EVT_CREATE_v1.json",
+            "publishedAt": "2026-05-20T21:00:00+08:00",
+        }]
+
+        notice = boto3.client("s3", region_name="us-east-1").get_object(
+            Bucket=_PUBLIC_BUCKET,
+            Key="public/2026-05-20/notices/PUB_TEST_EVT_CREATE_v1.json",
+        )
+        assert json.loads(notice["Body"].read())["eventId"] == "TEST_EVT_CREATE"
 
     def test_missing_field_is_400(self):
         result = incident_handler(

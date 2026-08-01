@@ -32,50 +32,6 @@
   margin-bottom: 2px;
 }
 
-.option {
-  display: grid;
-  grid-template-columns: 16px minmax(0, 1fr);
-  align-items: start;
-  gap: 6px;
-  width: 100%;
-  text-align: left;
-  background: transparent;
-  border: 1px solid var(--soft-border);
-  color: var(--text-dim);
-  border-radius: var(--radius-sm);
-  padding: 6px 10px;
-  font-size: var(--text-base);
-  line-height: 1.35;
-  white-space: normal;
-  transition: border-color var(--transition-fast), color var(--transition-fast);
-}
-
-.optionIcon {
-  line-height: 1.35;
-  text-align: center;
-}
-
-.optionText {
-  min-width: 0;
-  overflow-wrap: anywhere;
-}
-
-.option:hover:not(:disabled) {
-  border-color: var(--crit);
-  color: var(--crit);
-}
-
-.option:disabled {
-  cursor: default;
-  opacity: 0.5;
-}
-
-.optionDone {
-  background: color-mix(in srgb, var(--ok), transparent 92%);
-  border-color: color-mix(in srgb, var(--ok), transparent 70%);
-  color: var(--ok);
-}
-
 .dropzone {
   display: flex;
   align-items: center;

@@ -15,7 +15,7 @@ export default function IncidentPriorityList({ limit }: { limit?: number }) {
   if (activeIncidents.length === 0) return null;
 
   const focusIncident = (incident: (typeof activeIncidents)[number]) => {
-    const target = incident.affectedSegment ?? incident.affectedRoad;
+    const target = incident.affectedSegmentId ?? incident.affectedRoad;
     if (!target) return;
     if (target.startsWith("BS_")) setSelectedStation(target);
     else setSelectedSegment(target);
@@ -24,8 +24,8 @@ export default function IncidentPriorityList({ limit }: { limit?: number }) {
   const sorted = [...activeIncidents].sort((a, b) => {
     const sevDiff = (SEVERITY_RANK[a.severity] ?? 9) - (SEVERITY_RANK[b.severity] ?? 9);
     if (sevDiff !== 0) return sevDiff;
-    const affectedA = (a.affectedSegment ? 1 : 0) + (a.affectedRoad ? 1 : 0);
-    const affectedB = (b.affectedSegment ? 1 : 0) + (b.affectedRoad ? 1 : 0);
+    const affectedA = (a.affectedSegmentId ? 1 : 0) + (a.affectedRoad ? 1 : 0);
+    const affectedB = (b.affectedSegmentId ? 1 : 0) + (b.affectedRoad ? 1 : 0);
     if (affectedB !== affectedA) return affectedB - affectedA;
     return (incidentEte[b.eventId] ?? 0) - (incidentEte[a.eventId] ?? 0);
   }).slice(0, limit);

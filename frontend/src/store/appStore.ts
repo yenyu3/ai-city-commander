@@ -26,7 +26,16 @@ import { checkMultilingualNeeded } from "../engine/multilingualCheck";
 import { calcETE } from "../engine/ete";
 import { llmAdapter, type PublicContext, type StructuredEvent } from "../services/llmAdapter";
 import { runWhatIf } from "../services/chatEngine";
-import { computeTimeOffsetMs, reformatEmbeddedTimestamp, parseTimestamp, timePct } from "../utils/timeUtils";
+import { computeTimeOffsetMs, reformatEmbeddedTimestamp, parseTimestamp, timePct, toScenarioAt } from "../utils/timeUtils";
+import { DATA_SOURCE } from "../config";
+import * as apiClient from "../services/apiClient";
+import {
+  adaptChatAnswer,
+  adaptCrowd,
+  adaptDecisionListItemToPartialAlert,
+  adaptTraffic,
+} from "../services/apiAdapter";
+import type { ApiDecisionListItem, ApiDecisionQueryResponse } from "../types/api";
 
 export interface SegmentRuntimeState {
   segmentId: string;
@@ -51,14 +60,14 @@ export interface StationRuntimeState {
   stayTimeAvg: number;
 }
 
-function latestByTimestamp<T extends { timestamp: string }>(
+function latestByTimestamp<T extends { observedAt: string }>(
   rows: T[],
   timestamp: string,
 ): T | null {
   let best: T | null = null;
   for (const row of rows) {
-    if (row.timestamp <= timestamp) {
-      if (!best || row.timestamp > best.timestamp) best = row;
+    if (row.observedAt <= timestamp) {
+      if (!best || row.observedAt > best.observedAt) best = row;
     }
   }
   return best;
@@ -100,6 +109,35 @@ function getInitialViewerMode(): ViewerMode {
   return saved === "public" || saved === "government" ? saved : "government";
 }
 
+export const DEFAULT_PLAYBACK_SPEED_MS = 1500;
+
+const API_SCENARIO_START = "2026-05-20 17:00";
+const API_SCENARIO_END = "2026-05-20 23:00";
+const API_SCENARIO_STEP_MINUTES = 5;
+const decisionRequestKeys = new Set<string>();
+
+function buildApiScenarioTicks(): string[] {
+  const [date, startTime] = API_SCENARIO_START.split(" ");
+  const [, endTime] = API_SCENARIO_END.split(" ");
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+  const startTotal = startHour * 60 + startMinute;
+  const endTotal = endHour * 60 + endMinute;
+  const ticks: string[] = [];
+
+  for (let total = startTotal; total <= endTotal; total += API_SCENARIO_STEP_MINUTES) {
+    const hour = String(Math.floor(total / 60)).padStart(2, "0");
+    const minute = String(total % 60).padStart(2, "0");
+    ticks.push(`${date} ${hour}:${minute}`);
+  }
+
+  return ticks;
+}
+
+function getDefaultApiScenarioTime(): string {
+  return API_SCENARIO_START;
+}
+
 interface AppState {
   isLoading: boolean;
   loadError: string | null;
@@ -130,6 +168,8 @@ interface AppState {
   crowd: CrowdSnapshot[];
   segmentDefs: Map<string, RoadSegment>;
   allIncidents: LiveIncident[];
+  /** 站名對照表；api 模式不補 demo 站名，後端未提供時直接顯示 stationId。 */
+  stationNames: Record<string, string>;
 
   segments: Record<string, SegmentRuntimeState>;
   stations: Record<string, StationRuntimeState>;
@@ -155,6 +195,9 @@ interface AppState {
   chatMessages: ChatMessage[];
   fieldInspectorPosition: FieldInspectorPosition | null;
   fieldInspectorLocateStatus: FieldInspectorLocateStatus;
+  /** GET /api/decisions 回應的 situationSummary：查詢 locationId 周邊的整體情勢摘要（LLM 生成的一段話），
+   *  跟個別 alert 的 llmText/publicMessage 是不同層級的內容，兩種模式都要顯示。 */
+  citySituationSummary: string | null;
 
   init(): Promise<void>;
   play(): void;
@@ -167,6 +210,9 @@ interface AppState {
   seekTime(timestamp: string): void;
   injectIncident(incidentId: string, suppressToast?: boolean): void;
   addIncidents(incidents: LiveIncident[]): void;
+  /** 統一的事件注入入口：demo 模式行為與 injectIncident 相同；api 模式下另外呼叫
+   *  POST /api/incidents 並在背景嘗試用 GET /api/decisions 升級對應 alert（見協調文件第 1、2 項）。 */
+  submitIncident(incident: LiveIncident): void;
   sendChatMessage(question: string, audience?: ViewerMode, locationContext?: FieldInspectorPosition | null): void;
   setViewerMode(mode: ViewerMode): void;
   toggleMapExpanded(): void;
@@ -190,10 +236,11 @@ function computeSegmentState(
       segmentId: id,
       name: def.name,
       saturation,
-      avgSpeed: latest?.avgSpeed ?? 0,
+      avgSpeed: latest?.avgSpeedKph ?? 0,
       vehicleCount: latest?.vehicleCount ?? 0,
       laneStatus: latest?.laneStatus ?? "Normal",
-      tier: getTier(saturation),
+      // api 模式下 city-state 可能已附上壅塞分級；demo 模式沒有這個欄位，維持本地計算。
+      tier: latest?.tier ?? getTier(saturation),
       isCityTrigger: CITY_TRIGGER_SEGMENTS.includes(id),
       isEvacuationMain: false,
       isEvacuationSecondary: false,
@@ -218,8 +265,8 @@ function computeStationState(
       name: latest.locationName,
       userCount: latest.userCount,
       growthRate: latest.growthRate,
-      roamingPct: latest.roamingPct,
-      stayTimeAvg: latest.stayTimeAvg,
+      roamingPct: latest.roamingUserPct,
+      stayTimeAvg: latest.stayTimeAvgMinutes,
     };
   }
   return result;
@@ -234,18 +281,18 @@ function buildAccidentAlert(
   segmentsState: Record<string, SegmentRuntimeState>,
 ): { alert: AlertRecord; mainRoute: string | null; secondaryRoutes: string[] } {
   const route = selectEvacuationRoute(
-    incident.affectedSegment,
+    incident.affectedSegmentId,
     incident.location,
     segmentDefs,
     segmentSaturation,
   );
 
-  const incidentSegName = segToName(segmentDefs, incident.affectedSegment);
+  const incidentSegName = segToName(segmentDefs, incident.affectedSegmentId);
   const mainRouteName = route.mainRoute
     ? segToName(segmentDefs, route.mainRoute)
     : "（無符合條件之替代路段）";
 
-  const incidentSat = segmentSaturation.get(incident.affectedSegment) ?? 0;
+  const incidentSat = segmentSaturation.get(incident.affectedSegmentId) ?? 0;
   const mainSat = route.mainRoute
     ? (segmentSaturation.get(route.mainRoute) ?? 0)
     : incidentSat;
@@ -258,11 +305,11 @@ function buildAccidentAlert(
     order: order++,
     status: "info",
     title: `觸發車禍應變規則`,
-    detail: `status=${incident.status} ∈ {Closed,Blocked,Restricted}、severity=${incident.severity} ∈ {High,Critical}、affected_segment=${incident.affectedSegment} 以 RD_ 開頭`,
+    detail: `status=${incident.status} ∈ {Closed,Blocked,Restricted}、severity=${incident.severity} ∈ {High,Critical}、affected_segment=${incident.affectedSegmentId} 以 RD_ 開頭`,
     sopRef: "SOP §2",
   });
 
-  const incidentSeg = segmentDefs.get(incident.affectedSegment);
+  const incidentSeg = segmentDefs.get(incident.affectedSegmentId);
   for (const altId of incidentSeg?.alternatives ?? []) {
     const excludedEntry = route.excluded.find((e) => e.segmentId === altId);
     if (excludedEntry) {
@@ -303,6 +350,9 @@ function buildAccidentAlert(
   const alert: AlertRecord = {
     id: nextId("alert"),
     timestamp,
+    sourceIncidentId: incident.eventId,
+    publicManifestUrl: incident.publicManifestUrl,
+    publicNoticeUrl: incident.publicNoticeUrl,
     kind: "accident",
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
@@ -323,7 +373,7 @@ function buildAccidentAlert(
     reasoningSteps: steps,
     segmentMetrics: {
       segmentName: incidentSegName,
-      flowPcuh: segmentsState[incident.affectedSegment]?.vehicleCount ?? 0,
+      flowPcuh: segmentsState[incident.affectedSegmentId]?.vehicleCount ?? 0,
       saturation: incidentSat,
     },
     reroute: {
@@ -342,7 +392,7 @@ function buildAccidentAlert(
     title: alert.title,
     data: {
       segmentName: incidentSegName,
-      incidentDesc: reformatEmbeddedTimestamp(incident.description, incident.timestamp, timeOffsetMs),
+      incidentDesc: reformatEmbeddedTimestamp(incident.description, incident.occurredAt, timeOffsetMs),
       statusLabel: incident.status === "Closed" ? "全線封鎖" : incident.status,
       severity: incident.severity,
       mainRoute: mainRouteName,
@@ -406,6 +456,275 @@ function tryFireOnce(key: string): boolean {
   return true;
 }
 
+/** 用 city-state API 回傳的單筆數值覆蓋本地 segment 的「即時數值」欄位，但保留
+ *  isCityTrigger/isEvacuationMain/isEvacuationSecondary/isIncidentSource 等由
+ *  injectIncident 在本地算出的旗標，避免非同步回應蓋掉期間發生的注入結果。 */
+function checkIncidentResolution(
+  trackedId: string,
+  _timestamp: string,
+  segments: Record<string, SegmentRuntimeState>,
+  stations: Record<string, StationRuntimeState>,
+): { elevated: boolean; recovered: boolean } {
+  const segment = segments[trackedId];
+  if (segment) {
+    const elevated =
+      segment.tier !== "Normal" ||
+      segment.laneStatus === "Blocked" ||
+      segment.laneStatus === "Critical" ||
+      segment.saturation >= 0.85;
+    return { elevated, recovered: !elevated };
+  }
+
+  const station = stations[trackedId];
+  if (station) {
+    const elevated = station.growthRate >= 0.3 || station.roamingPct >= 0.3;
+    return { elevated, recovered: !elevated };
+  }
+
+  return { elevated: false, recovered: false };
+}
+
+function mergeApiSegmentData(
+  local: SegmentRuntimeState,
+  apiRow: TrafficSnapshot | undefined,
+): SegmentRuntimeState {
+  if (!apiRow) return local;
+  const saturation = apiRow.saturationScore;
+  return {
+    ...local,
+    saturation,
+    avgSpeed: apiRow.avgSpeedKph,
+    vehicleCount: apiRow.vehicleCount,
+    laneStatus: apiRow.laneStatus,
+    tier: apiRow.tier ?? getTier(saturation),
+  };
+}
+
+function collectDecisionLocationIds(state: AppState): string[] {
+  // 小人在場：只查小人所在路段
+  if (state.fieldInspectorPosition?.nearestRoadId) {
+    return [state.fieldInspectorPosition.nearestRoadId];
+  }
+
+  // 小人不在：打 global
+  return ["global"];
+}
+
+function isDecisionProcessing(
+  res: ApiDecisionQueryResponse,
+): res is Extract<ApiDecisionQueryResponse, { processing: unknown }> {
+  return "processing" in res;
+}
+
+function resolveDecisionLocationName(locationId: string, state: AppState): string {
+  return state.segmentDefs.get(locationId)?.name ?? state.stationNames[locationId] ?? locationId;
+}
+
+function upsertDecisionAlert(
+  timestamp: string,
+  locationId: string,
+  decisionId: string,
+  partial: Partial<AlertRecord>,
+): void {
+  useAppStore.setState((s) => {
+    const existing = s.alerts.find(
+      (a) => a.decisionId === decisionId || a.decisionLocationId === locationId,
+    );
+    const alert: AlertRecord = {
+      id: existing?.id ?? nextId("alert"),
+      timestamp,
+      sourceIncidentId: partial.sourceIncidentId,
+      decisionId,
+      decisionLocationId: locationId,
+      kind: partial.kind ?? "accident",
+      title: partial.title ?? resolveDecisionLocationName(locationId, s),
+      ruleSummary: partial.publicMessage ?? partial.llmText ?? partial.title ?? locationId,
+      actions: partial.actions ?? [],
+      llmText: partial.llmText,
+      publicMessage: partial.publicMessage,
+      sopRef: partial.sopRef,
+      ete: partial.ete,
+      reasoningSteps: partial.reasoningSteps,
+      reroute: partial.reroute,
+    };
+
+    if (existing) {
+      return {
+        alerts: s.alerts.map((a) => (a.id === existing.id ? { ...a, ...alert } : a)),
+        activeAlertId: existing.id,
+        reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+      };
+    }
+
+    return {
+      alerts: [alert, ...s.alerts],
+      activeAlertId: alert.id,
+      displayedAlertIds: new Set(s.displayedAlertIds).add(alert.id),
+      reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+    };
+  });
+}
+
+function scheduleDecisionRetry(timestamp: string, locationId: string, retryAfterSeconds = 10): void {
+  window.setTimeout(() => {
+    decisionRequestKeys.delete(`${toScenarioAt(timestamp)}:${locationId}`);
+    void refreshDecisionForLocation(timestamp, locationId);
+  }, Math.max(1, retryAfterSeconds) * 1000);
+}
+
+async function refreshDecisionForLocation(timestamp: string, locationId: string): Promise<void> {
+  const scenarioAt = toScenarioAt(timestamp);
+  const requestKey = `${scenarioAt}:${locationId}`;
+  if (decisionRequestKeys.has(requestKey)) {
+    console.log(`[DEBUG] refreshDecisionForLocation DEDUPED key=${requestKey}`);
+    return;
+  }
+  console.log(`[DEBUG] refreshDecisionForLocation FIRING key=${requestKey}`);
+  console.trace(`[DEBUG] call stack for ${requestKey}`);
+  decisionRequestKeys.add(requestKey);
+
+  try {
+    const res = await apiClient.getDecision(scenarioAt, locationId);
+    if (!res) return;
+    if (useAppStore.getState().currentTime !== timestamp) return;
+
+    if (isDecisionProcessing(res)) {
+      if (res.processing.status !== "failed") {
+        scheduleDecisionRetry(timestamp, locationId, res.processing.retryAfterSeconds);
+      }
+      return;
+    }
+
+    const state = useAppStore.getState();
+    useAppStore.setState({ citySituationSummary: res.situationSummary ?? null });
+    const decisionsToRender: ApiDecisionListItem[] = res.decisions;
+    for (const decision of decisionsToRender) {
+      const partial = adaptDecisionListItemToPartialAlert(
+        decision,
+        resolveDecisionLocationName(decision.locationId, state),
+        state.segmentDefs,
+      );
+      upsertDecisionAlert(timestamp, decision.locationId, decision.decisionId, partial);
+    }
+  } catch (err) {
+    console.warn("[appStore] GET /api/decisions failed; keeping local decision state", err);
+  }
+}
+
+function refreshDecisionsFromApi(timestamp: string): void {
+  const state = useAppStore.getState();
+  if (DATA_SOURCE !== "api") return;
+
+  const ids = collectDecisionLocationIds(state);
+  if (ids.length === 0) return;
+
+  console.log(`[DEBUG] refreshDecisionsFromApi timestamp=${timestamp} ids=${JSON.stringify(ids)}`);
+  for (const locationId of ids) {
+    void refreshDecisionForLocation(timestamp, locationId);
+  }
+}
+
+/**
+ * api 模式下，在本地（demo 資料集算出的）segments/stations 已經同步 commit 之後，
+ * 背景打 GET /api/city-state 拿真正的即時數值來升級畫面。demo 的 ticks 時間軸仍是
+ * 資料來源（後端沒有「有效 scenarioAt 清單」API），只有數值改用後端回應，
+ * 見 docs/frontend-backend-coordination-issues.md 第 1、5 項。
+ */
+async function refreshCityStateFromApi(timestamp: string): Promise<void> {
+  try {
+    const { segmentDefs, stationNames } = useAppStore.getState();
+    const scenarioAt = toScenarioAt(timestamp);
+    const res = await apiClient.getCityState(scenarioAt);
+    // 時鐘可能已經前進到下一個 tick，過期回應直接捨棄。
+    if (useAppStore.getState().currentTime !== timestamp) return;
+
+    const trafficRows = adaptTraffic(res.traffic, segmentDefs);
+    const crowdRows = adaptCrowd(res.crowd, stationNames);
+    const trafficBySegment = new Map(trafficRows.map((t) => [t.segmentId, t] as const));
+
+    useAppStore.setState((s) => {
+      const segments: Record<string, SegmentRuntimeState> = { ...s.segments };
+      for (const row of trafficRows) {
+        const def = segmentDefs.get(row.segmentId);
+        const base = segments[row.segmentId] ?? {
+          segmentId: row.segmentId,
+          name: def?.name ?? row.roadName,
+          saturation: 0,
+          avgSpeed: 0,
+          vehicleCount: 0,
+          laneStatus: "Normal",
+          tier: "Normal",
+          isCityTrigger: CITY_TRIGGER_SEGMENTS.includes(row.segmentId),
+          isEvacuationMain: false,
+          isEvacuationSecondary: false,
+          isIncidentSource: false,
+        };
+        segments[row.segmentId] = mergeApiSegmentData(base, trafficBySegment.get(row.segmentId));
+      }
+      const stations: Record<string, StationRuntimeState> = { ...s.stations };
+      for (const c of crowdRows) {
+        stations[c.stationId] = {
+          stationId: c.stationId,
+          name: c.locationName,
+          userCount: c.userCount,
+          growthRate: c.growthRate,
+          roamingPct: c.roamingUserPct,
+          stayTimeAvg: c.stayTimeAvgMinutes,
+        };
+      }
+      return {
+        traffic: trafficRows,
+        crowd: crowdRows,
+        segments,
+        stations,
+      };
+    });
+    refreshDecisionsFromApi(timestamp);
+  } catch (err) {
+    console.warn("[appStore] GET /api/city-state failed; keeping clean state", err);
+  }
+}
+
+/** Poll incident reports; incident-specific worker output does not live in GET /api/decisions. */
+async function pollIncidentReport(eventId: string, scenarioAt: string): Promise<void> {
+  const maxAttempts = 4;
+  let delayMs = 3000;
+  for (let attempt = 0; attempt < maxAttempts; attempt++) {
+    await new Promise((resolve) => setTimeout(resolve, delayMs));
+    try {
+      const res = await apiClient.getIncidentReport(eventId, "json", scenarioAt);
+      useAppStore.setState((s) => {
+        const processing =
+          res.report.status === "ready"
+            ? { jobId: res.report.jobId, status: "ready" }
+            : {
+                jobId: res.report.jobId,
+                status: res.report.status,
+                retryAfterSeconds: res.report.retryAfterSeconds,
+              };
+        const updateIncident = (incident: LiveIncident): LiveIncident =>
+          incident.eventId === eventId
+            ? {
+                ...incident,
+                processing,
+                reportDownloadUrl:
+                  res.report.status === "ready" ? res.report.downloadUrl : incident.reportDownloadUrl,
+              }
+            : incident;
+        return {
+          allIncidents: s.allIncidents.map(updateIncident),
+          activeIncidents: s.activeIncidents.map(updateIncident),
+        };
+      });
+      if (res.report.status === "ready") return;
+      delayMs = Math.max(1, res.report.retryAfterSeconds ?? 3) * 1000;
+    } catch (err) {
+      console.warn("[appStore] GET /api/incidents/{eventId}/report failed; keeping local incident alert", err);
+      return;
+    }
+  }
+}
+
 export const useAppStore = create<AppState>((set, get) => ({
   isLoading: true,
   loadError: null,
@@ -418,7 +737,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tickIndex: 0,
   currentTime: "",
   isPlaying: false,
-  playbackSpeed: 1500,
+  playbackSpeed: DEFAULT_PLAYBACK_SPEED_MS,
   legDurationMs: 0,
   legStartedAt: 0,
   frozenPlayheadPct: null,
@@ -428,6 +747,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   crowd: [],
   segmentDefs: new Map(),
   allIncidents: [],
+  stationNames: {},
 
   segments: {},
   stations: {},
@@ -447,14 +767,53 @@ export const useAppStore = create<AppState>((set, get) => ({
   chatMessages: [],
   fieldInspectorPosition: null,
   fieldInspectorLocateStatus: "idle",
+  citySituationSummary: null,
 
   async init() {
+    console.log(`[DEBUG] init() called at ${Date.now()}`);
     try {
       const data = await loadAllData();
+      if (DATA_SOURCE === "api") {
+        console.log(`[DEBUG] decisionRequestKeys.clear() from init(), had ${decisionRequestKeys.size} keys`);
+        decisionRequestKeys.clear();
+        const ticks = buildApiScenarioTicks();
+        const firstTime = ticks[0];
+        set({
+          isLoading: false,
+          traffic: [],
+          crowd: [],
+          segmentDefs: data.segments,
+          allIncidents: [],
+          stationNames: data.stationNames,
+          ticks,
+          tickIndex: 0,
+          currentTime: firstTime,
+          legDurationMs: computeLegDurationMs(ticks, 0, get().playbackSpeed),
+          legStartedAt: Date.now(),
+          timeOffsetMs: 0,
+          segments: {},
+          stations: {},
+          roadPaths: data.roadPaths,
+          stationCoords: data.stationCoords,
+          mapCenter: data.mapCenter,
+          activeIncidents: [],
+          injectedIncidentIds: new Set(),
+          incidentEte: {},
+          alerts: [],
+          firedAlertKeys: new Set(),
+          displayedAlertIds: new Set(),
+          reasoningLog: [],
+          chatMessages: [],
+          citySituationSummary: null,
+        });
+        void refreshCityStateFromApi(firstTime);
+        return;
+      }
+
       const tickSet = new Set<string>();
-      data.traffic.forEach((t) => tickSet.add(t.timestamp));
-      data.crowd.forEach((c) => tickSet.add(c.timestamp));
-      data.incidents.forEach((i) => tickSet.add(i.timestamp));
+      data.traffic.forEach((t) => tickSet.add(t.observedAt));
+      data.crowd.forEach((c) => tickSet.add(c.observedAt));
+      data.incidents.forEach((i) => tickSet.add(i.occurredAt));
       const ticks = Array.from(tickSet).sort();
       const firstTime = ticks[0];
 
@@ -464,6 +823,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         crowd: data.crowd,
         segmentDefs: data.segments,
         allIncidents: data.incidents,
+        stationNames: data.stationNames,
         ticks,
         tickIndex: 0,
         currentTime: firstTime,
@@ -510,6 +870,29 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { ticks, traffic, crowd, segmentDefs, playbackSpeed } = get();
     if (ticks.length === 0) return;
     const firstTime = ticks[0];
+    if (DATA_SOURCE === "api") {
+      console.log(`[DEBUG] decisionRequestKeys.clear() from restart(), had ${decisionRequestKeys.size} keys`);
+      decisionRequestKeys.clear();
+      set({
+        tickIndex: 0,
+        currentTime: firstTime,
+        activeIncidents: [],
+        injectedIncidentIds: new Set(),
+        incidentEte: {},
+        alerts: [],
+        activeAlertId: null,
+        firedAlertKeys: new Set(),
+        displayedAlertIds: new Set(),
+        reasoningLog: [],
+        citySituationSummary: null,
+        isPlaying: true,
+        legDurationMs: computeLegDurationMs(ticks, 0, playbackSpeed),
+        legStartedAt: Date.now(),
+        frozenPlayheadPct: null,
+      });
+      void refreshCityStateFromApi(firstTime);
+      return;
+    }
     set({
       tickIndex: 0,
       currentTime: firstTime,
@@ -567,7 +950,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (futureAlerts.length > 0) {
         const futureAlertIds = new Set(futureAlerts.map((a) => a.id));
         const futureIncidentIds = new Set(
-          allIncidents.filter((i) => i.timestamp > timestamp).map((i) => i.eventId),
+          allIncidents.filter((i) => i.occurredAt > timestamp).map((i) => i.eventId),
         );
         const newInjected = new Set([...injectedIncidentIds].filter((id) => !futureIncidentIds.has(id)));
         const newFiredKeys = new Set(
@@ -577,7 +960,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           alerts: s.alerts
             .filter((a) => !futureAlertIds.has(a.id))
             .map((a) => (a.resolvedAt && a.resolvedAt > timestamp ? { ...a, resolvedAt: undefined, wasElevated: undefined } : a)),
-          activeIncidents: s.activeIncidents.filter((i) => i.timestamp <= timestamp),
+          activeIncidents: s.activeIncidents.filter((i) => i.occurredAt <= timestamp),
           injectedIncidentIds: newInjected,
           firedAlertKeys: newFiredKeys,
           displayedAlertIds: new Set([...s.displayedAlertIds].filter((id) => !futureAlertIds.has(id))),
@@ -587,6 +970,18 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     const newSegments = computeSegmentState(segmentDefs, traffic, timestamp);
     const newStations = computeStationState(crowd, timestamp);
+
+    if (DATA_SOURCE === "api") {
+      set({
+        tickIndex: newIndex,
+        currentTime: timestamp,
+        legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
+        legStartedAt: Date.now(),
+        frozenPlayheadPct: null,
+      });
+      void refreshCityStateFromApi(timestamp);
+      return;
+    }
 
     // §4.1 城市觸發路段：tier 由未觸發變為觸發時彈出告警
     for (const id of CITY_TRIGGER_SEGMENTS) {
@@ -633,13 +1028,13 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // §4.5 捷運分流
     const toCrowdSnapshot = (s: StationRuntimeState, ts: string): CrowdSnapshot => ({
-      timestamp: ts,
+      observedAt: ts,
       stationId: s.stationId,
       locationName: s.name,
       userCount: s.userCount,
-      stayTimeAvg: s.stayTimeAvg,
+      stayTimeAvgMinutes: s.stayTimeAvg,
       growthRate: s.growthRate,
-      roamingPct: s.roamingPct,
+      roamingUserPct: s.roamingPct,
     });
     const bl17Prev = prevStations["BS_MRT_BL17"];
     const bl17Next = newStations["BS_MRT_BL17"];
@@ -683,19 +1078,19 @@ export const useAppStore = create<AppState>((set, get) => ({
     const domePrev = prevStations["BS_TPE_DOME"];
     const domeNext = newStations["BS_TPE_DOME"];
     if (domeNext) {
-      const domeHistory = crowd.filter((c) => c.stationId === "BS_TPE_DOME" && c.timestamp < timestamp);
+      const domeHistory = crowd.filter((c) => c.stationId === "BS_TPE_DOME" && c.observedAt < timestamp);
       const domeCurrentSnapshot: CrowdSnapshot = {
-        timestamp,
+        observedAt: timestamp,
         stationId: "BS_TPE_DOME",
         locationName: domeNext.name,
         userCount: domeNext.userCount,
-        stayTimeAvg: domeNext.stayTimeAvg,
+        stayTimeAvgMinutes: domeNext.stayTimeAvg,
         growthRate: domeNext.growthRate,
-        roamingPct: domeNext.roamingPct,
+        roamingUserPct: domeNext.roamingPct,
       };
       const wasTriggered = domePrev
         ? checkDomeDispersal(
-            crowd.filter((c) => c.stationId === "BS_TPE_DOME" && c.timestamp < get().currentTime),
+            crowd.filter((c) => c.stationId === "BS_TPE_DOME" && c.observedAt < get().currentTime),
             { ...domeCurrentSnapshot, growthRate: domePrev.growthRate },
           )
         : false;
@@ -731,23 +1126,23 @@ export const useAppStore = create<AppState>((set, get) => ({
     // §4.8 多語通報（任一站點跨過 30% 漫遊比例門檻）
     const prevMultilingualIds = new Set(
       checkMultilingualNeeded(Object.values(prevStations).map((s) => ({
-        timestamp,
+        observedAt: timestamp,
         stationId: s.stationId,
         locationName: s.name,
         userCount: s.userCount,
-        stayTimeAvg: s.stayTimeAvg,
+        stayTimeAvgMinutes: s.stayTimeAvg,
         growthRate: s.growthRate,
-        roamingPct: s.roamingPct,
+        roamingUserPct: s.roamingPct,
       }))).map((s) => s.stationId),
     );
     const nowMultilingual = checkMultilingualNeeded(Object.values(newStations).map((s) => ({
-      timestamp,
+      observedAt: timestamp,
       stationId: s.stationId,
       locationName: s.name,
       userCount: s.userCount,
-      stayTimeAvg: s.stayTimeAvg,
+      stayTimeAvgMinutes: s.stayTimeAvg,
       growthRate: s.growthRate,
-      roamingPct: s.roamingPct,
+      roamingUserPct: s.roamingPct,
     })));
     for (const st of nowMultilingual) {
       if (!prevMultilingualIds.has(st.stationId) && tryFireOnce(`multilingual:${st.stationId}:${timestamp}`)) {
@@ -756,7 +1151,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           timestamp,
           kind: "multilingual",
           title: `${st.locationName} 觸發多語通報`,
-          ruleSummary: `Roaming_User_Pct=${(st.roamingPct * 100).toFixed(0)}%（門檻 >=30%）`,
+          ruleSummary: `Roaming_User_Pct=${(st.roamingUserPct * 100).toFixed(0)}%（門檻 >=30%）`,
           actions: [
             "該區域簡訊與看板訊息同時提供多國語言版本（中/英/日/韓）",
             "發布時間格式統一為 YYYY-MM-DD HH:MM",
@@ -768,7 +1163,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           .summarize({
             kind: "multilingual",
             title: alert.title,
-            data: { stationName: st.locationName, roamingPct: `${(st.roamingPct * 100).toFixed(0)}%` },
+            data: { stationName: st.locationName, roamingPct: `${(st.roamingUserPct * 100).toFixed(0)}%` },
             sopRef: "SOP §6",
           })
           .then((text) => {
@@ -809,7 +1204,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
     // 事件自動注入：時鐘走到事件時間點時自動注入（同時仍保留手動按鈕注入能力）
     for (const incident of allIncidents) {
-      if (incident.timestamp <= timestamp && !injectedIncidentIds.has(incident.eventId)) {
+      if (incident.occurredAt <= timestamp && !injectedIncidentIds.has(incident.eventId)) {
         get().injectIncident(incident.eventId, isManualSeek);
       }
     }
@@ -822,6 +1217,51 @@ export const useAppStore = create<AppState>((set, get) => ({
         ...incidents.filter((i) => !s.allIncidents.some((e) => e.eventId === i.eventId)),
       ],
     }));
+  },
+
+  submitIncident(incident) {
+    if (DATA_SOURCE === "api") {
+      const scenarioAt = toScenarioAt(get().currentTime || getDefaultApiScenarioTime());
+      apiClient
+        .createIncident({
+          context: { scenarioAt },
+          incident: {
+            eventId: incident.eventId,
+            type: incident.type,
+            location: incident.location,
+            affectedSegmentId: incident.affectedSegmentId,
+            status: incident.status,
+            severity: incident.severity,
+            description: incident.description,
+            occurredAt: toScenarioAt(incident.occurredAt),
+          },
+        })
+        .then((res) => {
+          const submittedIncident: LiveIncident = {
+            ...incident,
+            processing: res.processing,
+            publicManifestUrl: res.publication?.publicManifestUrl,
+            publicNoticeUrl: res.publication?.publicNoticeUrl,
+          };
+          set((s) => ({
+            allIncidents: [
+              ...s.allIncidents,
+              ...(!s.allIncidents.some((e) => e.eventId === submittedIncident.eventId)
+                ? [submittedIncident]
+                : []),
+            ],
+          }));
+          get().injectIncident(submittedIncident.eventId);
+          void pollIncidentReport(submittedIncident.eventId, scenarioAt);
+        })
+        .catch((err) => {
+          console.warn("[appStore] POST /api/incidents failed; no local demo result was generated", err);
+        });
+      return;
+    }
+
+    get().addIncidents([incident]);
+    get().injectIncident(incident.eventId);
   },
 
   injectIncident(incidentId, suppressToast = false) {
@@ -856,8 +1296,8 @@ export const useAppStore = create<AppState>((set, get) => ({
         incidentEte: { ...s.incidentEte, [incident.eventId]: alert.ete ?? 0 },
         segments: {
           ...s.segments,
-          [incident.affectedSegment]: {
-            ...s.segments[incident.affectedSegment],
+          [incident.affectedSegmentId]: {
+            ...s.segments[incident.affectedSegmentId],
             isIncidentSource: true,
           },
           ...(mainRoute
@@ -883,20 +1323,23 @@ export const useAppStore = create<AppState>((set, get) => ({
           order: 2,
           status: "final",
           title: `產出人工指揮派遣建議`,
-          detail: `受影響路段：${segToName(segmentDefs, incident.affectedSegment)}；警力每路口 2 人`,
+          detail: `受影響路段：${segToName(segmentDefs, incident.affectedSegmentId)}；警力每路口 2 人`,
           sopRef: "SOP §5",
         },
       ];
       const alert: AlertRecord = {
         id: nextId("alert"),
         timestamp: get().currentTime,
+        sourceIncidentId: incident.eventId,
+        publicManifestUrl: incident.publicManifestUrl,
+        publicNoticeUrl: incident.publicNoticeUrl,
         kind: "signal_failure",
-        title: `${segToName(segmentDefs, incident.affectedSegment)} 號誌故障`,
+        title: `${segToName(segmentDefs, incident.affectedSegmentId)} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
         actions: [
           "產出人工指揮派遣建議",
-          `調度警力至 ${segToName(segmentDefs, incident.affectedSegment)}，每路口 2 人`,
-          `CMS 加註：「${segToName(segmentDefs, incident.affectedSegment)} 號誌故障，請依現場指揮通行」`,
+          `調度警力至 ${segToName(segmentDefs, incident.affectedSegmentId)}，每路口 2 人`,
+          `CMS 加註：「${segToName(segmentDefs, incident.affectedSegmentId)} 號誌故障，請依現場指揮通行」`,
         ],
         sopRef: "SOP §5",
         reasoningSteps: steps,
@@ -906,7 +1349,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         .summarize({
           kind: "signal_failure",
           title: alert.title,
-          data: { segmentName: segToName(segmentDefs, incident.affectedSegment) },
+          data: { segmentName: segToName(segmentDefs, incident.affectedSegmentId) },
           sopRef: "SOP §5",
         })
         .then((text) => {
@@ -919,7 +1362,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           order: 1,
           status: "fail",
           title: "不觸發車禍應變規則",
-          detail: `affected_segment=${incident.affectedSegment} 非 RD_ 開頭，即使 status/severity 皆符合亦不套用 §2 疏散演算法`,
+          detail: `affected_segment=${incident.affectedSegmentId} 非 RD_ 開頭，即使 status/severity 皆符合亦不套用 §2 疏散演算法`,
           sopRef: "SOP §2",
         },
         {
@@ -935,6 +1378,9 @@ export const useAppStore = create<AppState>((set, get) => ({
       const alert: AlertRecord = {
         id: nextId("alert"),
         timestamp: get().currentTime,
+        sourceIncidentId: incident.eventId,
+        publicManifestUrl: incident.publicManifestUrl,
+        publicNoticeUrl: incident.publicNoticeUrl,
         kind: "accident",
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,
@@ -955,6 +1401,63 @@ export const useAppStore = create<AppState>((set, get) => ({
       audience,
       createdAt: Date.now(),
     };
+
+    if (DATA_SOURCE === "api") {
+      const placeholderId = nextId("chat");
+      const placeholder: ChatMessage = {
+        id: placeholderId,
+        role: "assistant",
+        text: isPublic ? "查詢中…" : "研判中…",
+        audience,
+        isPending: true,
+        createdAt: Date.now(),
+      };
+      set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
+
+      const nearbyRoad = resolveNearbyRoad(get(), locationContext);
+      apiClient
+        .postChatMessage({
+          context: {
+            scenarioAt: toScenarioAt(get().currentTime),
+            audience,
+            userLocation: locationContext?.nearestRoadId
+              ? {
+                  locationId: locationContext.nearestRoadId,
+                  locationName: nearbyRoad?.name ?? locationContext.nearestRoadId,
+                  locationType: "road_segment",
+                }
+              : undefined,
+          },
+          message: question,
+        })
+        .then((res) => {
+          const answerMsg = adaptChatAnswer(placeholderId, res.answer, audience);
+          set((s) => ({
+            chatMessages: s.chatMessages.map((m) =>
+              m.id === placeholderId ? { ...answerMsg, isPending: false } : m,
+            ),
+          }));
+        })
+        .catch((err) => {
+          console.warn("[appStore] POST /api/chat/messages 失敗", err);
+          set((s) => ({
+            chatMessages: s.chatMessages.map((m) =>
+              m.id === placeholderId
+                ? { ...m, text: "（連線後端失敗，請稍後再試 / Failed to reach backend, please retry）" }
+                : m,
+            ),
+          }));
+        })
+        .finally(() => {
+          set((s) => ({
+            chatMessages: s.chatMessages.map((m) =>
+              m.id === placeholderId ? { ...m, isPending: false } : m,
+            ),
+          }));
+        });
+      return;
+    }
+
     const { ruleResult, sopExcerpt, sopRefs } = runWhatIf(question);
     const placeholder: ChatMessage = {
       id: nextId("chat"),
@@ -964,6 +1467,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 市民模式不揭露 SOP 條號
       sopRefs: isPublic ? undefined : sopRefs,
       ruleResult,
+      isPending: true,
       createdAt: Date.now(),
     };
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
@@ -976,7 +1480,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     answer.then((text) => {
       set((s) => ({
         chatMessages: s.chatMessages.map((m) =>
-          m.id === placeholder.id ? { ...m, text } : m,
+          m.id === placeholder.id ? { ...m, text, isPending: false } : m,
         ),
       }));
     });
@@ -1003,6 +1507,8 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   setFieldInspectorPosition(position) {
     set({ fieldInspectorPosition: position });
+    // set 是同步的，完成後 get() 已能拿到新的 position
+    refreshDecisionsFromApi(get().currentTime);
   },
 
   setFieldInspectorLocateStatus(status) {

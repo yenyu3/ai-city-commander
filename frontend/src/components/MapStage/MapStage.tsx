@@ -17,12 +17,9 @@ const CLICK_MOVE_THRESHOLD_PX = 6;
 /** 兩個固定示範定位點：
  *  near — 光復南路（RD_TPE_002）忠孝東路口，距路徑 < 50m，時間軸推到 22:10 後必定觸發「鄰近事件」判定。
  *  far  — 敦化南路二段（RD_TPE_012）南端，地圖西南角邊緣，距所有進行中事件 > 2km，觸發「遠離事件」文案。 */
-const DEMO_LOCATIONS = {
-  near: { lng: 121.5576, lat: 25.0413 },
-  far: { lng: 121.5486, lat: 25.021 },
-} as const;
-
 export default function MapStage() {
+  const isLoading = useAppStore((s) => s.isLoading);
+  const loadError = useAppStore((s) => s.loadError);
   const segments = useAppStore((s) => s.segments);
   const stations = useAppStore((s) => s.stations);
   const viewerMode = useAppStore((s) => s.viewerMode);
@@ -64,6 +61,7 @@ export default function MapStage() {
 
   const segmentList = useMemo(() => Object.values(segments), [segments]);
   const stationList = useMemo(() => Object.values(stations), [stations]);
+  const mapDataPending = isLoading || roadPaths.size === 0;
   const cameraClass =
     cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
 
@@ -262,6 +260,21 @@ export default function MapStage() {
             pauseAnimation={isDragging}
           />
         </div>
+
+        {(mapDataPending || loadError) && (
+          <div className={styles.mapLoading} role="status" aria-live="polite">
+            <span className={styles.mapLoadingTitle}>
+              {loadError
+                ? pick(language, "地圖資料載入失敗", "Map data failed to load")
+                : pick(language, "地圖資料載入中", "Loading map data")}
+            </span>
+            <span className={styles.mapLoadingText}>
+              {loadError
+                ? loadError
+                : pick(language, "正在讀取路網與站點座標", "Reading road network and station coordinates")}
+            </span>
+          </div>
+        )}
 
         <div className={styles.bottomOverlay}>
           <div className={styles.displayToggle}>

@@ -1,7 +1,8 @@
-import { ChevronDown, Clock3 } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronDown, Clock3, ExternalLink } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Language } from "../../i18n";
 import { pick, useLanguage } from "../../i18n";
+import { resolvePublicNoticeUrl } from "../../services/publicNotices";
 import { useAppStore } from "../../store/appStore";
 import type { AlertRecord, Tier } from "../../types";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -102,6 +103,7 @@ export default function PublicAssistantPanel() {
   const alerts = useAppStore((s) => s.alerts);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const citySituationSummary = useAppStore((s) => s.citySituationSummary);
 
   const topRoads = useMemo(
     () =>
@@ -141,25 +143,48 @@ export default function PublicAssistantPanel() {
       )
     : pick(language, "城市狀態", "City status");
 
-  const heroReason = latestAlert
-    ? getPublicAlertText(latestAlert, language)
-    : mostAffectedRoad
-      ? pick(
-          language,
-          `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
-          `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
-        )
-      : pick(
-          language,
-          "目前主要道路與人流狀態穩定，可依原計畫移動。",
-          "Roads and crowds are stable. You can continue as planned.",
-        );
+  // situationSummary 是後端依 focus locationId（小人現場定位鄰近路段）生成的周邊情勢摘要，
+  // 內容比本地算出的 heroReason 更完整（含鄰近路段、人潮熱點），有拿到就優先顯示。
+  const heroReason = citySituationSummary
+    ? citySituationSummary
+    : latestAlert
+      ? getPublicAlertText(latestAlert, language)
+      : mostAffectedRoad
+        ? pick(
+            language,
+            `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
+            `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
+          )
+        : pick(
+            language,
+            "目前主要道路與人流狀態穩定，可依原計畫移動。",
+            "Roads and crowds are stable. You can continue as planned.",
+          );
 
   const statusWord = STATUS_WORD[heroTone];
   const toneLabel = TONE_LABEL[heroTone];
   const updatedAt = formatDisplayShortTime(currentTime, timeOffsetMs);
 
   const advisories = alerts.slice(0, 3);
+
+  // 現場公告卡片的「查看官方公告」連結：POST /api/incidents 回應若已直接給
+  // publication.publicNoticeUrl 就直接使用；只有舊資料只帶 publicManifestUrl（後端相對路徑，
+  // 當天 manifest.json）時，才需要額外 fetch 並比對 alertId 取得真正的公告內容網址
+  // （見 services/publicNotices.ts）。
+  const [noticeUrls, setNoticeUrls] = useState<Record<string, string | null>>({});
+  const pendingNoticeFetches = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const alert of advisories) {
+      if (alert.publicNoticeUrl) continue;
+      if (!alert.publicManifestUrl) continue;
+      if (alert.id in noticeUrls || pendingNoticeFetches.current.has(alert.id)) continue;
+      pendingNoticeFetches.current.add(alert.id);
+      resolvePublicNoticeUrl(alert.publicManifestUrl, alert.id)
+        .then((url) => setNoticeUrls((prev) => ({ ...prev, [alert.id]: url })))
+        .catch(() => setNoticeUrls((prev) => ({ ...prev, [alert.id]: null })))
+        .finally(() => pendingNoticeFetches.current.delete(alert.id));
+    }
+  }, [advisories, noticeUrls]);
 
   return (
     <div className={styles.wrap}>
@@ -263,6 +288,17 @@ export default function PublicAssistantPanel() {
                       `Est. ${alert.ete} min until recovery`,
                     )}
                   </span>
+                )}
+                {(alert.publicNoticeUrl ?? noticeUrls[alert.id]) && (
+                  <a
+                    className={styles.advisoryLink}
+                    href={alert.publicNoticeUrl ?? noticeUrls[alert.id]!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink size={11} aria-hidden="true" />
+                    {pick(language, "查看官方公告", "View official notice")}
+                  </a>
                 )}
               </div>
             ))}
