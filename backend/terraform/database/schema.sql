@@ -85,6 +85,12 @@ CREATE TABLE decision_jobs (
   completed_at timestamptz
 );
 
+-- Decision content (triggered/result/reasoning/publicMessage) is cached in
+-- S3, not here (2026-08-01: moved off Postgres -- see s3_cache.py). RDS only
+-- tracks that a decision job happened, via decision_jobs above; the
+-- (event_id/segment_id/station_id, scenario_at[, kind]) -> Decision cache
+-- lookup itself is an S3 GetObject under decisions/{scenarioAt}/{locationId}.json
+-- (data/api.md's internal-results bucket layout).
 CREATE INDEX decision_jobs_status_idx
   ON decision_jobs (status, created_at);
 

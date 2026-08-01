@@ -30,7 +30,16 @@ variable "bedrock_agentcore_runtime_arn" {
 }
 
 variable "bedrock_model_id" {
-  description = "Optional Bedrock foundation model ID used by the decision-generator worker."
+  description = <<-EOT
+    Bedrock model ID (or cross-region inference profile ID, e.g.
+    "us.anthropic.claude-sonnet-4-6") for direct Bedrock invocation via the
+    Lambda's IAM role -- see agent/llm_client.py::BedrockLLMClient and
+    s3_cache.py (the decision cache also reads/writes this same account's
+    S3 buckets). Leave null to disable (falls through to whatever else is
+    configured, or the deterministic rules/ fallback). Requires the AWS
+    account to have completed the one-time Anthropic model use-case form in
+    the Bedrock console before first use.
+  EOT
   type        = string
   default     = null
   nullable    = true
