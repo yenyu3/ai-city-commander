@@ -13,11 +13,6 @@ export default function SegmentKpi() {
     list.length > 0
       ? list.reduce((sum, s) => sum + s.saturation, 0) / list.length
       : 0;
-  const worst = list.reduce<(typeof list)[0] | null>(
-    (best, s) => (!best || s.saturation > best.saturation ? s : best),
-    null,
-  );
-
   return (
     <div className={styles.grid}>
       <div className={styles.card}>
@@ -46,13 +41,6 @@ export default function SegmentKpi() {
           {avgSat.toFixed(2)} <span className={styles.unit}>/ 1</span>
         </span>
       </div>
-      {/* <div className={`${styles.card} ${styles.wide}`}>
-        <span className={styles.label}>{pick(language, "最壅塞路段", "Most congested")}</span>
-        <span className={styles.value}>
-          {worst ? `${worst.name}` : "—"}
-          {worst && <span className={styles.unit}> · sat. {worst.saturation.toFixed(2)}</span>}
-        </span>
-      </div> */}
     </div>
   );
 }

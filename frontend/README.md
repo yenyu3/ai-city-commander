@@ -46,6 +46,36 @@ npm run test       # 執行測試
 npm run lint       # 執行 lint
 ```
 
+## 部署至 S3 與 CloudFront
+
+Terraform 完成部署後，從 repository root 執行：
+
+```bash
+./frontend/scripts/deploy.sh
+```
+
+此腳本會從 `backend/terraform` 的 Terraform state 取得 frontend bucket 與 CloudFront
+distribution ID，依序執行 `npm ci`、`npm run build`、同步 `dist/` 到私有 S3 origin，最後
+invalidation `/` 與 `/index.html`。Vite 指紋化的 JS／CSS 資產使用一年快取；`index.html`
+不快取，以便使用者取得最新資產清單。
+
+若既有 Terraform state 尚未包含 `cloudfront_distribution_id` output，腳本會自動從既有
+`aws_cloudfront_distribution.frontend` state resource 讀取 ID，因此不需要為此單獨執行
+`terraform apply`。
+
+預設沿用目前 shell 的 `AWS_PROFILE` 與 AWS region。CI 或沒有本機 Terraform state 的環境可
+直接提供下列變數：
+
+```bash
+FRONTEND_BUCKET_NAME='frontend-hack' \
+CLOUDFRONT_DISTRIBUTION_ID='<distribution-id>' \
+FRONTEND_URL='https://<cloudfront-domain>' \
+./frontend/scripts/deploy.sh
+```
+
+建置前仍須設定 `.env.local`（至少 `VITE_MAPBOX_TOKEN`）；Vite 的 `VITE_*` 變數會在建置時
+寫入靜態檔，請勿在其中放入任何私密憑證。
+
 ## 資料來源：`demo` / `api`
 
 `.env.local` 的 `VITE_DATA_SOURCE`（`demo`｜`api`，預設 `demo`）決定前端從哪裡取得城市狀態資料：
