@@ -34,6 +34,7 @@ export default function IncidentTimeline() {
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
   const legDurationMs = useAppStore((s) => s.legDurationMs);
   const frozenPlayheadPct = useAppStore((s) => s.frozenPlayheadPct);
+  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const play = useAppStore((s) => s.play);
   const pause = useAppStore((s) => s.pause);
   const restart = useAppStore((s) => s.restart);
@@ -102,7 +103,6 @@ export default function IncidentTimeline() {
   const playheadPct = hasNext
     ? timePct(ticks[tickIndex + 1], start, end)
     : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
-  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const visibleMarkers = markers.filter((m) => displayedAlertIds.has(m.alert.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {

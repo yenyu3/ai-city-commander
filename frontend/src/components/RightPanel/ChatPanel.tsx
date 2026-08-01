@@ -84,7 +84,20 @@ export default function ChatPanel({
         )}
         {messages.map((m) => (
           <div key={m.id} className={`${styles.bubble} ${m.role === "user" ? styles.user : styles.assistant}`}>
-            <div className={styles.bubbleText}>{m.text}</div>
+            <div className={styles.bubbleText}>
+              {m.isPending ? (
+                <span className={styles.thinking} aria-label="Thinking">
+                  Thinking
+                  <span className={styles.thinkingDots} aria-hidden="true">
+                    <span>.</span>
+                    <span>.</span>
+                    <span>.</span>
+                  </span>
+                </span>
+              ) : (
+                m.text
+              )}
+            </div>
             {!isPublic && m.sopRefs && m.sopRefs.length > 0 && (
               <div className={styles.refRow}>
                 {m.sopRefs.map((ref) => {

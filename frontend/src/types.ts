@@ -67,10 +67,14 @@ export interface LiveIncident {
   severity: IncidentSeverity;
   description: string;
   occurredAt: string;
-  /** POST /api/incidents 202 回應帶回的非同步處理狀態，demo 模式不會有值。 */
-  processing?: { jobId: string; status: string };
+  /** POST /api/incidents 202 and GET /api/incidents/{eventId}/report processing state. */
+  processing?: { jobId: string; status: string; retryAfterSeconds?: number };
+  /** GET /api/incidents/{eventId}/report ready response. Kept for status/display only; /internal URLs are not browser-readable. */
+  reportDownloadUrl?: string;
   /** POST /api/incidents 202 回應 publication.publicManifestUrl（後端相對路徑），demo 模式不會有值。 */
   publicManifestUrl?: string;
+  /** POST /api/incidents 202 回應 publication.publicNoticeUrl，公告已產生時直接可用的完整連結，優先於 publicManifestUrl。 */
+  publicNoticeUrl?: string;
 }
 
 export type Tier = "Normal" | "B" | "A";
@@ -129,7 +133,7 @@ export interface RerouteSnapshot {
 export interface AlertRecord {
   id: string;
   timestamp: string;
-  /** 觸發此 alert 的原始事件 eventId（若有），用來在 api 模式下比對 GET /api/decisions 的結果。 */
+  /** 觸發此 alert 的原始事件 eventId（若有），incident report polling uses this in api mode. */
   sourceIncidentId?: string;
   /** Backend decision snapshot id, used to update an existing API-driven alert. */
   decisionId?: string;
@@ -165,6 +169,8 @@ export interface AlertRecord {
   resolvedAt?: string;
   /** 對應 LiveIncident.publicManifestUrl（後端相對路徑），供民眾模式「現場公告」連到官方公告用。 */
   publicManifestUrl?: string;
+  /** 對應 LiveIncident.publicNoticeUrl，公告已產生時直接可用的完整連結，優先於 publicManifestUrl。 */
+  publicNoticeUrl?: string;
 }
 
 export interface FieldInspectorPosition {
@@ -188,6 +194,7 @@ export interface ChatMessage {
   /** 政府端提問的逐步推理鏈（POST /api/chat/messages 的 answer.reasoningSteps）；
    *  民眾模式後端固定回空陣列，所以實際上只有政府對話會有內容。 */
   reasoningSteps?: ReasoningStep[];
+  isPending?: boolean;
   createdAt: number;
 }
 

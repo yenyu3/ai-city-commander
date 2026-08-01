@@ -661,6 +661,7 @@ function NetworkGraph({
     maxVehicleCount,
     onSegmentClick,
     roads,
+    roadNameCharacterSet,
     selectedSegmentId,
   ]);
 

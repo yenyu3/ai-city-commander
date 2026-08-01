@@ -82,12 +82,23 @@ export interface ApiCreateIncidentResponse {
   };
   publication?: {
     status: string;
-    expectedNoticeId?: string;
+    noticeId?: string;
     publicManifestUrl?: string;
+    publicNoticeUrl?: string;
   };
 }
 
 // 3. GET /api/incidents/{eventId}/report
+/** 對照 2026-08-01 backend/service/report/handler.py 原始碼修正：這支 API 本身還是
+ *  非同步輪詢（202 meta+report{status:processing} -> 200 meta+report{status:ready,
+ *  downloadUrl}），跟 GET /api/decisions 是同一種模式，不是同步直接回報告內容。 */
+export interface ApiReportProcessing {
+  eventId: string;
+  jobId: string;
+  status: "processing";
+  retryAfterSeconds?: number;
+}
+
 export interface ApiReportReady {
   eventId: string;
   jobId: string;
@@ -98,19 +109,41 @@ export interface ApiReportReady {
   downloadUrl: string;
 }
 
-export interface ApiReportPending {
-  eventId: string;
-  jobId: string;
-  status: "processing" | "queued" | "failed";
-  retryAfterSeconds?: number;
-  errorMessage?: string;
-}
-
-export type ApiReport = ApiReportReady | ApiReportPending;
+export type ApiReport = ApiReportProcessing | ApiReportReady;
 
 export interface ApiReportResponse {
   meta: ApiMeta;
   report: ApiReport;
+}
+
+/** `ApiReportReady.downloadUrl`（例如 "/internal/emergency-reports/{date}/{eventId}/
+ *  report-v1.json"）指向的檔案內容本身——對照 backend/service/report_builder.py 的
+ *  build_and_save_report() 寫入格式。
+ *
+ *  目前無法從前端直接 fetch：downloadUrl 指到 internal-results bucket，該 bucket 在
+ *  terraform/storage.tf 設了 aws_s3_bucket_public_access_block（完全封鎖公開存取），
+ *  且 terraform/api.tf 的 API Gateway route table 也沒有任何 "/internal/*" 對應路由——
+ *  這條路徑目前是後端回應裡一個寫好但打不通的欄位，不是前端可以修的問題（report/
+ *  handler.py 本身已經有 S3 client，只是用 head_object 探測是否存在，並未把內容讀出來
+ *  塞進回應）。留著這個型別只是記錄「檔案內容長什麼樣」，供之後後端把內容直接回傳、
+ *  或前端拿到可用下載機制時對照使用。 */
+export interface ApiIncidentReportContent {
+  eventId: string;
+  sopSectionId?: string;
+  generatedAt: string;
+  incident: {
+    type: string;
+    location: string;
+    affectedSegment: string;
+    status: string;
+    severity: string;
+    description: string;
+  };
+  classification?: Record<string, unknown>;
+  /** AI/規則產生的完整研判說明；`source: "fallback"` 時代表當下沒有可用 LLM，改用 SOP 規則生成。 */
+  reasoning: string;
+  publicMessage?: string;
+  source: string;
 }
 
 // 4. GET /api/decisions

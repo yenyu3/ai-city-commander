@@ -352,6 +352,7 @@ function buildAccidentAlert(
     timestamp,
     sourceIncidentId: incident.eventId,
     publicManifestUrl: incident.publicManifestUrl,
+    publicNoticeUrl: incident.publicNoticeUrl,
     kind: "accident",
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
@@ -684,69 +685,41 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
   }
 }
 
-/**
- * 注入事件後，背景嘗試用 GET /api/decisions 升級本地 rule engine 已產生的 alert。
- * 後端注入事件與 decisions 快照的關係尚未明朗（見協調文件第 2 項），所以這裡是
- * 「best-effort 升級，拿不到就維持本地結果」，不是唯一資料來源。
- */
-async function pollDecisionForIncident(eventId: string, locationId: string, scenarioAt: string): Promise<void> {
+/** Poll incident reports; incident-specific worker output does not live in GET /api/decisions. */
+async function pollIncidentReport(eventId: string, scenarioAt: string): Promise<void> {
   const maxAttempts = 4;
-  const delayMs = 4000;
+  let delayMs = 3000;
   for (let attempt = 0; attempt < maxAttempts; attempt++) {
     await new Promise((resolve) => setTimeout(resolve, delayMs));
     try {
-      const res = await apiClient.getDecision(scenarioAt, locationId);
-      if (!res) continue; // DECISION_NOT_READY，再重試
-      if (isDecisionProcessing(res)) continue;
-      const state = useAppStore.getState();
-      const decision = res.decisions.find((d) => d.locationId === locationId) ?? res.decisions[0];
-      if (!decision) continue;
-      const partial = adaptDecisionListItemToPartialAlert(
-        decision,
-        resolveDecisionLocationName(decision.locationId, state),
-        state.segmentDefs,
-      );
-      const decisionId = decision.decisionId;
-      const decisionLocationId = decision.locationId;
+      const res = await apiClient.getIncidentReport(eventId, "json", scenarioAt);
       useAppStore.setState((s) => {
-        const existing = s.alerts.find((a) => a.sourceIncidentId === eventId);
-        if (existing) {
-          return {
-            alerts: s.alerts.map((a) =>
-              a.sourceIncidentId === eventId
-                ? { ...a, ...partial, decisionId, decisionLocationId }
-                : a,
-            ),
-          };
-        }
-
-        const alertId = nextId("alert");
-        const alert: AlertRecord = {
-          id: alertId,
-          timestamp: scenarioAt,
-          sourceIncidentId: eventId,
-          decisionId,
-          decisionLocationId,
-          kind: partial.kind ?? "accident",
-          title: partial.title ?? eventId,
-          ruleSummary: partial.llmText ?? partial.title ?? eventId,
-          actions: partial.actions ?? [],
-          llmText: partial.llmText,
-          publicMessage: partial.publicMessage,
-          sopRef: partial.sopRef,
-          ete: partial.ete,
-          reasoningSteps: partial.reasoningSteps,
-          reroute: partial.reroute,
-        };
+        const processing =
+          res.report.status === "ready"
+            ? { jobId: res.report.jobId, status: "ready" }
+            : {
+                jobId: res.report.jobId,
+                status: res.report.status,
+                retryAfterSeconds: res.report.retryAfterSeconds,
+              };
+        const updateIncident = (incident: LiveIncident): LiveIncident =>
+          incident.eventId === eventId
+            ? {
+                ...incident,
+                processing,
+                reportDownloadUrl:
+                  res.report.status === "ready" ? res.report.downloadUrl : incident.reportDownloadUrl,
+              }
+            : incident;
         return {
-          alerts: [alert, ...s.alerts],
-          displayedAlertIds: new Set(s.displayedAlertIds).add(alertId),
-          reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
+          allIncidents: s.allIncidents.map(updateIncident),
+          activeIncidents: s.activeIncidents.map(updateIncident),
         };
       });
-      return;
+      if (res.report.status === "ready") return;
+      delayMs = Math.max(1, res.report.retryAfterSeconds ?? 3) * 1000;
     } catch (err) {
-      console.warn("[appStore] GET /api/decisions failed; no local decision fallback was generated", err);
+      console.warn("[appStore] GET /api/incidents/{eventId}/report failed; keeping local incident alert", err);
       return;
     }
   }
@@ -1268,6 +1241,7 @@ export const useAppStore = create<AppState>((set, get) => ({
             ...incident,
             processing: res.processing,
             publicManifestUrl: res.publication?.publicManifestUrl,
+            publicNoticeUrl: res.publication?.publicNoticeUrl,
           };
           set((s) => ({
             allIncidents: [
@@ -1276,14 +1250,9 @@ export const useAppStore = create<AppState>((set, get) => ({
                 ? [submittedIncident]
                 : []),
             ],
-            activeIncidents: [
-              ...s.activeIncidents,
-              ...(!s.activeIncidents.some((e) => e.eventId === submittedIncident.eventId)
-                ? [submittedIncident]
-                : []),
-            ],
           }));
-          void pollDecisionForIncident(incident.eventId, incident.affectedSegmentId, scenarioAt);
+          get().injectIncident(submittedIncident.eventId);
+          void pollIncidentReport(submittedIncident.eventId, scenarioAt);
         })
         .catch((err) => {
           console.warn("[appStore] POST /api/incidents failed; no local demo result was generated", err);
@@ -1363,6 +1332,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         timestamp: get().currentTime,
         sourceIncidentId: incident.eventId,
         publicManifestUrl: incident.publicManifestUrl,
+        publicNoticeUrl: incident.publicNoticeUrl,
         kind: "signal_failure",
         title: `${segToName(segmentDefs, incident.affectedSegmentId)} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
@@ -1410,6 +1380,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         timestamp: get().currentTime,
         sourceIncidentId: incident.eventId,
         publicManifestUrl: incident.publicManifestUrl,
+        publicNoticeUrl: incident.publicNoticeUrl,
         kind: "accident",
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,
@@ -1438,6 +1409,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         role: "assistant",
         text: isPublic ? "查詢中…" : "研判中…",
         audience,
+        isPending: true,
         createdAt: Date.now(),
       };
       set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
@@ -1461,7 +1433,9 @@ export const useAppStore = create<AppState>((set, get) => ({
         .then((res) => {
           const answerMsg = adaptChatAnswer(placeholderId, res.answer, audience);
           set((s) => ({
-            chatMessages: s.chatMessages.map((m) => (m.id === placeholderId ? answerMsg : m)),
+            chatMessages: s.chatMessages.map((m) =>
+              m.id === placeholderId ? { ...answerMsg, isPending: false } : m,
+            ),
           }));
         })
         .catch((err) => {
@@ -1471,6 +1445,13 @@ export const useAppStore = create<AppState>((set, get) => ({
               m.id === placeholderId
                 ? { ...m, text: "（連線後端失敗，請稍後再試 / Failed to reach backend, please retry）" }
                 : m,
+            ),
+          }));
+        })
+        .finally(() => {
+          set((s) => ({
+            chatMessages: s.chatMessages.map((m) =>
+              m.id === placeholderId ? { ...m, isPending: false } : m,
             ),
           }));
         });
@@ -1486,6 +1467,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       // 市民模式不揭露 SOP 條號
       sopRefs: isPublic ? undefined : sopRefs,
       ruleResult,
+      isPending: true,
       createdAt: Date.now(),
     };
     set((s) => ({ chatMessages: [...s.chatMessages, userMsg, placeholder] }));
@@ -1498,7 +1480,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     answer.then((text) => {
       set((s) => ({
         chatMessages: s.chatMessages.map((m) =>
-          m.id === placeholder.id ? { ...m, text } : m,
+          m.id === placeholder.id ? { ...m, text, isPending: false } : m,
         ),
       }));
     });

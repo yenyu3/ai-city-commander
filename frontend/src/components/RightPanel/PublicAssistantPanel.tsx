@@ -167,13 +167,15 @@ export default function PublicAssistantPanel() {
 
   const advisories = alerts.slice(0, 3);
 
-  // 現場公告卡片的「查看官方公告」連結：incident 來源的 alert 會帶 publicManifestUrl
-  // （backend 相對路徑），但那只是當天 manifest.json，還要 fetch 並比對 alertId
-  // 才能拿到真正的公告內容網址（見 services/publicNotices.ts）。
+  // 現場公告卡片的「查看官方公告」連結：POST /api/incidents 回應若已直接給
+  // publication.publicNoticeUrl 就直接使用；只有舊資料只帶 publicManifestUrl（後端相對路徑，
+  // 當天 manifest.json）時，才需要額外 fetch 並比對 alertId 取得真正的公告內容網址
+  // （見 services/publicNotices.ts）。
   const [noticeUrls, setNoticeUrls] = useState<Record<string, string | null>>({});
   const pendingNoticeFetches = useRef<Set<string>>(new Set());
   useEffect(() => {
     for (const alert of advisories) {
+      if (alert.publicNoticeUrl) continue;
       if (!alert.publicManifestUrl) continue;
       if (alert.id in noticeUrls || pendingNoticeFetches.current.has(alert.id)) continue;
       pendingNoticeFetches.current.add(alert.id);
@@ -287,10 +289,10 @@ export default function PublicAssistantPanel() {
                     )}
                   </span>
                 )}
-                {noticeUrls[alert.id] && (
+                {(alert.publicNoticeUrl ?? noticeUrls[alert.id]) && (
                   <a
                     className={styles.advisoryLink}
-                    href={noticeUrls[alert.id]!}
+                    href={alert.publicNoticeUrl ?? noticeUrls[alert.id]!}
                     target="_blank"
                     rel="noopener noreferrer"
                   >

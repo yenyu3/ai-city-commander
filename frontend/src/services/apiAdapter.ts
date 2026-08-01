@@ -122,6 +122,21 @@ export function adaptDecisionListItemToPartialAlert(
   if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
     partial.sopRef = decision.summary.sopRefs.join(" / ");
   }
+  // GET /api/decisions 沒有像 POST /api/chat/messages 一樣附逐步推理鏈（ApiDecisionListItem
+  // 沒有 reasoningSteps 欄位），純 API 決策若不補一個結論步驟，ReasoningChain 會誤判成
+  // 「尚無事件觸發」而整個留白，即使 aiText/actions 都已經有內容。這裡用後端真實回傳的
+  // aiText/sopRefs 組一則「結論」步驟，不是憑空生出推理過程。
+  if (decision.summary.aiText) {
+    partial.reasoningSteps = [
+      {
+        order: 1,
+        status: "final",
+        title: "AI 決策結論",
+        detail: decision.summary.aiText,
+        sopRef: partial.sopRef,
+      },
+    ];
+  }
   if (decision.recommendedActions.length > 0) {
     partial.actions = decision.recommendedActions;
   }

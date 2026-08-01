@@ -8,10 +8,13 @@
 
 interface PublicManifest {
   date: string;
-  notices: { noticeId: string; alertId: string }[];
+  notices: { noticeId: string; alertId: string; noticeKey: string }[];
 }
 
-/** Returns the resolved notice's relative URL, or null if not published (yet). */
+/** Returns the resolved notice's relative URL, or null if not published (yet).
+ * Uses the manifest entry's `noticeKey` (the bucket object key, e.g.
+ * "public/2026-05-21/notices/PUB_..._v1.json") as-is -- it already encodes the
+ * date-scoped path, so it must not be reconstructed from noticeId alone. */
 export async function resolvePublicNoticeUrl(
   manifestUrl: string,
   alertId: string,
@@ -20,5 +23,5 @@ export async function resolvePublicNoticeUrl(
   if (!res.ok) return null;
   const manifest = (await res.json()) as PublicManifest;
   const entry = manifest.notices?.find((n) => n.alertId === alertId);
-  return entry ? `/public/notices/${entry.noticeId}.json` : null;
+  return entry ? `/${entry.noticeKey}` : null;
 }
