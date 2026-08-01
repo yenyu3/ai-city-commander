@@ -107,19 +107,31 @@ incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收
   `scenarioAt` 上，不是真實時間，週期性排程沒有明確答案該去掃哪個
   `scenarioAt`，沒有硬猜一個語意出來。
 
-## 15 分鐘快取時槽（`api_common.decision_snapshot_at`）
+## 15 分鐘快取時槽（`api_common.decision_snapshot_at`）——**只用於 decision mode**
 
-`decision/handler.py` 跟這支 worker 的 handler 現在都會先把收到的 `scenarioAt`
-用 `api_common.decision_snapshot_at()` 無條件捨去到 15 分鐘整（例如
-`22:07` 會被捨去成 `22:00`），才拿去查/存快取。這跟前面「Phase A 找『前一筆
-快照時間』」是兩件不同的事，不要搞混：
+`decision/handler.py` 跟這支 worker 的 handler 在 **`mode: "decision"`** 時，
+都會先把收到的 `scenarioAt` 用 `api_common.decision_snapshot_at()` 無條件捨去
+到 15 分鐘整（例如 `22:07` 會被捨去成 `22:00`），才拿去查/存快取。**`mode:
+"incident"` 完全不套用這個捨去**——用呼叫端傳來的精確 `scenarioAt`（見下面
+「收到 reactive 請求」步驟 1 的說明）。這跟前面「Phase A 找『前一筆快照
+時間』」也是三件不同的事，不要搞混：
 
-- **這裡（快取時槽）**：決定「這次查詢/計算要用哪一把 S3 快取 key」，目的是
-  讓同一個 15 分鐘視窗內、時間戳不完全一樣的多次查詢（例如前端每幾秒 poll
-  一次）都能共用同一份已經算好的結果，不用每次都重新觸發整套三階段流程。
-  `decision/handler.py` 的回應會多帶 `resolvedScenarioAt`（實際用的時槽）跟
-  `ageMinutes`（原始查詢時間跟這個時槽差多少分鐘），讓呼叫端知道自己拿到的
-  結果是不是完全對得上自己問的那個確切時間點。
+- **這裡（decision 的快取時槽）**：決定「這次查詢/計算要用哪一把 S3 快取
+  key」，目的是讓同一個 15 分鐘視窗內、時間戳不完全一樣的多次查詢（例如
+  前端每幾秒 poll 一次）都能共用同一份已經算好的結果，不用每次都重新觸發
+  整套三階段流程。`decision/handler.py` 的回應會多帶 `resolvedScenarioAt`
+  （實際用的時槽）跟 `ageMinutes`（原始查詢時間跟這個時槽差多少分鐘），讓
+  呼叫端知道自己拿到的結果是不是完全對得上自己問的那個確切時間點。
+- **incident 為什麼不能捨去**（2026-08-01 修過的 bug）：`db.fetch_active_incidents`
+  是用 `occurred_at <= scenario_at` 過濾的。如果把 `scenario_at` 無條件捨去
+  到 15 分鐘整，可能把它捨去到早於這個事件自己的 `occurred_at`（例如事件
+  `22:10` 建立、被捨去成 `22:00` 查詢），導致 `run_incident_flow` 連這個
+  事件自己都查不到，安靜地回傳「沒有任何觸發」——而且因為
+  `worker_invoke.py` 的背景呼叫是 best-effort、例外會被吞掉，這個失敗不會
+  在任何地方報錯，表面上跟「正常但沒觸發」無法區分。用 local server 實測
+  注入事件時抓到這個問題：`incidents/`、`emergency-reports/` 都遲遲不出現
+  任何 key。修法是 incident mode 用 `parse_scenario_at()` 解析後的原始精確
+  時間，完全不經過 `decision_snapshot_at()`。
 - **Phase A 的「前一筆快照」**：決定 router 拿到的趨勢比較基準是哪個時間點
   的路段/站點資料，跟快取 key 完全無關，用的是 `db.fetch_previous_traffic_timestamp`
   查資料庫裡實際存在的前一筆取樣時間（不是固定往前推 15 分鐘，因為
@@ -131,9 +143,12 @@ incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收
 worker handler 先看 `mode` 決定走哪條路（預設 `decision`）：
 
 1. 解析 `scenarioAt`；缺這個欄位回 `400`。`mode: "incident"` 時 `eventId`
-   必填（缺了就回 `400`）。這支 worker 自己也會呼叫 `decision_snapshot_at()`
-   把收到的 `scenarioAt` 捨去到 15 分鐘時槽——不假設呼叫端已經捨去過，確保
-   不管誰觸發、傳的是不是精確時間，最後寫進 S3 的 key 都是同一把。
+   必填（缺了就回 `400`）。**只有 `mode: "decision"`** 才會呼叫
+   `decision_snapshot_at()` 把收到的 `scenarioAt` 捨去到 15 分鐘時槽——不假設
+   呼叫端已經捨去過，確保不管誰觸發、傳的是不是精確時間，最後寫進
+   `decisions/` 的 key 都是同一把。`mode: "incident"` 用的是解析後的原始
+   精確時間，不捨去（見上面「15 分鐘快取時槽」一節的說明，捨去會讓事件查
+   不到自己）。
 2. `db.connect()` 接 RDS；連不上回 `503`。
 3. **`mode: "decision"`**（`run_worker_phases`）：一次性撈出全市資料
    （`_fetch_city_data`：目前+前一筆的全部路段流量、目前+前一筆的全部站點
@@ -147,8 +162,10 @@ worker handler 先看 `mode` 決定走哪條路（預設 `decision`）：
 5. `conn.commit()`、`conn.close()`。
 6. 回傳 `{"status": "ready", "mode", ...}`——呼叫端本來就是 fire-and-forget，
    這個回傳值目前沒有人讀，純粹方便本機測試直接呼叫這支 handler 時看結果。
-   `scenarioAt` 是原始收到的字串，`resolvedScenarioAt` 是捨去到 15 分鐘時槽
-   之後、實際拿去查/存快取用的值。
+   `scenarioAt` 是原始收到的字串；`resolvedScenarioAt`（捨去到 15 分鐘時槽
+   之後、實際拿去查/存快取用的值）**只出現在 `mode: "decision"` 的回應**，
+   `mode: "incident"` 沒有這個欄位——沒有捨去這回事，`scenarioAt` 就是
+   `run_incident_flow` 實際用的精確時間。
 
 ## `GET /api/decisions` 的回應長什麼樣（`decision/handler.py`）
 

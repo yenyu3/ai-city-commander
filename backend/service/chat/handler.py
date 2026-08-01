@@ -5,11 +5,13 @@ calls agent.chat.answer_chat() (full SOP text + facts, one real LLM call --
 see that module's docstring for why this isn't the narrower narration-only
 path), wraps the result into the doc's response envelope.
 
-Known gap: the doc's government-mode example has a populated `ruleResult`/
-`reasoningSteps`. `answer_chat()` only produces `text`/`sopRefs`/`source` --
-extending its LLM JSON schema to also emit structured reasoning steps is a
-real content-generation change, not a relocation, so it's left out of this
-pass rather than fabricated. Both fields come back empty.
+Known gap: the doc's government-mode example also has a populated
+`ruleResult` (a single deterministic rule-check object: rule name, input,
+threshold). `reasoningSteps` is now populated (2026-08-01, see agent/chat.py)
+-- `ruleResult` is not, and stays empty: it's a different shape (one
+structured rule-engine trace) than what `answer_chat()`'s free-form
+LLM-judged What-if answers naturally produce, and fabricating one would mean
+inventing a rule name/threshold the LLM didn't actually check against.
 
 `sopRefs` is force-emptied for public audience here regardless of what the
 LLM returned -- same defense-in-depth reasoning as decide()'s public_message
@@ -87,7 +89,16 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "text": answer.text,
                 "createdAt": created_at,
                 "sopRefs": answer.sop_refs if audience == "government" else [],
-                "reasoningSteps": [],
+                "reasoningSteps": [
+                    {
+                        "order": step.order,
+                        "status": step.status,
+                        "title": step.title,
+                        "detail": step.detail,
+                        **({"sopRef": step.sop_ref} if step.sop_ref else {}),
+                    }
+                    for step in answer.reasoning_steps
+                ],
             },
         },
     )

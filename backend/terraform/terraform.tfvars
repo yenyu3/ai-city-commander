@@ -11,9 +11,13 @@ availability_zones = [
   "us-west-2b",
 ]
 
-# Bedrock is optional. Replace null after the Runtime/model is available.
+# Bedrock is optional. AgentCore stays null -- BedrockAgentCoreLLMClient is
+# an unimplemented placeholder (see agent/llm_client.py); setting this would
+# make every LLM call raise and silently fall through to rules/. Direct
+# Bedrock via IAM role (BEDROCK_MODEL_ID) is the real path -- this ID/region
+# combo was already verified working locally (AWS_REGION=us-west-2).
 bedrock_agentcore_runtime_arn = null # e.g. arn:aws:bedrock-agentcore:us-east-2:123456789012:runtime/...
-bedrock_model_id              = null # e.g. <bedrock-foundation-model-id>
+bedrock_model_id              = "us.anthropic.claude-sonnet-4-6"
 
 # These names must be globally unique across all AWS accounts.
 internal_results_bucket_name = "ai-city-commander-internal-results"
