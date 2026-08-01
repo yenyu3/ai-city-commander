@@ -1,0 +1,11 @@
+{
+  "name": "incident-manifest-lambda-proxy-experiment",
+  "private": true,
+  "version": "1.0.0",
+  "scripts": {
+    "run": "node run.mjs",
+    "load": "node load.mjs",
+    "cleanup": "node cleanup.mjs"
+  },
+  "engines": { "node": ">=20" }
+}

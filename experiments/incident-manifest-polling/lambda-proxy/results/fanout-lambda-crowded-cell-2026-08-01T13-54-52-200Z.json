@@ -1,0 +1,1282 @@
+{
+  "startedAt": "2026-08-01T13:54:52.200Z",
+  "configuration": {
+    "delivery": "lambda",
+    "profileName": "crowded-cell",
+    "baseProfile": {
+      "latencyMs": 1200,
+      "jitterMs": 800,
+      "downlinkKbps": 100,
+      "failureRate": 0.12,
+      "timeoutMs": 45000
+    },
+    "effectiveProfile": {
+      "latencyMs": 1200,
+      "jitterMs": 800,
+      "downlinkKbps": 10,
+      "failureRate": 0.12,
+      "timeoutMs": 45000
+    },
+    "clients": 100,
+    "sharedCell": true,
+    "noticeRetries": 2,
+    "retryBaseMs": 500,
+    "pollIntervalMs": 2000,
+    "maxWaitMs": 120000,
+    "scenarioAt": "2026-05-22T22:10:00+08:00",
+    "manifestUrl": "https://m1z643qzn6.execute-api.us-west-2.amazonaws.com/api/experiments/public-notices?date=2026-05-22"
+  },
+  "eventId": "EXP_LOAD_1785592492200",
+  "injection": {
+    "ok": true,
+    "status": 202,
+    "error": null,
+    "bytes": 857
+  },
+  "clients": [
+    {
+      "clientId": 1,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2405.05,
+        "endToEndMs": 4694.08
+      }
+    },
+    {
+      "clientId": 2,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1539.32,
+        "endToEndMs": 3026.76
+      }
+    },
+    {
+      "clientId": 3,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2078.84,
+        "endToEndMs": 3645.37
+      }
+    },
+    {
+      "clientId": 4,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1790.38,
+        "endToEndMs": 3983.95
+      }
+    },
+    {
+      "clientId": 5,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1873.65,
+        "endToEndMs": 3148.06
+      }
+    },
+    {
+      "clientId": 6,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2130.42,
+        "endToEndMs": 4356.78
+      }
+    },
+    {
+      "clientId": 7,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1920.04,
+        "endToEndMs": 4097.34
+      }
+    },
+    {
+      "clientId": 8,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2392.38,
+        "endToEndMs": 4685.27
+      }
+    },
+    {
+      "clientId": 9,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2446.32,
+        "endToEndMs": 4037.69
+      }
+    },
+    {
+      "clientId": 10,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2185.82,
+        "endToEndMs": 4642.59
+      }
+    },
+    {
+      "clientId": 11,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2221.81,
+        "endToEndMs": 4296.86
+      }
+    },
+    {
+      "clientId": 12,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1956.39,
+        "endToEndMs": 3838.3
+      }
+    },
+    {
+      "clientId": 13,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4216.1,
+        "endToEndMs": 6069.58
+      }
+    },
+    {
+      "clientId": 14,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2075.32,
+        "endToEndMs": 3256.08
+      }
+    },
+    {
+      "clientId": 15,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2176.99,
+        "endToEndMs": 4641.37
+      }
+    },
+    {
+      "clientId": 16,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1987.01,
+        "endToEndMs": 4277.44
+      }
+    },
+    {
+      "clientId": 17,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2170.53,
+        "endToEndMs": 4442.78
+      }
+    },
+    {
+      "clientId": 18,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2444.63,
+        "endToEndMs": 3611.91
+      }
+    },
+    {
+      "clientId": 19,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1713.97,
+        "endToEndMs": 3278.53
+      }
+    },
+    {
+      "clientId": 20,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4328.61,
+        "endToEndMs": 5766.94
+      }
+    },
+    {
+      "clientId": 21,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4277.33,
+        "endToEndMs": 6012.11
+      }
+    },
+    {
+      "clientId": 22,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 636,
+      "timings": {
+        "manifestDetectedMs": 966.86,
+        "endToEndMs": 2094.99
+      }
+    },
+    {
+      "clientId": 23,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 3329.93,
+        "endToEndMs": 4971.77
+      }
+    },
+    {
+      "clientId": 24,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2516.01,
+        "endToEndMs": 4524.77
+      }
+    },
+    {
+      "clientId": 25,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2555.05,
+        "endToEndMs": 3656.88
+      }
+    },
+    {
+      "clientId": 26,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2515.91,
+        "endToEndMs": 3983.73
+      }
+    },
+    {
+      "clientId": 27,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2229.29,
+        "endToEndMs": 4010.74
+      }
+    },
+    {
+      "clientId": 28,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1907.22,
+        "endToEndMs": 4533.9
+      }
+    },
+    {
+      "clientId": 29,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2230.53,
+        "endToEndMs": 4097.17
+      }
+    },
+    {
+      "clientId": 30,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1748.18,
+        "endToEndMs": 4005.79
+      }
+    },
+    {
+      "clientId": 31,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1588.24,
+        "endToEndMs": 3434.8
+      }
+    },
+    {
+      "clientId": 32,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1957.83,
+        "endToEndMs": 4143.33
+      }
+    },
+    {
+      "clientId": 33,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1612.1,
+        "endToEndMs": 4177.52
+      }
+    },
+    {
+      "clientId": 34,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1588.15,
+        "endToEndMs": 2616.34
+      }
+    },
+    {
+      "clientId": 35,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4455.24,
+        "endToEndMs": 6423
+      }
+    },
+    {
+      "clientId": 36,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1839.91,
+        "endToEndMs": 4399.21
+      }
+    },
+    {
+      "clientId": 37,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1691.31,
+        "endToEndMs": 3903.04
+      }
+    },
+    {
+      "clientId": 38,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2174.41,
+        "endToEndMs": 5158.74
+      }
+    },
+    {
+      "clientId": 39,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1957.77,
+        "endToEndMs": 3681.81
+      }
+    },
+    {
+      "clientId": 40,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1610.65,
+        "endToEndMs": 2872.35
+      }
+    },
+    {
+      "clientId": 41,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 3884.57,
+        "endToEndMs": 5458.61
+      }
+    },
+    {
+      "clientId": 42,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2564.58,
+        "endToEndMs": 4080.03
+      }
+    },
+    {
+      "clientId": 43,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4914.38,
+        "endToEndMs": 6475.78
+      }
+    },
+    {
+      "clientId": 44,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1897.43,
+        "endToEndMs": 3931.28
+      }
+    },
+    {
+      "clientId": 45,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1762.57,
+        "endToEndMs": 4116.36
+      }
+    },
+    {
+      "clientId": 46,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4178.87,
+        "endToEndMs": 5654.3
+      }
+    },
+    {
+      "clientId": 47,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2410.95,
+        "endToEndMs": 3833.55
+      }
+    },
+    {
+      "clientId": 48,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1660.73,
+        "endToEndMs": 3675.83
+      }
+    },
+    {
+      "clientId": 49,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1946.05,
+        "endToEndMs": 4177.28
+      }
+    },
+    {
+      "clientId": 50,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2212.85,
+        "endToEndMs": 3793.54
+      }
+    },
+    {
+      "clientId": 51,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2130.52,
+        "endToEndMs": 4528.52
+      }
+    },
+    {
+      "clientId": 52,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1589.45,
+        "endToEndMs": 4110.46
+      }
+    },
+    {
+      "clientId": 53,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2271.41,
+        "endToEndMs": 3915.35
+      }
+    },
+    {
+      "clientId": 54,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2515.72,
+        "endToEndMs": 4827.14
+      }
+    },
+    {
+      "clientId": 55,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1611.91,
+        "endToEndMs": 3375.75
+      }
+    },
+    {
+      "clientId": 56,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2408.75,
+        "endToEndMs": 4624.43
+      }
+    },
+    {
+      "clientId": 57,
+      "status": "ready",
+      "manifestRequests": 3,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 6813.76,
+        "endToEndMs": 8574.28
+      }
+    },
+    {
+      "clientId": 58,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2112.26,
+        "endToEndMs": 5373.94
+      }
+    },
+    {
+      "clientId": 59,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2307.58,
+        "endToEndMs": 3705.47
+      }
+    },
+    {
+      "clientId": 60,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1990.58,
+        "endToEndMs": 4512.56
+      }
+    },
+    {
+      "clientId": 61,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1987.09,
+        "endToEndMs": 4182.6
+      }
+    },
+    {
+      "clientId": 62,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1936.28,
+        "endToEndMs": 4257.56
+      }
+    },
+    {
+      "clientId": 63,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2105.13,
+        "endToEndMs": 3246.61
+      }
+    },
+    {
+      "clientId": 64,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 3,
+      "noticeRetries": 2,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4620.08,
+        "endToEndMs": 7730.73
+      }
+    },
+    {
+      "clientId": 65,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 3418.52,
+        "endToEndMs": 5286.96
+      }
+    },
+    {
+      "clientId": 66,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 3,
+      "noticeRetries": 2,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2299.39,
+        "endToEndMs": 6226.8
+      }
+    },
+    {
+      "clientId": 67,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2075.35,
+        "endToEndMs": 4596.36
+      }
+    },
+    {
+      "clientId": 68,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1474.62,
+        "endToEndMs": 4010.49
+      }
+    },
+    {
+      "clientId": 69,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2109.82,
+        "endToEndMs": 4779.66
+      }
+    },
+    {
+      "clientId": 70,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1657.69,
+        "endToEndMs": 3521.17
+      }
+    },
+    {
+      "clientId": 71,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2147.68,
+        "endToEndMs": 4056.11
+      }
+    },
+    {
+      "clientId": 72,
+      "status": "ready",
+      "manifestRequests": 3,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 5768.26,
+        "endToEndMs": 7206.72
+      }
+    },
+    {
+      "clientId": 73,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2025.46,
+        "endToEndMs": 3930.47
+      }
+    },
+    {
+      "clientId": 74,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2408.67,
+        "endToEndMs": 4277.51
+      }
+    },
+    {
+      "clientId": 75,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2392.09,
+        "endToEndMs": 4758.32
+      }
+    },
+    {
+      "clientId": 76,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2398.38,
+        "endToEndMs": 4228.3
+      }
+    },
+    {
+      "clientId": 77,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4399.14,
+        "endToEndMs": 6387.58
+      }
+    },
+    {
+      "clientId": 78,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2030.18,
+        "endToEndMs": 5011.08
+      }
+    },
+    {
+      "clientId": 79,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 3661.72,
+        "endToEndMs": 5837.46
+      }
+    },
+    {
+      "clientId": 80,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1903.15,
+        "endToEndMs": 3654.54
+      }
+    },
+    {
+      "clientId": 81,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2016.23,
+        "endToEndMs": 4107.16
+      }
+    },
+    {
+      "clientId": 82,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1790.29,
+        "endToEndMs": 4247.31
+      }
+    },
+    {
+      "clientId": 83,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1929.41,
+        "endToEndMs": 3675.88
+      }
+    },
+    {
+      "clientId": 84,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2510.8,
+        "endToEndMs": 3842.72
+      }
+    },
+    {
+      "clientId": 85,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2042.82,
+        "endToEndMs": 3557.88
+      }
+    },
+    {
+      "clientId": 86,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2229.2,
+        "endToEndMs": 4613.79
+      }
+    },
+    {
+      "clientId": 87,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2078.88,
+        "endToEndMs": 3515.68
+      }
+    },
+    {
+      "clientId": 88,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2080.06,
+        "endToEndMs": 3241.57
+      }
+    },
+    {
+      "clientId": 89,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2630.74,
+        "endToEndMs": 4313.93
+      }
+    },
+    {
+      "clientId": 90,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1858.63,
+        "endToEndMs": 3834.83
+      }
+    },
+    {
+      "clientId": 91,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2441.54,
+        "endToEndMs": 4931.65
+      }
+    },
+    {
+      "clientId": 92,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1489.9,
+        "endToEndMs": 2686.54
+      }
+    },
+    {
+      "clientId": 93,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2577.81,
+        "endToEndMs": 4176.52
+      }
+    },
+    {
+      "clientId": 94,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1828.34,
+        "endToEndMs": 4157.9
+      }
+    },
+    {
+      "clientId": 95,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2072.98,
+        "endToEndMs": 3477.43
+      }
+    },
+    {
+      "clientId": 96,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1935.07,
+        "endToEndMs": 3311.85
+      }
+    },
+    {
+      "clientId": 97,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 2,
+      "noticeRetries": 1,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2292.99,
+        "endToEndMs": 3951.21
+      }
+    },
+    {
+      "clientId": 98,
+      "status": "ready",
+      "manifestRequests": 2,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 4885.08,
+        "endToEndMs": 6442.47
+      }
+    },
+    {
+      "clientId": 99,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 1817.11,
+        "endToEndMs": 4372.26
+      }
+    },
+    {
+      "clientId": 100,
+      "status": "ready",
+      "manifestRequests": 1,
+      "noticeRequests": 1,
+      "noticeRetries": 0,
+      "bytes": 841,
+      "timings": {
+        "manifestDetectedMs": 2544.51,
+        "endToEndMs": 4689.92
+      }
+    }
+  ],
+  "summary": {
+    "totalClients": 100,
+    "readyClients": 100,
+    "failedClients": 0,
+    "successRate": 1,
+    "totalManifestRequests": 117,
+    "totalNoticeRequests": 112,
+    "totalNoticeRetries": 12,
+    "totalBytes": 83895,
+    "deliveryMs": {
+      "min": 2094.99,
+      "p50": 4157.9,
+      "p95": 6423,
+      "max": 8574.28
+    }
+  },
+  "cleanup": {
+    "firstPass": {
+      "eventIds": [
+        "EXP_LOAD_1785592492200"
+      ],
+      "date": "2026-05-22",
+      "dryRun": false,
+      "deleted": {
+        "database": 1,
+        "internalObjects": 3,
+        "publicNotices": 1,
+        "manifestUpdated": true
+      }
+    },
+    "secondPass": {
+      "eventIds": [
+        "EXP_LOAD_1785592492200"
+      ],
+      "date": "2026-05-22",
+      "dryRun": false,
+      "deleted": {
+        "database": 0,
+        "internalObjects": 1,
+        "publicNotices": 1,
+        "manifestUpdated": true
+      }
+    }
+  }
+}
