@@ -103,6 +103,7 @@ export default function PublicAssistantPanel() {
   const alerts = useAppStore((s) => s.alerts);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const citySituationSummary = useAppStore((s) => s.citySituationSummary);
 
   const topRoads = useMemo(
     () =>
@@ -142,19 +143,23 @@ export default function PublicAssistantPanel() {
       )
     : pick(language, "城市狀態", "City status");
 
-  const heroReason = latestAlert
-    ? getPublicAlertText(latestAlert, language)
-    : mostAffectedRoad
-      ? pick(
-          language,
-          `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
-          `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
-        )
-      : pick(
-          language,
-          "目前主要道路與人流狀態穩定，可依原計畫移動。",
-          "Roads and crowds are stable. You can continue as planned.",
-        );
+  // situationSummary 是後端依 focus locationId（小人現場定位鄰近路段）生成的周邊情勢摘要，
+  // 內容比本地算出的 heroReason 更完整（含鄰近路段、人潮熱點），有拿到就優先顯示。
+  const heroReason = citySituationSummary
+    ? citySituationSummary
+    : latestAlert
+      ? getPublicAlertText(latestAlert, language)
+      : mostAffectedRoad
+        ? pick(
+            language,
+            `${mostAffectedRoad.name} 周邊可能延誤，建議改道或延後出發。`,
+            `${mostAffectedRoad.name} may be delayed. Consider rerouting or leaving later.`,
+          )
+        : pick(
+            language,
+            "目前主要道路與人流狀態穩定，可依原計畫移動。",
+            "Roads and crowds are stable. You can continue as planned.",
+          );
 
   const statusWord = STATUS_WORD[heroTone];
   const toneLabel = TONE_LABEL[heroTone];

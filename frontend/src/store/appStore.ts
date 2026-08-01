@@ -33,7 +33,6 @@ import {
   adaptChatAnswer,
   adaptCrowd,
   adaptDecisionListItemToPartialAlert,
-  adaptDecisionToPartialAlert,
   adaptTraffic,
 } from "../services/apiAdapter";
 import type { ApiDecisionListItem, ApiDecisionQueryResponse } from "../types/api";
@@ -110,11 +109,11 @@ function getInitialViewerMode(): ViewerMode {
   return saved === "public" || saved === "government" ? saved : "government";
 }
 
+export const DEFAULT_PLAYBACK_SPEED_MS = 1500;
+
 const API_SCENARIO_START = "2026-05-20 17:00";
 const API_SCENARIO_END = "2026-05-20 23:00";
-const API_SCENARIO_STEP_MINUTES = 15;
-const DECISION_REFRESH_INTERVAL_MINUTES = 30;
-const DECISION_REFRESH_INTERVAL_MS = DECISION_REFRESH_INTERVAL_MINUTES * 60 * 1000;
+const API_SCENARIO_STEP_MINUTES = 5;
 const decisionRequestKeys = new Set<string>();
 
 function buildApiScenarioTicks(): string[] {
@@ -196,6 +195,9 @@ interface AppState {
   chatMessages: ChatMessage[];
   fieldInspectorPosition: FieldInspectorPosition | null;
   fieldInspectorLocateStatus: FieldInspectorLocateStatus;
+  /** GET /api/decisions 回應的 situationSummary：查詢 locationId 周邊的整體情勢摘要（LLM 生成的一段話），
+   *  跟個別 alert 的 llmText/publicMessage 是不同層級的內容，兩種模式都要顯示。 */
+  citySituationSummary: string | null;
 
   init(): Promise<void>;
   play(): void;
@@ -456,6 +458,31 @@ function tryFireOnce(key: string): boolean {
 /** 用 city-state API 回傳的單筆數值覆蓋本地 segment 的「即時數值」欄位，但保留
  *  isCityTrigger/isEvacuationMain/isEvacuationSecondary/isIncidentSource 等由
  *  injectIncident 在本地算出的旗標，避免非同步回應蓋掉期間發生的注入結果。 */
+function checkIncidentResolution(
+  trackedId: string,
+  _timestamp: string,
+  segments: Record<string, SegmentRuntimeState>,
+  stations: Record<string, StationRuntimeState>,
+): { elevated: boolean; recovered: boolean } {
+  const segment = segments[trackedId];
+  if (segment) {
+    const elevated =
+      segment.tier !== "Normal" ||
+      segment.laneStatus === "Blocked" ||
+      segment.laneStatus === "Critical" ||
+      segment.saturation >= 0.85;
+    return { elevated, recovered: !elevated };
+  }
+
+  const station = stations[trackedId];
+  if (station) {
+    const elevated = station.growthRate >= 0.3 || station.roamingPct >= 0.3;
+    return { elevated, recovered: !elevated };
+  }
+
+  return { elevated: false, recovered: false };
+}
+
 function mergeApiSegmentData(
   local: SegmentRuntimeState,
   apiRow: TrafficSnapshot | undefined,
@@ -472,11 +499,6 @@ function mergeApiSegmentData(
   };
 }
 
-function shouldRefreshDecisionAt(timestamp: string): boolean {
-  const elapsedMs = parseTimestamp(timestamp) - parseTimestamp(API_SCENARIO_START);
-  return elapsedMs >= 0 && elapsedMs % DECISION_REFRESH_INTERVAL_MS === 0;
-}
-
 function collectDecisionLocationIds(state: AppState): string[] {
   // 小人在場：只查小人所在路段
   if (state.fieldInspectorPosition?.nearestRoadId) {
@@ -490,13 +512,7 @@ function collectDecisionLocationIds(state: AppState): string[] {
 function isDecisionProcessing(
   res: ApiDecisionQueryResponse,
 ): res is Extract<ApiDecisionQueryResponse, { processing: unknown }> {
-  return "processing" in res && !("aiDecision" in res) && !("decisions" in res);
-}
-
-function isDecisionList(
-  res: ApiDecisionQueryResponse,
-): res is Extract<ApiDecisionQueryResponse, { decisions: unknown }> {
-  return "decisions" in res;
+  return "processing" in res;
 }
 
 function resolveDecisionLocationName(locationId: string, state: AppState): string {
@@ -516,6 +532,7 @@ function upsertDecisionAlert(
     const alert: AlertRecord = {
       id: existing?.id ?? nextId("alert"),
       timestamp,
+      sourceIncidentId: partial.sourceIncidentId,
       decisionId,
       decisionLocationId: locationId,
       kind: partial.kind ?? "accident",
@@ -525,6 +542,7 @@ function upsertDecisionAlert(
       llmText: partial.llmText,
       publicMessage: partial.publicMessage,
       sopRef: partial.sopRef,
+      ete: partial.ete,
       reasoningSteps: partial.reasoningSteps,
       reroute: partial.reroute,
     };
@@ -576,26 +594,17 @@ async function refreshDecisionForLocation(timestamp: string, locationId: string)
       return;
     }
 
-    if (isDecisionList(res)) {
-      const state = useAppStore.getState();
-      const decisionsToRender: ApiDecisionListItem[] = res.decisions;
-      for (const decision of decisionsToRender) {
-        const partial = adaptDecisionListItemToPartialAlert(
-          decision,
-          resolveDecisionLocationName(decision.locationId, state),
-        );
-        upsertDecisionAlert(timestamp, decision.locationId, decision.decisionId, partial);
-      }
-      return;
+    const state = useAppStore.getState();
+    useAppStore.setState({ citySituationSummary: res.situationSummary ?? null });
+    const decisionsToRender: ApiDecisionListItem[] = res.decisions;
+    for (const decision of decisionsToRender) {
+      const partial = adaptDecisionListItemToPartialAlert(
+        decision,
+        resolveDecisionLocationName(decision.locationId, state),
+        state.segmentDefs,
+      );
+      upsertDecisionAlert(timestamp, decision.locationId, decision.decisionId, partial);
     }
-
-    const partial = adaptDecisionToPartialAlert(res.aiDecision);
-    upsertDecisionAlert(
-      timestamp,
-      res.aiDecision.locationContext.locationId,
-      res.aiDecision.decisionId,
-      partial,
-    );
   } catch (err) {
     console.warn("[appStore] GET /api/decisions failed; keeping local decision state", err);
   }
@@ -689,23 +698,16 @@ async function pollDecisionForIncident(eventId: string, locationId: string, scen
       const res = await apiClient.getDecision(scenarioAt, locationId);
       if (!res) continue; // DECISION_NOT_READY，再重試
       if (isDecisionProcessing(res)) continue;
-      let partial: Partial<AlertRecord>;
-      let decisionId: string;
-      let decisionLocationId: string;
-      if (isDecisionList(res)) {
-        const decision = res.decisions.find((d) => d.locationId === locationId) ?? res.decisions[0];
-        if (!decision) continue;
-        partial = adaptDecisionListItemToPartialAlert(
-          decision,
-          resolveDecisionLocationName(decision.locationId, useAppStore.getState()),
-        );
-        decisionId = decision.decisionId;
-        decisionLocationId = decision.locationId;
-      } else {
-        partial = adaptDecisionToPartialAlert(res.aiDecision);
-        decisionId = res.aiDecision.decisionId;
-        decisionLocationId = res.aiDecision.locationContext.locationId;
-      }
+      const state = useAppStore.getState();
+      const decision = res.decisions.find((d) => d.locationId === locationId) ?? res.decisions[0];
+      if (!decision) continue;
+      const partial = adaptDecisionListItemToPartialAlert(
+        decision,
+        resolveDecisionLocationName(decision.locationId, state),
+        state.segmentDefs,
+      );
+      const decisionId = decision.decisionId;
+      const decisionLocationId = decision.locationId;
       useAppStore.setState((s) => {
         const existing = s.alerts.find((a) => a.sourceIncidentId === eventId);
         if (existing) {
@@ -732,6 +734,7 @@ async function pollDecisionForIncident(eventId: string, locationId: string, scen
           llmText: partial.llmText,
           publicMessage: partial.publicMessage,
           sopRef: partial.sopRef,
+          ete: partial.ete,
           reasoningSteps: partial.reasoningSteps,
           reroute: partial.reroute,
         };
@@ -761,7 +764,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   tickIndex: 0,
   currentTime: "",
   isPlaying: false,
-  playbackSpeed: 3000,
+  playbackSpeed: DEFAULT_PLAYBACK_SPEED_MS,
   legDurationMs: 0,
   legStartedAt: 0,
   frozenPlayheadPct: null,
@@ -791,6 +794,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   chatMessages: [],
   fieldInspectorPosition: null,
   fieldInspectorLocateStatus: "idle",
+  citySituationSummary: null,
 
   async init() {
     console.log(`[DEBUG] init() called at ${Date.now()}`);
@@ -827,6 +831,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           displayedAlertIds: new Set(),
           reasoningLog: [],
           chatMessages: [],
+          citySituationSummary: null,
         });
         void refreshCityStateFromApi(firstTime);
         return;
@@ -906,6 +911,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         firedAlertKeys: new Set(),
         displayedAlertIds: new Set(),
         reasoningLog: [],
+        citySituationSummary: null,
         isPlaying: true,
         legDurationMs: computeLegDurationMs(ticks, 0, playbackSpeed),
         legStartedAt: Date.now(),

@@ -1,6 +1,6 @@
 import { useMemo, useRef, useState } from "react";
 import { Play, Pause, RotateCcw } from "lucide-react";
-import { useAppStore } from "../../store/appStore";
+import { DEFAULT_PLAYBACK_SPEED_MS, useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayShortTime, formatDisplayTimestamp, parseTimestamp, timePct } from "../../utils/timeUtils";
@@ -17,7 +17,7 @@ interface TimelineMarker {
 }
 import styles from "./IncidentTimeline.module.css";
 
-const BASE_PLAYBACK_SPEED_MS = 3000;
+const BASE_PLAYBACK_SPEED_MS = DEFAULT_PLAYBACK_SPEED_MS;
 const SPEED_OPTIONS = [
   { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
   { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },

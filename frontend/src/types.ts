@@ -185,6 +185,9 @@ export interface ChatMessage {
   audience: ViewerMode;
   sopRefs?: string[];
   ruleResult?: unknown;
+  /** 政府端提問的逐步推理鏈（POST /api/chat/messages 的 answer.reasoningSteps）；
+   *  民眾模式後端固定回空陣列，所以實際上只有政府對話會有內容。 */
+  reasoningSteps?: ReasoningStep[];
   createdAt: number;
 }
 

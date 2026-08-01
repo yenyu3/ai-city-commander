@@ -122,45 +122,22 @@ export interface ApiReasoningStep {
   sopRef?: string;
 }
 
-export interface ApiAiDecisionSummary {
-  kind?: string;
-  title?: string;
-  aiText: string;
-  sopRefs?: string[];
+/** decision/handler.py `_decision_item`'s `excluded` entries — snake_case, straight from
+ *  `agent/facts.py`'s route-selection dict, not adapted to camelCase by the backend. */
+export interface ApiRerouteExcluded {
+  segment_id: string;
+  reason: string;
 }
 
-export interface ApiRerouteRef {
-  segmentId: string;
-  segmentName?: string;
-}
-
+/** decision/handler.py `_decision_item`: `mainRoute`/`secondaryRoutes` are bare segmentId
+ *  strings, not `{segmentId, segmentName}` objects — the backend never resolves names.
+ *  `congestionWarning`/`recommend_public_transit` are computed in `decide_accident`'s
+ *  `decision.result` but never copied into this object by the handler, so they don't exist
+ *  on the wire at all (see docs/frontend-backend-coordination-issues.md). */
 export interface ApiReroute {
-  primaryRoute?: ApiRerouteRef | null;
-  secondaryRoutes?: ApiRerouteRef[];
-  excluded?: (ApiRerouteRef & { reason: string })[];
-  congestionWarning?: boolean;
-}
-
-export interface ApiAiDecision {
-  decisionId: string;
-  status: string;
-  locationContext: { locationId: string; locationName: string };
-  summary: ApiAiDecisionSummary;
-  recommendedActions: string[];
-  metrics: Record<string, unknown>;
-  estimatedRecovery: unknown;
-  reroute: ApiReroute | null;
-  reasoningSteps: ApiReasoningStep[];
-  // 後端範例目前皆為空物件，尚未有完整 schema
-  // 見 docs/frontend-backend-coordination-issues.md 第 11 項
-  signalCoordination: Record<string, unknown>;
-  crossSystemCoordination: Record<string, unknown>;
-  publicationEligibility: Record<string, unknown>;
-}
-
-export interface ApiDecisionResponse {
-  meta: ApiMeta;
-  aiDecision: ApiAiDecision;
+  mainRoute: string | null;
+  secondaryRoutes: string[];
+  excluded: ApiRerouteExcluded[];
 }
 
 export interface ApiDecisionListItem {
@@ -174,7 +151,10 @@ export interface ApiDecisionListItem {
     sopRefs?: string[];
   };
   recommendedActions: string[];
-  estimatedRecovery: unknown;
+  /** Only non-null for `kind === "accident"` (decision/handler.py:40); a plain minute count,
+   *  not an object — the base/penalty breakdown (`agent/facts.py`'s `ete_base`/`ete_penalty`)
+   *  is computed backend-side but never surfaced on this endpoint. */
+  estimatedRecovery: number | null;
   reroute: ApiReroute | null;
   publicMessage?: string;
 }
@@ -201,7 +181,6 @@ export interface ApiDecisionProcessingResponse {
 }
 
 export type ApiDecisionQueryResponse =
-  | ApiDecisionResponse
   | ApiDecisionListResponse
   | ApiDecisionProcessingResponse;
 

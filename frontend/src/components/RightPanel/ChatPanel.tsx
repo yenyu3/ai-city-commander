@@ -38,6 +38,7 @@ export default function ChatPanel({
   const { language } = useLanguage();
   const [input, setInput] = useState("");
   const [expandedRef, setExpandedRef] = useState<string | null>(null);
+  const [expandedReasoningId, setExpandedReasoningId] = useState<string | null>(null);
   const [contextDismissed, setContextDismissed] = useState(false);
   const messagesRef = useRef<HTMLDivElement | null>(null);
   const isPublic = variant === "public";
@@ -104,6 +105,36 @@ export default function ChatPanel({
                     </div>
                   );
                 })}
+              </div>
+            )}
+            {!isPublic && m.reasoningSteps && m.reasoningSteps.length > 0 && (
+              <div className={styles.reasoningWrap}>
+                <button
+                  className={styles.reasoningToggle}
+                  onClick={() =>
+                    setExpandedReasoningId(expandedReasoningId === m.id ? null : m.id)
+                  }
+                >
+                  {pick(language, "查看推理過程", "View reasoning")} ({m.reasoningSteps.length})
+                </button>
+                {expandedReasoningId === m.id && (
+                  <ol className={styles.reasoningList}>
+                    {m.reasoningSteps
+                      .slice()
+                      .sort((a, b) => a.order - b.order)
+                      .map((step) => (
+                        <li key={step.order} className={styles.reasoningStep}>
+                          <div className={styles.reasoningStepHead}>
+                            <span className={styles.reasoningStepTitle}>{step.title}</span>
+                            {step.sopRef && (
+                              <span className={styles.reasoningStepRef}>{step.sopRef}</span>
+                            )}
+                          </div>
+                          <p className={styles.reasoningStepDetail}>{step.detail}</p>
+                        </li>
+                      ))}
+                  </ol>
+                )}
               </div>
             )}
           </div>

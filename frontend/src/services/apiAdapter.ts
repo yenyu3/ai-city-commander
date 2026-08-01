@@ -10,7 +10,6 @@ import type {
   ViewerMode,
 } from "../types";
 import type {
-  ApiAiDecision,
   ApiChatAnswer,
   ApiCrowdItem,
   ApiDecisionListItem,
@@ -65,6 +64,7 @@ export function adaptChatAnswer(id: string, answer: ApiChatAnswer, audience: Vie
     audience,
     sopRefs: answer.sopRefs,
     ruleResult: answer.ruleResult,
+    reasoningSteps: answer.reasoningSteps,
     createdAt: Date.parse(answer.createdAt) || Date.now(),
   };
 }
@@ -85,53 +85,32 @@ function coerceAlertKind(kind: string): AlertRecord["kind"] {
   return "accident";
 }
 
-function adaptReroute(reroute: ApiReroute | null): RerouteSnapshot | undefined {
+/** decision/handler.py's reroute.mainRoute/secondaryRoutes/excluded are bare segmentId
+ *  strings (see types/api.ts's ApiReroute doc comment) — names have to be resolved locally
+ *  from segmentDefs, same as every other segmentId the API hands back. */
+function adaptReroute(
+  reroute: ApiReroute | null,
+  segmentDefs: Map<string, RoadSegment>,
+): RerouteSnapshot | undefined {
   if (!reroute) return undefined;
+  const nameOf = (segmentId: string) => segmentDefs.get(segmentId)?.name ?? segmentId;
   return {
-    primaryRouteName: reroute.primaryRoute
-      ? (reroute.primaryRoute.segmentName ?? reroute.primaryRoute.segmentId)
-      : null,
-    secondaryRouteNames: (reroute.secondaryRoutes ?? []).map(
-      (r) => r.segmentName ?? r.segmentId,
-    ),
-    excluded: (reroute.excluded ?? []).map((e) => ({
-      segmentName: e.segmentName ?? e.segmentId,
+    primaryRouteName: reroute.mainRoute ? nameOf(reroute.mainRoute) : null,
+    secondaryRouteNames: reroute.secondaryRoutes.map(nameOf),
+    excluded: reroute.excluded.map((e) => ({
+      segmentName: nameOf(e.segment_id),
       reason: e.reason,
     })),
-    congestionWarning: reroute.congestionWarning ?? false,
+    // 後端 decide_accident 有算出 congestion_warning，但 decision/handler.py 沒把它塞進
+    // reroute 物件回傳，這支 API 目前沒有這個資料可用（見 coordination doc）。
+    congestionWarning: false,
   };
-}
-
-/**
- * GET /api/decisions aiDecision -> fields that can enrich an existing frontend alert.
- * The alert source still comes from the frontend rule engine until the backend exposes
- * an active-alert/location list API.
- */
-export function adaptDecisionToPartialAlert(decision: ApiAiDecision): Partial<AlertRecord> {
-  const partial: Partial<AlertRecord> = {
-    kind: coerceAlertKind(decision.summary.kind ?? "accident"),
-    title: decision.summary.title ?? decision.locationContext.locationName,
-    llmText: decision.summary.aiText,
-  };
-
-  if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
-    partial.sopRef = decision.summary.sopRefs.join(" / ");
-  }
-  if (decision.recommendedActions.length > 0) {
-    partial.actions = decision.recommendedActions;
-  }
-  const reroute = adaptReroute(decision.reroute);
-  if (reroute) partial.reroute = reroute;
-  if (decision.reasoningSteps.length > 0) {
-    partial.reasoningSteps = decision.reasoningSteps.map((s) => ({ ...s }));
-  }
-
-  return partial;
 }
 
 export function adaptDecisionListItemToPartialAlert(
   decision: ApiDecisionListItem,
   locationName: string,
+  segmentDefs: Map<string, RoadSegment>,
 ): Partial<AlertRecord> {
   const partial: Partial<AlertRecord> = {
     kind: coerceAlertKind(decision.kind),
@@ -146,7 +125,13 @@ export function adaptDecisionListItemToPartialAlert(
   if (decision.recommendedActions.length > 0) {
     partial.actions = decision.recommendedActions;
   }
-  const reroute = adaptReroute(decision.reroute);
+  if (decision.estimatedRecovery !== null) {
+    partial.ete = decision.estimatedRecovery;
+  }
+  if (decision.eventId) {
+    partial.sourceIncidentId = decision.eventId;
+  }
+  const reroute = adaptReroute(decision.reroute, segmentDefs);
   if (reroute) partial.reroute = reroute;
 
   return partial;
