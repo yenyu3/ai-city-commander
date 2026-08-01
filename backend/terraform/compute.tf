@@ -30,6 +30,7 @@ locals {
       "${path.module}/../service/api_common.py",
       "${path.module}/../service/s3_common.py",
       "${path.module}/../service/worker_invoke.py",
+      "${path.module}/../service/report_builder.py",
     ],
     [for f in fileset("${path.module}/../service/agent", "*.py") : "${path.module}/../service/agent/${f}"],
     [for f in fileset("${path.module}/../service/rules", "*.py") : "${path.module}/../service/rules/${f}"],

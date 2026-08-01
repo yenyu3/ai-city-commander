@@ -88,7 +88,13 @@ def decide(
         f"=== 這次要判斷什麼 ===\n{instructions}"
     )
     try:
-        raw = client.complete(system=_SYSTEM_PROMPT, prompt=prompt, max_tokens=1500)
+        # decide_accident's JSON is the heaviest case (main_route/secondary_routes/
+        # multiple excluded candidates each with a reason, plus a full reasoning
+        # and public_message) -- 1500 truncated mid-string on a real call
+        # (2026-08-01: "Unterminated string" JSONDecodeError, silently fell
+        # back to rules/ since decide()'s except-clause catches parse failures).
+        # Sized for that worst case since every scope shares this one call.
+        raw = client.complete(system=_SYSTEM_PROMPT, prompt=prompt, max_tokens=3000)
         parsed = _parse_json_response(raw)
         return Decision(
             triggered=bool(parsed["triggered"]),

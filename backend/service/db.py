@@ -70,6 +70,41 @@ def fetch_latest_traffic_snapshots(
     ]
 
 
+def fetch_previous_traffic_timestamp(
+    conn: psycopg.Connection, scenario_at: datetime
+) -> Optional[datetime]:
+    """The most recent sampled tick strictly before scenario_at, shared
+    across every segment (city_traffic_flow.csv samples all 15 segments on
+    the same tick) -- one query answers "what was the previous snapshot" for
+    the whole city at once, rather than per-segment. None if scenario_at is
+    at/before the first tick. Used to build the router agent's trend view
+    (current vs. previous), not just a single point-in-time snapshot."""
+    row = conn.execute(
+        """
+        SELECT DISTINCT observed_at FROM traffic_snapshots
+        WHERE observed_at < %(scenario_at)s
+        ORDER BY observed_at DESC LIMIT 1
+        """,
+        {"scenario_at": scenario_at},
+    ).fetchone()
+    return row["observed_at"] if row else None
+
+
+def fetch_previous_crowd_timestamp(
+    conn: psycopg.Connection, scenario_at: datetime
+) -> Optional[datetime]:
+    """Same idea as fetch_previous_traffic_timestamp, for crowd_snapshots."""
+    row = conn.execute(
+        """
+        SELECT DISTINCT observed_at FROM crowd_snapshots
+        WHERE observed_at < %(scenario_at)s
+        ORDER BY observed_at DESC LIMIT 1
+        """,
+        {"scenario_at": scenario_at},
+    ).fetchone()
+    return row["observed_at"] if row else None
+
+
 def fetch_latest_crowd_snapshots(
     conn: psycopg.Connection, scenario_at: datetime
 ) -> list[CrowdSnapshot]:

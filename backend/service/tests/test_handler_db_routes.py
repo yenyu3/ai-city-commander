@@ -22,7 +22,7 @@ from city_state.handler import handler as city_state_handler  # noqa: E402
 from incident.handler import handler as incident_handler  # noqa: E402
 from decision.handler import handler as decision_handler  # noqa: E402
 from chat.handler import handler as chat_handler  # noqa: E402
-from decision_routing import resolve_location  # noqa: E402
+from decision_routing import Trigger, run_worker_phases  # noqa: E402
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:aicity@localhost:5432/aicity"
@@ -173,14 +173,12 @@ class TestIncidentCreate:
 
 
 class TestDecisionCacheAside:
-    def test_unknown_location_id_is_400(self):
-        result = decision_handler(
-            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00", "locationId": "XX_NOPE"}),
-            None,
-        )
-        assert result["statusCode"] == 400
+    """2026-08-01 redesign: locationId is optional (a focus hint on the
+    narrative, not a filter on what gets computed), and the response is a
+    decisions[] array + situationSummary instead of one aiDecision -- see
+    decision_routing.py's module docstring."""
 
-    def test_cache_hit_returns_200_with_ai_decision_shape(self):
+    def test_cache_hit_returns_200_with_decisions_and_summary(self):
         import api_common
         from agent.decision_agent import Decision
 
@@ -193,6 +191,11 @@ class TestDecisionCacheAside:
                 reasoning="test reasoning", source="llm", public_message="test public",
             ),
         )
+        s3_cache.save_triggers(
+            scenario_at=parsed_scenario_at,
+            triggers=[Trigger(sop_section_id="1", location_id="RD_TPE_001")],
+        )
+        s3_cache.save_narrative(scenario_at=parsed_scenario_at, location_key="RD_TPE_001", narrative="測試摘要")
 
         result = decision_handler(
             _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00", "locationId": "RD_TPE_001"}),
@@ -201,39 +204,97 @@ class TestDecisionCacheAside:
         assert result["statusCode"] == 200
         body = json.loads(result["body"])
         assert body["meta"]["cacheStatus"] == "hit"
-        assert body["aiDecision"]["locationContext"]["locationId"] == "RD_TPE_001"
-        assert body["aiDecision"]["summary"]["kind"] == "congestion"
-        assert body["aiDecision"]["summary"]["sopRefs"] == ["SOP §1"]
+        assert body["focus"] == {"locationId": "RD_TPE_001"}
+        assert body["situationSummary"] == "測試摘要"
+        assert body["decisions"][0]["locationId"] == "RD_TPE_001"
+        assert body["decisions"][0]["kind"] == "congestion"
+        assert body["decisions"][0]["summary"]["sopRefs"] == ["SOP §1"]
 
-    def test_cache_miss_triggers_worker_and_returns_202(self):
+    def test_cache_miss_without_location_id_returns_202_with_null_focus(self):
         result = decision_handler(
-            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00", "locationId": "RD_TPE_001"}),
+            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00"}),
             None,
         )
         assert result["statusCode"] == 202
         body = json.loads(result["body"])
         assert body["meta"]["cacheStatus"] == "miss"
+        assert body["focus"] is None
         assert body["processing"]["status"] == "queued"
+
+    def test_cache_miss_triggers_worker_which_sweeps_the_whole_city(self):
+        """The worker invocation triggered by one cache-miss call fills in
+        the sweep for every currently-triggered location, not just whatever
+        locationId happened to be asked about -- that's the whole point of
+        the redesign."""
+        result = decision_handler(
+            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00"}),
+            None,
+        )
+        assert result["statusCode"] == 202
 
         import api_common
 
         parsed_scenario_at = api_common.parse_scenario_at("2026-05-20T21:00:00+08:00")
-        cached = _wait_for_cache(
-            lambda: s3_cache.fetch_cached_congestion_decision("RD_TPE_001", parsed_scenario_at)
-        )
-        assert cached is not None  # the background worker did eventually fill the cache
-        assert cached.result.get("tier") == "B"
+        cached = _wait_for_cache(lambda: s3_cache.fetch_cached_triggers(parsed_scenario_at))
+        assert cached is not None  # the background worker did eventually fill the sweep
+        assert any(t.location_id == "RD_TPE_001" and t.sop_section_id == "1" for t in cached)
 
-    def test_incident_affected_segment_routes_to_accident_check(self):
+    def test_incident_tied_triggers_carry_event_id_regardless_of_locationId_prefix(self):
+        """TPE_2026_ACC_001 (RD_ segment) and TPE_2026_EVT_002 (Crowd_Surge_
+        Injury, SOP §3, affected_segment=BS_MRT_BL17 -- a BS_ station, not an
+        RD_ segment) must both end up with their event_id attached, or the
+        BS_ one could never get a 交控中心建議書 (see decision_routing.py's
+        _attach_event_ids)."""
         import api_common
 
+        scenario_at = api_common.parse_scenario_at("2026-05-20T22:25:00+08:00")
         conn = db.connect()
         try:
-            route = resolve_location(conn, "RD_TPE_002", api_common.parse_scenario_at("2026-05-20T22:15:00+08:00"))
+            pairs, _narrative = run_worker_phases(conn, scenario_at, None)
+            conn.commit()
         finally:
             conn.close()
-        assert route.kind == "incident"
-        assert route.event_id == "TPE_2026_ACC_001"
+        by_location = {trig.location_id: trig for trig, _decision in pairs}
+        assert by_location["RD_TPE_002"].event_id == "TPE_2026_ACC_001"
+        assert by_location["BS_MRT_BL17"].event_id == "TPE_2026_EVT_002"
+
+
+class TestIncidentReportGeneration:
+    def test_report_is_written_to_s3_once_an_incident_tied_decision_triggers(self):
+        import api_common
+
+        scenario_at = api_common.parse_scenario_at("2026-05-20T22:15:00+08:00")
+        conn = db.connect()
+        try:
+            pairs, _narrative = run_worker_phases(conn, scenario_at, None)
+            conn.commit()
+        finally:
+            conn.close()
+        triggered_event_ids = {trig.event_id for trig, decision in pairs if decision.triggered}
+        assert "TPE_2026_ACC_001" in triggered_event_ids
+
+        import boto3
+
+        obj = boto3.client("s3", region_name="us-east-1").get_object(
+            Bucket=_BUCKET, Key="emergency-reports/2026-05-20/TPE_2026_ACC_001/report-v1.json"
+        )
+        report = json.loads(obj["Body"].read())
+        assert report["eventId"] == "TPE_2026_ACC_001"
+        assert report["sopSectionId"] in ("2", "5")
+
+        # report/handler.py itself must now find it, not just S3 directly.
+        from report.handler import handler as report_handler
+
+        result = report_handler(
+            _event(
+                "GET", "/api/incidents/TPE_2026_ACC_001/report",
+                query={"format": "json", "scenarioAt": "2026-05-20T22:15:00+08:00"},
+                path_params={"eventId": "TPE_2026_ACC_001"},
+            ),
+            None,
+        )
+        assert result["statusCode"] == 200
+        assert json.loads(result["body"])["report"]["status"] == "ready"
 
 
 class TestChatWithDbContext:

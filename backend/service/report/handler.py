@@ -6,12 +6,13 @@ Read-only: checks S3 for an already-generated report (emergency-reports/
 LLM, per the doc. `{date}` isn't in the request -- looked up from the
 incident's own `occurred_at` in RDS instead.
 
-Always returns the doc's `202 processing` shape right now: nothing in this
-codebase generates emergency-reports/ yet (that's a "Decision Worker Lambda"
-the doc describes but that doesn't exist here) -- honestly reporting
-"processing" forever is correct given that, not a bug to silently paper
-over. Wire this up to 200+downloadUrl once a report-generation pipeline
-exists.
+2026-08-01: decision_routing.py's decision-generator-worker path now writes
+report-v1.json here (see report_builder.py) the first time an incident-tied
+SOP check actually triggers -- so `format=json` genuinely reaches 200+
+downloadUrl once that's happened. `format=pdf` still stays perpetually
+"processing": no PDF renderer exists, and the brief allows any report
+format, so JSON alone already satisfies "報告呈現格式不拘" -- not wiring up a
+second format nobody asked for.
 """
 from __future__ import annotations
 

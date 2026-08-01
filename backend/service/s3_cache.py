@@ -10,6 +10,8 @@ key, matching data/api.md's internal-results bucket layout:
     decisions/{scenario_at}/{station_id}__{decision_kind}.json mrt/dome diversion (SOP §3/§4)
     decisions/{scenario_at}/all.json                            multilingual (SOP §6, batched across all stations)
     decisions/{scenario_at}/{event_id}__{alert_kind}.json      incident SOP checks (SOP §2/§5)
+    decisions/{scenario_at}/_triggers.json                      router agent's city-wide sweep (2026-08-01)
+    decisions/{scenario_at}/_summary/{locationId|_global}.json  focused narrative for one caller's view
 
 `:` in scenario_at's ISO8601 string is replaced with `-` (S3 keys allow
 colons, but some HTTP clients/tools handle them poorly) -- mirrors the
@@ -28,6 +30,7 @@ from typing import Optional
 
 import s3_common
 from agent.decision_agent import Decision
+from agent.router_agent import Trigger
 
 # SOP §6's multilingual judgment runs once per poll across every visible
 # station, not per station -- "all" names that it's the one cross-cutting
@@ -135,3 +138,76 @@ def save_decision(
     *, event_id: str, scenario_at: datetime, alert_kind: str, title: str, decision: Decision
 ) -> None:
     _save(_incident_location_id(event_id, alert_kind), scenario_at, decision, title=title)
+
+
+# --- Router agent (2026-08-01): city-wide sweep + per-focus narrative ------
+
+
+def _triggers_key(scenario_at: datetime) -> str:
+    at = scenario_at.isoformat().replace(":", "-")
+    return f"decisions/{at}/_triggers.json"
+
+
+def fetch_cached_triggers(scenario_at: datetime) -> Optional[list[Trigger]]:
+    from botocore.exceptions import ClientError
+
+    try:
+        obj = s3_common.client().get_object(Bucket=s3_common.internal_bucket(), Key=_triggers_key(scenario_at))
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+            return None
+        raise
+    payload = json.loads(obj["Body"].read())
+    return [
+        Trigger(
+            sop_section_id=item["sopSectionId"], location_id=item["locationId"], event_id=item.get("eventId")
+        )
+        for item in payload["triggers"]
+    ]
+
+
+def save_triggers(*, scenario_at: datetime, triggers: list[Trigger]) -> None:
+    body = json.dumps(
+        {
+            "triggers": [
+                {"sopSectionId": t.sop_section_id, "locationId": t.location_id, "eventId": t.event_id}
+                for t in triggers
+            ]
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
+    s3_common.client().put_object(
+        Bucket=s3_common.internal_bucket(),
+        Key=_triggers_key(scenario_at),
+        Body=body,
+        ContentType="application/json; charset=utf-8",
+    )
+
+
+def _narrative_key(scenario_at: datetime, location_key: str) -> str:
+    at = scenario_at.isoformat().replace(":", "-")
+    return f"decisions/{at}/_summary/{location_key}.json"
+
+
+def fetch_cached_narrative(scenario_at: datetime, location_key: str) -> Optional[str]:
+    from botocore.exceptions import ClientError
+
+    try:
+        obj = s3_common.client().get_object(
+            Bucket=s3_common.internal_bucket(), Key=_narrative_key(scenario_at, location_key)
+        )
+    except ClientError as exc:
+        if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
+            return None
+        raise
+    return json.loads(obj["Body"].read())["text"]
+
+
+def save_narrative(*, scenario_at: datetime, location_key: str, narrative: str) -> None:
+    body = json.dumps({"text": narrative}, ensure_ascii=False).encode("utf-8")
+    s3_common.client().put_object(
+        Bucket=s3_common.internal_bucket(),
+        Key=_narrative_key(scenario_at, location_key),
+        Body=body,
+        ContentType="application/json; charset=utf-8",
+    )

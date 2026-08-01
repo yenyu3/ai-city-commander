@@ -2,10 +2,20 @@
 
 Creates the incident in RDS (operational source of truth), writes the raw
 payload to S3 (internal-results/incidents/{date}/{eventId}.json, per the
-doc's data flow), and best-effort warms the decision cache for the
-incident's segment so the first GET /api/decisions?locationId=<segment>
-call afterward is more likely to already be cached (see worker_invoke.py --
-this is optional/non-blocking, not required for correctness).
+doc's data flow), and best-effort warms the decision cache for this
+scenario_at (see worker_invoke.py -- this is optional/non-blocking, not
+required for correctness).
+
+2026-08-01: the warm-up call no longer targets a single locationId --
+decision-generator-worker now sweeps the whole city per scenario_at (see
+decision_routing.py). It's called with `forceRefresh: true` because a sweep
+for this exact scenario_at could already be cached from moments earlier
+(e.g. someone polled GET /api/city-state just before this incident was
+created) and wouldn't know about this brand-new incident otherwise --
+without forcing, that stale sweep would silently miss it until a different
+scenario_at happened to be queried. This is best-effort/non-blocking, same
+as before -- if it fails, the next real GET /api/decisions call still
+computes fresh (just without the head start).
 
 Always returns 202 -- per the doc, this never waits for judgment/report/
 publication to finish. `publication.status` stays "pending": there's no
@@ -80,9 +90,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     )
 
     # Best-effort cache warm -- not required for correctness (a GET
-    # /api/decisions?locationId=<segment> that lands before this finishes
-    # just computes it itself instead of hitting a warm cache).
-    worker_invoke.invoke_async({"scenarioAt": context["scenarioAt"], "locationId": affected_segment})
+    # /api/decisions that lands before this finishes just computes it itself
+    # instead of hitting a warm cache). forceRefresh=True busts any sweep
+    # already cached for this scenario_at that predates this incident.
+    worker_invoke.invoke_async({"scenarioAt": context["scenarioAt"], "forceRefresh": True})
 
     generated_at = api_common.now_iso()
     return api_common.response(

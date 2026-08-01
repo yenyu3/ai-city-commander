@@ -1,19 +1,30 @@
-"""decision-generator-worker -- see data/api.md §7.
+"""decision-generator-worker -- see data/api.md §7 (2026-08-01: response
+shape/invocation contract changed, see below -- I'll hand the user the exact
+data/api.md diff separately rather than editing the doc myself).
 
 Two invocation shapes:
 
-  Reactive: {"scenarioAt": "...", "locationId": "..."} -- fired by
-    decision/handler.py (cache miss) or incident/handler.py (best-effort
-    cache warm right after creation), via worker_invoke.invoke_async.
-    Resolves the locationId with decision_routing, runs the matching
-    decide_*() call, caches the result to S3.
+  Reactive: {"scenarioAt": "...", "locationId": "..." | omitted,
+    "forceRefresh": true | omitted} -- fired by decision/handler.py (cache
+    miss) or incident/handler.py (best-effort cache warm right after
+    creation), via worker_invoke.invoke_async. `locationId` is now optional
+    -- omitted means "give me the city-wide view," not an error (2026-08-01
+    redesign: the whole point is the agent sees every segment/station/
+    incident in one shot regardless of what focus the caller asked about;
+    `locationId` only steers which focused *narrative* gets generated, see
+    decision_routing.py's module docstring for the full 3-phase pipeline).
+    `forceRefresh` busts Phase A's cached sweep even if one already exists
+    for this scenario_at -- used by incident/handler.py right after creating
+    an incident, since a sweep cached moments earlier wouldn't know about it
+    yet otherwise (known limitation, not silently papered over: only the
+    caller that just changed the data knows to ask for this).
 
   Scheduled: {"source": "eventbridge", "mode": "scheduled"} -- automation.tf's
     rate(5 minutes) EventBridge rule ("決策預先產生" per the doc's API table).
     Left as a documented no-op for now: this demo's whole model runs on a
     simulated `scenarioAt` supplied by the caller, not real wall-clock time,
     so a periodic wall-clock trigger has no obvious answer to "which
-    scenario_at should I pre-generate for". Not inventing one -- doing so
+    scenario_at should I sweep proactively". Not inventing one -- doing so
     would be guessing at semantics the spec doesn't define for this demo's
     architecture. Acknowledges receipt and returns, same as this file's
     previous placeholder behavior.
@@ -25,7 +36,7 @@ from typing import Any
 
 import db
 from api_common import parse_scenario_at
-from decision_routing import compute_and_cache, resolve_location
+from decision_routing import run_worker_phases
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -36,13 +47,11 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         }
 
     scenario_at_raw = event.get("scenarioAt")
-    location_id = event.get("locationId")
-    if not scenario_at_raw or not location_id:
-        return {
-            "statusCode": 400,
-            "body": json.dumps({"error": "reactive invocation needs 'scenarioAt' and 'locationId'"}),
-        }
+    if not scenario_at_raw:
+        return {"statusCode": 400, "body": json.dumps({"error": "reactive invocation needs 'scenarioAt'"})}
 
+    location_id = event.get("locationId")  # optional: None/omitted -> global view
+    force_refresh = bool(event.get("forceRefresh"))
     scenario_at = parse_scenario_at(scenario_at_raw)
 
     try:
@@ -50,10 +59,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     except RuntimeError as exc:
         return {"statusCode": 503, "body": json.dumps({"error": str(exc)})}
     try:
-        route = resolve_location(conn, location_id, scenario_at)
-        if route.kind == "unknown":
-            return {"statusCode": 400, "body": json.dumps({"error": f"unrecognized locationId: {location_id!r}"})}
-        decision = compute_and_cache(conn, route, location_id, scenario_at)
+        pairs, _narrative = run_worker_phases(conn, scenario_at, location_id, force_refresh=force_refresh)
         conn.commit()
     finally:
         conn.close()
@@ -62,10 +68,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "statusCode": 200,
         "body": json.dumps(
             {
-                "status": "ready" if decision is not None else "failed",
+                "status": "ready",
                 "locationId": location_id,
                 "scenarioAt": scenario_at_raw,
-                "triggered": decision.triggered if decision is not None else None,
+                "triggeredCount": len(pairs),
             }
         ),
     }

@@ -1,54 +1,32 @@
-"""GET /api/decisions?scenarioAt={scenarioAt}&locationId={locationId} --
-see data/api.md §4. Cache-aside: check S3 (via s3_cache/decision_routing)
-for this exact (scenarioAt, locationId); 200 with the cached decision on a
-hit, or fire decision-generator-worker asynchronously and return 202 on a
-miss (never computes synchronously here -- that's the worker's job, see
-../decision-generator-worker/handler.py).
+"""GET /api/decisions?scenarioAt={scenarioAt}&locationId={locationId}? --
+see data/api.md §4. 2026-08-01 redesign: `locationId` is now OPTIONAL and
+the response shape changed from a single `aiDecision` to a `decisions[]`
+array + a `situationSummary` narrative -- see decision_routing.py's module
+docstring for why (the short version: the agent now sees the whole city at
+once every time; `locationId` only steers which focused narrative comes
+back, it no longer selects what gets computed). This is a real change to
+`data/api.md`'s documented contract -- I'm not editing that doc myself, see
+the diff description handed to the user separately.
+
+Still a pure cache-aside read: `decision_routing.fetch_cached_view` never
+touches RDS or an LLM. `200` on a hit; on a miss, fires
+decision-generator-worker asynchronously (it does the real -- possibly RDS +
+multiple LLM calls -- work, see decision-generator-worker/handler.py) and
+returns `202`.
 """
 from __future__ import annotations
 
 from typing import Any, Optional
 
 import api_common
-import db
 import worker_invoke
 from agent.decision_agent import Decision
-from decision_routing import LocationRoute, fetch_cached, resolve_location
+from decision_routing import Trigger, fetch_cached_view
 
 
-def _location_name(conn, location_id: str, scenario_at) -> str:
-    if location_id.startswith("RD_"):
-        traffic = db.fetch_latest_traffic_snapshots(conn, scenario_at)
-        match = next((t for t in traffic if t.segment_id == location_id), None)
-        return match.road_name if match else location_id
-    crowd = db.fetch_latest_crowd_snapshots(conn, scenario_at)
-    match = next((c for c in crowd if c.station_id == location_id), None)
-    return match.location_name if match else location_id
-
-
-def _build_ai_decision(
-    route: LocationRoute, decision: Decision, location_id: str, location_name: str
-) -> dict[str, Any]:
-    """Maps our internal Decision onto data/api.md §4's aiDecision shape.
-    Fields the doc's own examples leave empty (reasoningSteps,
-    signalCoordination, crossSystemCoordination, publicationEligibility)
-    stay empty here too -- not a shortcut, that's what the spec itself shows.
-    """
-    kind = route.kind
-    if route.kind == "incident":
-        kind = "accident" if decision.sop_section_id == "2" else "signal_failure"
-
-    title_by_kind = {
-        "congestion": f"{location_name} 觸發 {decision.result.get('tier', 'Normal')} 級壅塞",
-        "accident": location_name,
-        "signal_failure": f"{location_name} 號誌故障",
-        "mrt_diversion": f"{location_name} 觸發捷運分流",
-        "dome_dispersal": f"{location_name} 觸發散場啟動",
-        "multilingual": f"{location_name} 觸發多語通報",
-    }
-
+def _decision_item(trig: Trigger, decision: Decision) -> dict[str, Any]:
     reroute: Optional[dict[str, Any]] = None
-    if kind == "accident" and decision.triggered:
+    if trig.kind == "accident":
         reroute = {
             "mainRoute": decision.result.get("main_route"),
             "secondaryRoutes": decision.result.get("secondary_routes", []),
@@ -56,52 +34,38 @@ def _build_ai_decision(
         }
 
     return {
-        "decisionId": f"DEC_{location_id}",
-        "status": "recommended" if decision.triggered else "not_triggered",
-        "locationContext": {"locationId": location_id, "locationName": location_name},
+        "decisionId": f"DEC_{trig.location_id}",
+        "sopSectionId": trig.sop_section_id,
+        "kind": trig.kind,
+        "locationId": trig.location_id,
+        "eventId": trig.event_id,
         "summary": {
-            "kind": kind,
-            "title": title_by_kind.get(kind, location_name),
             "aiText": decision.reasoning,
-            "sopRefs": [f"SOP §{decision.sop_section_id}"] if decision.sop_section_id else [],
+            "sopRefs": [f"SOP §{trig.sop_section_id}"],
         },
-        "recommendedActions": decision.result.get("actions", []) if kind == "congestion" else [],
-        "metrics": {},
-        "estimatedRecovery": decision.result.get("ete") if kind == "accident" else None,
+        "recommendedActions": decision.result.get("actions", []) if trig.kind == "congestion" else [],
+        "estimatedRecovery": decision.result.get("ete") if trig.kind == "accident" else None,
         "reroute": reroute,
-        "reasoningSteps": [],
-        "signalCoordination": {},
-        "crossSystemCoordination": {},
-        "publicationEligibility": {},
+        "publicMessage": decision.public_message,
     }
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     query = event.get("queryStringParameters") or {}
-    if "scenarioAt" not in query or "locationId" not in query:
-        return api_common.response(400, {"error": "missing query param: 'scenarioAt' and/or 'locationId'"})
+    if "scenarioAt" not in query:
+        return api_common.response(400, {"error": "missing query param: 'scenarioAt'"})
     try:
         scenario_at = api_common.parse_scenario_at(query["scenarioAt"])
     except ValueError:
         return api_common.response(400, {"error": f"invalid scenarioAt: {query['scenarioAt']!r}"})
-    location_id = query["locationId"]
-
-    try:
-        conn = db.connect()
-    except RuntimeError as exc:
-        return api_common.response(503, {"error": str(exc)})
-    try:
-        route = resolve_location(conn, location_id, scenario_at)
-        if route.kind == "unknown":
-            return api_common.response(400, {"error": f"unrecognized locationId: {location_id!r}"})
-        cached = fetch_cached(route, location_id, scenario_at)
-        location_name = _location_name(conn, location_id, scenario_at)
-    finally:
-        conn.close()
+    location_id = query.get("locationId") or None
 
     retrieved_at = api_common.now_iso()
+    focus = {"locationId": location_id} if location_id else None
+    cached = fetch_cached_view(scenario_at, location_id)
 
     if cached is not None:
+        pairs, narrative = cached
         return api_common.response(
             200,
             {
@@ -112,7 +76,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                     "source": "decision_snapshot",
                     "cacheStatus": "hit",
                 },
-                "aiDecision": _build_ai_decision(route, cached, location_id, location_name),
+                "focus": focus,
+                "situationSummary": narrative,
+                "decisions": [_decision_item(trig, decision) for trig, decision in pairs],
             },
         )
 
@@ -120,14 +86,18 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     return api_common.response(
         202,
         {
-            "meta": {"scenarioAt": query["scenarioAt"], "retrievedAt": retrieved_at, "dataMode": "demo", "cacheStatus": "miss"},
+            "meta": {
+                "scenarioAt": query["scenarioAt"], "retrievedAt": retrieved_at,
+                "dataMode": "demo", "cacheStatus": "miss",
+            },
+            "focus": focus,
             "processing": {
-                "jobId": f"DJOB_{location_id}_{query['scenarioAt']}",
+                "jobId": f"DJOB_{query['scenarioAt']}",
                 "status": "queued",
                 "processor": "decision-generator",
                 "queuedAt": retrieved_at,
                 "retryAfterSeconds": 10,
             },
-            "message": "此時間與地點的 AI 決策尚未產生，系統已開始處理，請稍後再查詢。",
+            "message": "此時間點的 AI 決策尚未產生，系統已開始處理，請稍後再查詢。",
         },
     )

@@ -15,6 +15,7 @@ Then set frontend/.env.local's VITE_API_BASE_URL=http://localhost:8787
 from __future__ import annotations
 
 import importlib.util
+import json
 import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
@@ -62,6 +63,23 @@ class _Handler(BaseHTTPRequestHandler):
         split = urlsplit(self.path)
         query = dict(parse_qsl(split.query)) or None
 
+        # Not a production route (not in api.tf) -- real callers never read
+        # either bucket this way (citizens go through CloudFront for the
+        # public one; the internal one is never exposed to a browser at
+        # all, only read by the Lambdas themselves). This exists purely so
+        # data/api-test.html can inspect what actually landed in S3 during
+        # local dev -- incidents/, decisions/ (internal) or manifest.json/
+        # notices/ (public) -- without needing real AWS credentials in the
+        # browser or a deployed CloudFront distribution yet. s3-list is the
+        # same idea but for listing keys under a prefix (list_objects_v2)
+        # instead of fetching one known key.
+        if method == "GET" and split.path == "/_dev/s3-object":
+            self._serve_dev_s3_object(query)
+            return
+        if method == "GET" and split.path == "/_dev/s3-list":
+            self._serve_dev_s3_list(query)
+            return
+
         for route_method, pattern, service_dir in _ROUTES:
             if method != route_method:
                 continue
@@ -80,6 +98,64 @@ class _Handler(BaseHTTPRequestHandler):
             return
 
         self._write({"statusCode": 404, "body": '{"error": "not found"}'})
+
+    def _serve_dev_s3_object(self, query: dict | None) -> None:
+        key = (query or {}).get("key")
+        bucket_choice = (query or {}).get("bucket", "internal")
+        if not key:
+            self._write({"statusCode": 400, "body": json.dumps({"error": "missing query param: 'key'"})})
+            return
+        if bucket_choice not in ("internal", "public"):
+            self._write({"statusCode": 400, "body": json.dumps({"error": "query param 'bucket' must be 'internal' or 'public'"})})
+            return
+        try:
+            import s3_common
+
+            bucket = s3_common.internal_bucket() if bucket_choice == "internal" else s3_common.public_bucket()
+            obj = s3_common.client().get_object(Bucket=bucket, Key=key)
+            self._write({
+                "statusCode": 200,
+                "headers": {"content-type": "application/json; charset=utf-8"},
+                "body": obj["Body"].read().decode("utf-8"),
+            })
+        except Exception as exc:  # noqa: BLE001 - report as 404, not a server crash
+            self._write({"statusCode": 404, "body": json.dumps({"error": str(exc)})})
+
+    def _serve_dev_s3_list(self, query: dict | None) -> None:
+        bucket_choice = (query or {}).get("bucket", "internal")
+        prefix = (query or {}).get("prefix", "")
+        if bucket_choice not in ("internal", "public"):
+            self._write({"statusCode": 400, "body": json.dumps({"error": "query param 'bucket' must be 'internal' or 'public'"})})
+            return
+        try:
+            import s3_common
+
+            bucket = s3_common.internal_bucket() if bucket_choice == "internal" else s3_common.public_bucket()
+            s3 = s3_common.client()
+            keys: list[dict] = []
+            continuation = None
+            while True:
+                kwargs = {"Bucket": bucket, "Prefix": prefix}
+                if continuation:
+                    kwargs["ContinuationToken"] = continuation
+                page = s3.list_objects_v2(**kwargs)
+                for obj in page.get("Contents", []):
+                    keys.append({
+                        "key": obj["Key"],
+                        "size": obj["Size"],
+                        "lastModified": obj["LastModified"].isoformat(),
+                    })
+                if not page.get("IsTruncated"):
+                    break
+                continuation = page.get("NextContinuationToken")
+            keys.sort(key=lambda item: item["key"])
+            self._write({
+                "statusCode": 200,
+                "headers": {"content-type": "application/json; charset=utf-8"},
+                "body": json.dumps({"bucket": bucket, "prefix": prefix, "keys": keys}),
+            })
+        except Exception as exc:  # noqa: BLE001 - report as 404, not a server crash
+            self._write({"statusCode": 404, "body": json.dumps({"error": str(exc)})})
 
     def _write(self, result: dict) -> None:
         self.send_response(result["statusCode"])
