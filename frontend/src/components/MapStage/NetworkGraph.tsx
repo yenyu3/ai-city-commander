@@ -470,6 +470,10 @@ function NetworkGraph({
         });
         setPlacementSeq((seq) => seq + 1);
         setFieldInspectorLocateStatus("granted");
+        mapRef.current?.getMap().easeTo({
+          center: [geoPosition.coords.longitude, geoPosition.coords.latitude],
+          duration: 900,
+        });
       },
       () => setFieldInspectorLocateStatus("denied"),
       { timeout: 8000 },
