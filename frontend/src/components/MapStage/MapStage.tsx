@@ -277,7 +277,20 @@ export default function MapStage() {
         )}
 
         <div className={styles.bottomOverlay}>
-          <div className={styles.displayToggle}>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={displayMode === "risk"}
+            aria-label={
+              viewerMode === "public"
+                ? "Toggle advisory hexagons"
+                : "Toggle risk hexagons"
+            }
+            className={styles.displayToggle}
+            onClick={() =>
+              setDisplayMode(displayMode === "risk" ? "flow" : "risk")
+            }
+          >
             <span
               className={
                 displayMode === "flow"
@@ -287,22 +300,9 @@ export default function MapStage() {
             >
               {viewerMode === "public" ? "Hexagons" : "Hexagons"}
             </span>
-            <button
-              type="button"
-              role="switch"
-              aria-checked={displayMode === "risk"}
-              aria-label={
-                viewerMode === "public"
-                  ? "Toggle advisory view"
-                  : "Toggle risk view"
-              }
-              className={styles.switch}
-              onClick={() =>
-                setDisplayMode(displayMode === "risk" ? "flow" : "risk")
-              }
-            >
+            <span className={styles.switch} aria-hidden="true">
               <span className={styles.switchKnob} />
-            </button>
+            </span>
             <span
               className={
                 displayMode === "risk"
@@ -310,7 +310,7 @@ export default function MapStage() {
                   : styles.toggleLabel
               }
             ></span>
-          </div>
+          </button>
         </div>
 
         <AlertOverlay />

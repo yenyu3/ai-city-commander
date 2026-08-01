@@ -9,6 +9,7 @@ const PANEL_WIDTH = 380;
 const PANEL_HEIGHT = 560;
 const PANEL_GAP = 12;
 const VIEWPORT_MARGIN = 16;
+const MOBILE_BOTTOM_MARGIN = 88;
 
 type Position = {
   x: number;
@@ -24,29 +25,45 @@ function clamp(value: number, min: number, max: number) {
   return Math.min(Math.max(value, min), Math.max(min, max));
 }
 
+function getViewportSize() {
+  if (typeof window === "undefined") return { width: 0, height: 0 };
+  return {
+    width: window.visualViewport?.width ?? window.innerWidth,
+    height: window.visualViewport?.height ?? window.innerHeight,
+  };
+}
+
+function getViewportBottomMargin() {
+  if (typeof window === "undefined") return VIEWPORT_MARGIN;
+  return window.innerWidth <= 820 ? MOBILE_BOTTOM_MARGIN : 24;
+}
+
 function getDefaultFabPosition(): Position {
   if (typeof window === "undefined") {
     return { x: 24, y: 24 };
   }
 
+  const viewport = getViewportSize();
   return {
-    x: window.innerWidth - FAB_SIZE - 24,
-    y: window.innerHeight - FAB_SIZE - 24,
+    x: viewport.width - FAB_SIZE - 24,
+    y: viewport.height - FAB_SIZE - getViewportBottomMargin(),
   };
 }
 
 function constrainFabPosition(position: Position): Position {
   if (typeof window === "undefined") return position;
+  const viewport = getViewportSize();
 
   return {
-    x: clamp(position.x, VIEWPORT_MARGIN, window.innerWidth - FAB_SIZE - VIEWPORT_MARGIN),
-    y: clamp(position.y, VIEWPORT_MARGIN, window.innerHeight - FAB_SIZE - VIEWPORT_MARGIN),
+    x: clamp(position.x, VIEWPORT_MARGIN, viewport.width - FAB_SIZE - VIEWPORT_MARGIN),
+    y: clamp(position.y, VIEWPORT_MARGIN, viewport.height - FAB_SIZE - getViewportBottomMargin()),
   };
 }
 
 function getPanelSize() {
-  const panelWidth = Math.min(PANEL_WIDTH, window.innerWidth - VIEWPORT_MARGIN * 2);
-  const panelHeight = Math.min(PANEL_HEIGHT, window.innerHeight - VIEWPORT_MARGIN * 2 - FAB_SIZE - PANEL_GAP);
+  const viewport = getViewportSize();
+  const panelWidth = Math.min(PANEL_WIDTH, viewport.width - VIEWPORT_MARGIN * 2);
+  const panelHeight = Math.min(PANEL_HEIGHT, viewport.height - VIEWPORT_MARGIN * 2 - FAB_SIZE - PANEL_GAP);
 
   return {
     width: panelWidth,
@@ -60,10 +77,11 @@ function getPanelMetrics(fabPosition: Position): PanelMetrics {
   }
 
   const { width, height } = getPanelSize();
+  const viewport = getViewportSize();
 
   return {
-    x: clamp(fabPosition.x + FAB_SIZE - width, VIEWPORT_MARGIN, window.innerWidth - width - VIEWPORT_MARGIN),
-    y: clamp(fabPosition.y - height - PANEL_GAP, VIEWPORT_MARGIN, window.innerHeight - height - VIEWPORT_MARGIN),
+    x: clamp(fabPosition.x + FAB_SIZE - width, VIEWPORT_MARGIN, viewport.width - width - VIEWPORT_MARGIN),
+    y: clamp(fabPosition.y - height - PANEL_GAP, VIEWPORT_MARGIN, viewport.height - height - getViewportBottomMargin()),
     width,
     height,
   };
@@ -71,10 +89,12 @@ function getPanelMetrics(fabPosition: Position): PanelMetrics {
 
 function getOpenFabPosition(panel: PanelMetrics): Position {
   if (typeof window === "undefined") return panel;
+  const viewport = getViewportSize();
+  const bottomMargin = getViewportBottomMargin();
 
-  const sideY = clamp(panel.y, VIEWPORT_MARGIN, window.innerHeight - FAB_SIZE - VIEWPORT_MARGIN);
+  const sideY = clamp(panel.y, VIEWPORT_MARGIN, viewport.height - FAB_SIZE - bottomMargin);
   const rightX = panel.x + panel.width + PANEL_GAP;
-  if (rightX <= window.innerWidth - FAB_SIZE - VIEWPORT_MARGIN) {
+  if (rightX <= viewport.width - FAB_SIZE - VIEWPORT_MARGIN) {
     return { x: rightX, y: sideY };
   }
 
@@ -84,8 +104,8 @@ function getOpenFabPosition(panel: PanelMetrics): Position {
   }
 
   const bottomY = panel.y + panel.height + PANEL_GAP;
-  const rowX = clamp(panel.x + panel.width - FAB_SIZE, VIEWPORT_MARGIN, window.innerWidth - FAB_SIZE - VIEWPORT_MARGIN);
-  if (bottomY <= window.innerHeight - FAB_SIZE - VIEWPORT_MARGIN) {
+  const rowX = clamp(panel.x + panel.width - FAB_SIZE, VIEWPORT_MARGIN, viewport.width - FAB_SIZE - VIEWPORT_MARGIN);
+  if (bottomY <= viewport.height - FAB_SIZE - bottomMargin) {
     return { x: rowX, y: bottomY };
   }
 
@@ -95,8 +115,8 @@ function getOpenFabPosition(panel: PanelMetrics): Position {
   }
 
   return {
-    x: clamp(panel.x + panel.width - FAB_SIZE - 8, VIEWPORT_MARGIN, window.innerWidth - FAB_SIZE - VIEWPORT_MARGIN),
-    y: clamp(panel.y + 8, VIEWPORT_MARGIN, window.innerHeight - FAB_SIZE - VIEWPORT_MARGIN),
+    x: clamp(panel.x + panel.width - FAB_SIZE - 8, VIEWPORT_MARGIN, viewport.width - FAB_SIZE - VIEWPORT_MARGIN),
+    y: clamp(panel.y + 8, VIEWPORT_MARGIN, viewport.height - FAB_SIZE - bottomMargin),
   };
 }
 
@@ -121,7 +141,11 @@ export default function ChatFab() {
     }
 
     window.addEventListener("resize", handleResize);
-    return () => window.removeEventListener("resize", handleResize);
+    window.visualViewport?.addEventListener("resize", handleResize);
+    return () => {
+      window.removeEventListener("resize", handleResize);
+      window.visualViewport?.removeEventListener("resize", handleResize);
+    };
   }, []);
 
   function startDrag(event: React.PointerEvent<HTMLElement>) {
