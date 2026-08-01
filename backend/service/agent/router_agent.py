@@ -480,7 +480,15 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
             text = text[4:]
         text = text.strip()
     try:
-        return json.loads(text)
+        # strict=False allows raw control characters (literal newlines etc.)
+        # inside string values -- caught live on the deployed chat Lambda
+        # (agent/chat.py hit the exact same failure): a long text field
+        # containing an actual newline instead of an escaped "\n" makes
+        # json.loads()'s default strict mode reject the whole response
+        # ("Expecting property name enclosed in double quotes"), even
+        # though the content itself was fine. narrate_for_focus's text
+        # fields are exactly this kind of long free-form content.
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         # narrate_for_focus's governmentText is long-form (up to 8000
         # tokens, every triggered item spelled out in full) -- caught live
@@ -490,4 +498,4 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         # content. One retry with trailing commas stripped before giving up
         # and falling back (which would silently discard this whole
         # response, per narrate_for_focus's docstring on why that's costly).
-        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)

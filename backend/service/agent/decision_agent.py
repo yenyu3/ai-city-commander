@@ -187,11 +187,18 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
             text = text[4:]
         text = text.strip()
     try:
-        return json.loads(text)
+        # strict=False allows raw control characters (literal newlines etc.)
+        # inside string values -- caught live on the deployed chat Lambda
+        # (same _parse_json_response pattern as agent/chat.py): a long
+        # reasoning/text field containing an actual newline instead of an
+        # escaped "\n" makes json.loads()'s default strict mode reject the
+        # whole response ("Expecting property name enclosed in double
+        # quotes"), even though the content itself was fine.
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         # Same long-JSON trailing-comma slip caught live in
         # router_agent.py/chat.py's _parse_json_response -- one retry with
         # trailing commas stripped before giving up and falling back. Does
         # NOT recover a genuinely truncated response (unterminated string),
         # which max_tokens above is sized to avoid in the first place.
-        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)

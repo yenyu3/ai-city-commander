@@ -154,12 +154,19 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
             text = text[4:]
         text = text.strip()
     try:
-        return json.loads(text)
+        # strict=False allows raw control characters (literal newlines etc.)
+        # inside string values -- caught live on the deployed chat Lambda:
+        # a real Bedrock call's long `text`/`reasoning` field contained an
+        # actual newline instead of an escaped "\n", which json.loads()'s
+        # default strict mode rejects outright ("Expecting property name
+        # enclosed in double quotes"), silently discarding an otherwise-good
+        # answer and falling back to the keyword-excerpt path.
+        return json.loads(text, strict=False)
     except json.JSONDecodeError:
         # Same long-JSON trailing-comma slip caught live in
         # router_agent.py's _parse_json_response -- one retry with trailing
         # commas stripped before giving up and falling back.
-        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
 
 
 def _fallback_answer(question: str, audience: str) -> ChatAnswer:
