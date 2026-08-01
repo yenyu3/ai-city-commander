@@ -6,13 +6,12 @@ Read-only: checks S3 for an already-generated report (emergency-reports/
 LLM, per the doc. `{date}` isn't in the request -- looked up from the
 incident's own `occurred_at` in RDS instead.
 
-2026-08-01: decision_routing.py's decision-generator-worker path now writes
-report-v1.json here (see report_builder.py) the first time an incident-tied
-SOP check actually triggers -- so `format=json` genuinely reaches 200+
-downloadUrl once that's happened. `format=pdf` still stays perpetually
-"processing": no PDF renderer exists, and the brief allows any report
-format, so JSON alone already satisfies "報告呈現格式不拘" -- not wiring up a
-second format nobody asked for.
+2026-08-01: decision_routing.py's decision-generator-worker path writes both
+report-v1.json AND report-v1.pdf here (see report_builder.py) once ALL of an
+incident's SOP checks finish (not per-check -- a single incident can trip up
+to 3 articles, §2/§3/§5). Both formats are written together in the same call,
+so `format=json`/`format=pdf` become `ready` at the same time -- no window
+where one format exists and the other doesn't.
 """
 from __future__ import annotations
 

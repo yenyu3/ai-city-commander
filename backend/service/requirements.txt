@@ -2,3 +2,8 @@
 # already -- not listed here on purpose, don't add it or pip may pull in a
 # version mismatched with what the runtime image bundles.
 psycopg[binary]
+reportlab  # pure-Python PDF rendering for report_builder.py's report-v1.pdf --
+           # no system-level dependency (e.g. no wkhtmltopdf/cairo binary),
+           # important since every per-service Dockerfile installs from this
+           # same shared requirements.txt and only decision-generator-worker
+           # actually needs this

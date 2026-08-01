@@ -8,18 +8,26 @@ required for correctness).
 
 2026-08-01: the warm-up call is now `mode="incident"` with this incident's
 eventId -- the shared worker (decision-generator-worker/handler.py) processes
-ONLY this one event and writes its judgment + 交控中心建議書 under the
-incident's own S3 folder (incidents/{date}/{eventId}/decisions/... +
+ONLY this one event and writes its judgment + 交控中心建議書 (JSON+PDF) under
+the incident's own S3 folder (incidents/{date}/{eventId}/decisions/... +
 emergency-reports/), served by GET /api/incidents/{eventId}/report. It is
 NOT the decision API's city sweep: which API invoked the worker decides
 decision-vs-incident (see decision_routing.py's run_incident_flow). This is
 best-effort/non-blocking, same as before -- if it fails, the report simply
 isn't warm when the government queries it (still "processing").
 
-Always returns 202: AI judgment and the internal report remain asynchronous.
-The public-safe notice and its daily manifest entry are written before the
-response so citizen clients polling CloudFront can discover the event without
-waiting for the longer internal decision/report pipeline.
+Always returns 202: AI judgment, the internal report, AND the public notice
+are all now produced asynchronously by the worker
+(decision_routing.run_incident_flow -> _write_incident_report_and_notice),
+once every one of this incident's SOP checks has finished -- NOT written
+here in this handler's own thread anymore. That earlier version published a
+templated one-liner notice immediately, before any real judgment existed;
+the user's direction is the notice must carry the exact same
+government/citizen/decisions shape GET /api/decisions returns (see
+decision_item_json/summary_json), which only exists after the worker's SOP
+checks complete. `publication.status` is honestly "pending" here for the
+same reason -- nothing has been published yet at the time this response is
+built.
 """
 from __future__ import annotations
 
@@ -87,41 +95,20 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         ContentType="application/json; charset=utf-8",
     )
 
-    # Publish the public-safe notice immediately. Frontends poll this day's
-    # CloudFront-served manifest and fetch this immutable notice by noticeId.
-    notice_id = f"PUB_{event_id}_v1"
-    public_notice = {
-        "noticeId": notice_id,
-        "alertId": event_id,
-        "eventId": event_id,
-        "publishedAt": context["scenarioAt"],
-        "location": incident.location,
-        "type": incident.type,
-        "severity": incident.severity,
-        "languages": ["zh"],
-        "messages": {
-            "zh": f"{incident.location}發生交通事件，請改道通行並預留額外時間。",
-        },
-    }
-    manifest_key, notice_key = s3_common.publish_public_notice(
-        date=date,
-        notice_id=notice_id,
-        alert_id=event_id,
-        notice=public_notice,
-    )
-
     # Best-effort cache warm -- not required for correctness (a GET
     # /api/decisions that lands before this finishes just computes it itself
     # instead of hitting a warm cache). mode="incident" tells the shared
-    # worker to process ONLY this one event: compute its SOP judgment under
-    # incidents/{date}/{eventId}/decisions/... and write the 交控中心建議書 to
-    # emergency-reports/ (GET /api/incidents/{eventId}/report then serves it
-    # from S3). This is the incident API entry -- decision-vs-incident is
-    # decided by which API invoked the worker, not by SOP kind (see
-    # decision_routing.py's run_incident_flow).
+    # worker to process ONLY this one event: compute its SOP judgment(s),
+    # write the 交控中心建議書 (JSON+PDF) to emergency-reports/, AND publish
+    # the public notice -- all three happen together once every check
+    # finishes (see decision_routing.run_incident_flow /
+    # _write_incident_report_and_notice). This is the incident API entry --
+    # decision-vs-incident is decided by which API invoked the worker, not
+    # by SOP kind (see decision_routing.py's run_incident_flow).
     worker_invoke.invoke_async({"mode": "incident", "scenarioAt": context["scenarioAt"], "eventId": event_id})
 
     generated_at = api_common.now_iso()
+    notice_id = f"PUB_{event_id}_v1"
     return api_common.response(
         202,
         {
@@ -134,10 +121,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "queuedAt": context["scenarioAt"],
             },
             "publication": {
-                "status": "published",
-                "noticeId": notice_id,
-                "publicManifestUrl": f"/{manifest_key}",
-                "publicNoticeUrl": f"/{notice_key}",
+                "status": "pending",
+                "expectedNoticeId": notice_id,
+                "publicManifestUrl": f"/{s3_common.public_manifest_key(date)}",
             },
         },
     )

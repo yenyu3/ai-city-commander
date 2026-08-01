@@ -23,52 +23,7 @@ from typing import Any
 
 import api_common
 import worker_invoke
-from agent.router_agent import NarrativeSummary
-from decision_routing import decision_detail, fetch_cached_view
-
-
-def _decision_item(trig, decision) -> dict[str, Any]:
-    detail = decision_detail(trig, decision)
-    return {
-        "decisionId": detail["decisionId"],
-        "sopSectionId": detail["sopSectionId"],
-        "kind": detail["kind"],
-        "locationId": detail["locationId"],
-        "eventId": detail["eventId"],
-        "title": detail["title"],
-        "summary": {"aiText": detail["aiText"], "sopRefs": detail["sopRefs"]},
-        "reasoningSteps": detail["reasoningSteps"],
-        "recommendedActions": detail["recommendedActions"],
-        "estimatedRecovery": detail["estimatedRecovery"],
-        "reroute": detail["reroute"],
-        "segmentMetrics": detail["segmentMetrics"],
-        "signalCoordination": detail["signalCoordination"],
-        "crossSystemCoordination": detail["crossSystemCoordination"],
-        "publicationEligibility": detail["publicationEligibility"],
-        "publicMessage": detail["publicMessage"],
-    }
-
-
-def _summary_item(summary: NarrativeSummary, *, government: bool) -> dict[str, Any]:
-    item: dict[str, Any] = {
-        "focusLocationId": summary.focus_location_id,
-        "headline": summary.headline,
-        "text": summary.text,
-        "recommendedActions": summary.recommended_actions,
-        "estimatedRecovery": summary.estimated_recovery,
-        "prioritizedDecisionIds": summary.prioritized_decision_ids,
-    }
-    if government:
-        item["sopRefs"] = summary.sop_refs
-        item["signalCoordination"] = [
-            {"intersectionName": t.intersection_name, "adjustPct": t.adjust_pct, "goal": t.goal}
-            for t in summary.signal_coordination
-        ]
-        item["crossSystemCoordination"] = [
-            {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
-        ]
-        item["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
-    return item
+from decision_routing import decision_item_json, fetch_cached_view, summary_json
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -102,9 +57,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                     "cacheStatus": "hit" if age_minutes == 0 else "slot_hit",
                 },
                 "focus": focus,
-                "government": _summary_item(narrative.government, government=True),
-                "citizen": _summary_item(narrative.citizen, government=False),
-                "decisions": [_decision_item(trig, decision) for trig, decision in pairs],
+                "government": summary_json(narrative.government, government=True),
+                "citizen": summary_json(narrative.citizen, government=False),
+                "decisions": [decision_item_json(trig, decision) for trig, decision in pairs],
             },
         )
 

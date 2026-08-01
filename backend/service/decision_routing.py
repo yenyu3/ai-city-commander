@@ -71,6 +71,7 @@ from typing import Any, Callable, Optional
 import db
 import report_builder
 import s3_cache
+import s3_common
 from agent.decision_agent import Decision
 from agent.facts import (
     build_accident_candidates,
@@ -81,7 +82,7 @@ from agent.facts import (
     decide_multilingual,
     decide_signal_failure,
 )
-from agent.router_agent import Narrative, Trigger, narrate_for_focus, route_triggers
+from agent.router_agent import Narrative, NarrativeSummary, Trigger, narrate_for_focus, route_triggers
 from rules.congestion_tier import CITY_TRIGGER_SEGMENTS
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapshot
 
@@ -594,6 +595,62 @@ def decision_detail(trig: Trigger, decision: Decision) -> dict[str, Any]:
     }
 
 
+def decision_item_json(trig: Trigger, decision: Decision) -> dict[str, Any]:
+    """The `decisions[]` array's public API shape for one triggered item --
+    reshapes decision_detail()'s flat dict into the documented nested
+    `summary: {aiText, sopRefs}` shape. Shared by GET /api/decisions
+    (decision/handler.py), the incident API's public notice, and the
+    交控中心建議書 (report_builder.py) -- 2026-08-01: the notice/report used to
+    each hand-roll their own thinner shape; now all three callers of
+    per-item detail agree on one, so a viewer sees the exact same fields no
+    matter which of the three surfaces they came from."""
+    detail = decision_detail(trig, decision)
+    return {
+        "decisionId": detail["decisionId"],
+        "sopSectionId": detail["sopSectionId"],
+        "kind": detail["kind"],
+        "locationId": detail["locationId"],
+        "eventId": detail["eventId"],
+        "title": detail["title"],
+        "summary": {"aiText": detail["aiText"], "sopRefs": detail["sopRefs"]},
+        "reasoningSteps": detail["reasoningSteps"],
+        "recommendedActions": detail["recommendedActions"],
+        "estimatedRecovery": detail["estimatedRecovery"],
+        "reroute": detail["reroute"],
+        "segmentMetrics": detail["segmentMetrics"],
+        "signalCoordination": detail["signalCoordination"],
+        "crossSystemCoordination": detail["crossSystemCoordination"],
+        "publicationEligibility": detail["publicationEligibility"],
+        "publicMessage": detail["publicMessage"],
+    }
+
+
+def summary_json(summary: NarrativeSummary, *, government: bool) -> dict[str, Any]:
+    """One NarrativeSummary (citizen or government) serialized to its public
+    API shape. Shared by GET /api/decisions and the incident API's public
+    notice -- see decision_item_json()'s docstring for why sharing this
+    matters."""
+    item: dict[str, Any] = {
+        "focusLocationId": summary.focus_location_id,
+        "headline": summary.headline,
+        "text": summary.text,
+        "recommendedActions": summary.recommended_actions,
+        "estimatedRecovery": summary.estimated_recovery,
+        "prioritizedDecisionIds": summary.prioritized_decision_ids,
+    }
+    if government:
+        item["sopRefs"] = summary.sop_refs
+        item["signalCoordination"] = [
+            {"intersectionName": t.intersection_name, "adjustPct": t.adjust_pct, "goal": t.goal}
+            for t in summary.signal_coordination
+        ]
+        item["crossSystemCoordination"] = [
+            {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
+        ]
+        item["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
+    return item
+
+
 def _ensure_narrative(
     scenario_at: datetime, data: _CityData, pairs: list[tuple[Trigger, Decision]], location_id: Optional[str]
 ) -> Narrative:
@@ -634,9 +691,7 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     several: §2 accident + §5 signal failure are always checked, §3 mrt
     diversion only when its affected_segment is a station in the crowd data),
     caches each triggered one under
-    incidents/{date}/{eventId}/decisions/{scenarioAt}/{kind}.json, and writes
-    the 交控中心建議書 to emergency-reports/ (report_builder.py) -- the exact
-    key GET /api/incidents/{eventId}/report polls.
+    incidents/{date}/{eventId}/decisions/{scenarioAt}/{kind}.json.
 
     This is deliberately disjoint from run_worker_phases (the decision API
     entry): the decision-vs-incident split is decided by which API invoked
@@ -646,10 +701,22 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     2026-08-01: the up-to-3 SOP checks below are independent LLM calls (no
     shared mutable state, `conn` isn't touched by any of them -- all their
     inputs already live in `data`/`incident`) and are run in parallel via
-    ThreadPoolExecutor, same rationale as _ensure_decisions. S3 writes
-    (decision cache + report) happen sequentially afterward, per triggered
-    result -- those are fast relative to the LLM calls and keep the
-    S3-write-order simple to reason about."""
+    ThreadPoolExecutor, same rationale as _ensure_decisions.
+
+    Also 2026-08-01: the 交控中心建議書 (report_builder.py) and the public
+    notice (s3_common.publish_public_notice) are now written ONCE, after all
+    checks finish, from the FULL set of triggered pairs -- not once per
+    triggered kind inside the loop. The old per-kind write clobbered itself
+    when an incident tripped more than one SOP article (e.g. §2 accident +
+    §5 signal_failure both firing meant the second write silently discarded
+    the first's content, since both used the same report-v1.json key) --
+    caught when asked "can one incident have multiple decisions?" (yes, up to
+    3) and realizing the report/notice pipeline assumed exactly one. The
+    report/notice content is this event's own `decision_item_json`/
+    `summary_json` output -- i.e. exactly what GET /api/decisions would
+    return if this incident were the only thing in the sweep, per the user's
+    direction that the notice format must match the decisions API's shape
+    (see decision_item_json/summary_json's docstrings)."""
     data = _fetch_city_data(conn, scenario_at)
     incident = data.incidents.get(event_id)
     if incident is None:
@@ -678,7 +745,6 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
             event_id=event_id, date=date, scenario_at=scenario_at,
             alert_kind=kind, title=incident.location, decision=decision,
         )
-        report_builder.build_and_save_report(incident=incident, decision=decision, scenario_at=scenario_at)
         pairs.append(
             (
                 Trigger(
@@ -689,7 +755,48 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
                 decision,
             )
         )
+
+    if pairs:
+        _write_incident_report_and_notice(scenario_at, data, incident, date, pairs)
+
     return pairs
+
+
+def _write_incident_report_and_notice(
+    scenario_at: datetime, data: _CityData, incident: LiveIncident, date: str,
+    pairs: list[tuple[Trigger, Decision]],
+) -> None:
+    """One-time, post-all-checks write for both the internal 交控中心建議書
+    and the public notice -- see run_incident_flow's docstring for why this
+    replaced a per-kind write inside the loop. `focus_location_id` is this
+    incident's own affected_segment: the notice/report is "what would
+    GET /api/decisions return if focused on this incident's location, with
+    only this incident's own triggers in the sweep" (per the user's
+    direction), not a full city sweep."""
+    items = [decision_detail(trig, decision) for trig, decision in pairs]
+    focus_name = _location_name(data, incident.affected_segment)
+    narrative = narrate_for_focus(items, incident.affected_segment, focus_name)
+
+    decisions_json = [decision_item_json(trig, decision) for trig, decision in pairs]
+    government_json = summary_json(narrative.government, government=True)
+    citizen_json = summary_json(narrative.citizen, government=False)
+
+    report_builder.build_and_save_report(
+        incident=incident, scenario_at=scenario_at,
+        government=government_json, citizen=citizen_json, decisions=decisions_json,
+    )
+
+    notice = {
+        "eventId": incident.event_id,
+        "generatedAt": scenario_at.isoformat(),
+        "focus": {"locationId": incident.affected_segment},
+        "government": government_json,
+        "citizen": citizen_json,
+        "decisions": decisions_json,
+    }
+    s3_common.publish_public_notice(
+        date=date, notice_id=f"PUB_{incident.event_id}_v1", alert_id=incident.event_id, notice=notice,
+    )
 
 
 def fetch_cached_view(
