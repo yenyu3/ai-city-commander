@@ -8,6 +8,11 @@ output "frontend_url" {
   description = "Public CloudFront URL."
 }
 
+output "cloudfront_distribution_id" {
+  value       = aws_cloudfront_distribution.frontend.id
+  description = "CloudFront distribution ID used when publishing frontend assets."
+}
+
 output "api_gateway_url" {
   value       = aws_apigatewayv2_api.http.api_endpoint
   description = "Direct API Gateway URL; frontend traffic should use /api/* through CloudFront."
