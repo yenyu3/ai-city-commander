@@ -62,13 +62,11 @@ def apply_schema(conn: psycopg.Connection[Any]) -> None:
     conn.execute(SCHEMA_FILE.read_text(encoding="utf-8"))
 
 
-def load_road_network(conn: psycopg.Connection[Any]) -> dict[str, str]:
+def load_road_network(conn: psycopg.Connection[Any]) -> None:
     roads = load_json(DATA / "road_network_geometry.json")
     paths = {
         item["segment_id"]: item for item in load_json(DATA / "road_paths.json")
     }
-    name_to_id = {road["name"]: road["segment_id"] for road in roads}
-
     for road in roads:
         path = paths.get(road["segment_id"])
         route_geojson = (
@@ -80,51 +78,26 @@ def load_road_network(conn: psycopg.Connection[Any]) -> dict[str, str]:
             """
             INSERT INTO road_segments (
               segment_id, name, flow_direction, capacity_vph, route_geojson,
+              intersections, alternative_segment_ids, nearby_station_ids,
               is_dashed_on_map
-            ) VALUES (%s, %s, %s, %s, %s::jsonb, %s)
+            ) VALUES (%s, %s, %s, %s, %s::jsonb, %s::jsonb, %s, %s, %s)
             ON CONFLICT (segment_id) DO UPDATE SET
               name = EXCLUDED.name,
               flow_direction = EXCLUDED.flow_direction,
               capacity_vph = EXCLUDED.capacity_vph,
               route_geojson = EXCLUDED.route_geojson,
-              is_dashed_on_map = EXCLUDED.is_dashed_on_map,
-              updated_at = now()
+              intersections = EXCLUDED.intersections,
+              alternative_segment_ids = EXCLUDED.alternative_segment_ids,
+              nearby_station_ids = EXCLUDED.nearby_station_ids,
+              is_dashed_on_map = EXCLUDED.is_dashed_on_map
             """,
             (
                 road["segment_id"], road["name"], road["flow_direction"],
-                road["capacity_vph"], route_geojson,
+                road["capacity_vph"], route_geojson, json.dumps(road["intersections"], ensure_ascii=False),
+                road["alternatives"], road["nearby_stations"],
                 path["dashed"] if path else False,
             ),
         )
-
-    for road in roads:
-        conn.execute(
-            "DELETE FROM road_segment_intersection_refs WHERE segment_id = %s",
-            (road["segment_id"],),
-        )
-        conn.execute(
-            "DELETE FROM road_segment_alternatives WHERE segment_id = %s",
-            (road["segment_id"],),
-        )
-        for sequence_no, road_name in enumerate(road["intersections"], start=1):
-            conn.execute(
-                """
-                INSERT INTO road_segment_intersection_refs
-                  (segment_id, sequence_no, intersecting_road_name, intersecting_segment_id)
-                VALUES (%s, %s, %s, %s)
-                """,
-                (road["segment_id"], sequence_no, road_name, name_to_id.get(road_name)),
-            )
-        for priority, alternative_id in enumerate(road["alternatives"], start=1):
-            conn.execute(
-                """
-                INSERT INTO road_segment_alternatives
-                  (segment_id, alternative_segment_id, priority)
-                VALUES (%s, %s, %s)
-                """,
-                (road["segment_id"], alternative_id, priority),
-            )
-    return name_to_id
 
 
 def load_stations(conn: psycopg.Connection[Any]) -> None:
@@ -141,27 +114,10 @@ def load_stations(conn: psycopg.Connection[Any]) -> None:
             ON CONFLICT (station_id) DO UPDATE SET
               name = EXCLUDED.name,
               longitude = EXCLUDED.longitude,
-              latitude = EXCLUDED.latitude,
-              updated_at = now()
+              latitude = EXCLUDED.latitude
             """,
             (station_id, names.get(station_id, station_id), longitude, latitude),
         )
-
-    roads = load_json(DATA / "road_network_geometry.json")
-    for road in roads:
-        conn.execute(
-            "DELETE FROM road_segment_nearby_stations WHERE segment_id = %s",
-            (road["segment_id"],),
-        )
-        for station_id in road["nearby_stations"]:
-            conn.execute(
-                """
-                INSERT INTO road_segment_nearby_stations (segment_id, station_id)
-                VALUES (%s, %s)
-                """,
-                (road["segment_id"], station_id),
-            )
-
 
 def load_snapshots(conn: psycopg.Connection[Any]) -> None:
     for row in load_csv(DATA / "city_traffic_flow.csv"):
@@ -175,8 +131,7 @@ def load_snapshots(conn: psycopg.Connection[Any]) -> None:
               avg_speed_kph = EXCLUDED.avg_speed_kph,
               vehicle_count = EXCLUDED.vehicle_count,
               saturation_score = EXCLUDED.saturation_score,
-              lane_status = EXCLUDED.lane_status,
-              ingested_at = now()
+              lane_status = EXCLUDED.lane_status
             """,
             (
                 taipei_timestamp(row["Timestamp"]), row["Segment_ID"],
@@ -196,8 +151,7 @@ def load_snapshots(conn: psycopg.Connection[Any]) -> None:
               user_count = EXCLUDED.user_count,
               stay_time_avg_minutes = EXCLUDED.stay_time_avg_minutes,
               growth_rate = EXCLUDED.growth_rate,
-              roaming_user_pct = EXCLUDED.roaming_user_pct,
-              ingested_at = now()
+              roaming_user_pct = EXCLUDED.roaming_user_pct
             """,
             (
                 taipei_timestamp(row["Timestamp"]), row["BS_ID"],
@@ -212,64 +166,27 @@ def load_incidents(conn: psycopg.Connection[Any]) -> None:
         conn.execute(
             """
             INSERT INTO incidents (
-              event_id, incident_type, location_description, status, severity,
-              description, occurred_at, source_payload
-            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s::jsonb)
+              event_id, incident_type, location, affected_segment, affected_road,
+              status, severity, description, occurred_at, source_payload
+            ) VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s::jsonb)
             ON CONFLICT (event_id) DO UPDATE SET
               incident_type = EXCLUDED.incident_type,
-              location_description = EXCLUDED.location_description,
+              location = EXCLUDED.location,
+              affected_segment = EXCLUDED.affected_segment,
+              affected_road = EXCLUDED.affected_road,
               status = EXCLUDED.status,
               severity = EXCLUDED.severity,
               description = EXCLUDED.description,
               occurred_at = EXCLUDED.occurred_at,
-              source_payload = EXCLUDED.source_payload,
-              updated_at = now()
+              source_payload = EXCLUDED.source_payload
             """,
             (
-                item["event_id"], item["type"], item["location"], item["status"],
-                item["severity"], item["description"], taipei_timestamp(item["timestamp"]),
-                json.dumps(item, ensure_ascii=False),
+                item["event_id"], item["type"], item["location"],
+                item["affected_segment"], item.get("affected_road"), item["status"],
+                item["severity"], item["description"],
+                taipei_timestamp(item["timestamp"]), json.dumps(item, ensure_ascii=False),
             ),
         )
-        conn.execute("DELETE FROM incident_road_impacts WHERE event_id = %s", (item["event_id"],))
-        conn.execute("DELETE FROM incident_station_impacts WHERE event_id = %s", (item["event_id"],))
-
-        affected_id = item["affected_segment"]
-        if affected_id.startswith("RD_"):
-            conn.execute(
-                "INSERT INTO incident_road_impacts (event_id, segment_id) VALUES (%s, %s)",
-                (item["event_id"], affected_id),
-            )
-        elif affected_id.startswith("BS_"):
-            conn.execute(
-                "INSERT INTO incident_station_impacts (event_id, station_id) VALUES (%s, %s)",
-                (item["event_id"], affected_id),
-            )
-        else:
-            raise ValueError(f"Unsupported affected_segment identifier: {affected_id}")
-
-        affected_road = item.get("affected_road")
-        if affected_road and affected_road != affected_id:
-            conn.execute(
-                """
-                INSERT INTO incident_road_impacts (event_id, segment_id, impact_role)
-                VALUES (%s, %s, 'secondary')
-                ON CONFLICT (event_id, segment_id) DO UPDATE SET impact_role = EXCLUDED.impact_role
-                """,
-                (item["event_id"], affected_road),
-            )
-
-
-def load_sop(conn: psycopg.Connection[Any]) -> None:
-    body = (DATA / "emergency_traffic_sop.txt").read_text(encoding="utf-8")
-    conn.execute(
-        """
-        INSERT INTO sop_documents (document_name, version, body)
-        VALUES ('emergency_traffic_sop', 'demo-2026-05-20', %s)
-        ON CONFLICT (document_name, version) DO UPDATE SET body = EXCLUDED.body
-        """,
-        (body,),
-    )
 
 
 def main() -> int:
@@ -288,7 +205,6 @@ def main() -> int:
         load_stations(conn)
         load_snapshots(conn)
         load_incidents(conn)
-        load_sop(conn)
 
     print("Schema applied and demo data loaded successfully.")
     return 0

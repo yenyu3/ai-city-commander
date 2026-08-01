@@ -1,0 +1,1 @@
+"""Incident ingestion Lambda package."""

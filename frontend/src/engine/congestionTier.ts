@@ -1,8 +1,14 @@
 import type { CityResponseResult, Tier } from "../types";
 
+/** SOP §1 分級門檻，UI 端顯示「判定門檻」文字時應引用這裡，不要重複寫死數字。 */
+export const TIER_THRESHOLDS: Record<Exclude<Tier, "Normal">, number> = {
+  A: 0.95,
+  B: 0.85,
+};
+
 export function getTier(saturation: number): Tier {
-  if (saturation >= 0.95) return "A";
-  if (saturation >= 0.85) return "B";
+  if (saturation >= TIER_THRESHOLDS.A) return "A";
+  if (saturation >= TIER_THRESHOLDS.B) return "B";
   return "Normal";
 }
 

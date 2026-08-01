@@ -1,0 +1,47 @@
+.grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 8px;
+}
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  padding: 10px 12px;
+  background: color-mix(in srgb, var(--text), transparent 95%);
+  border-radius: var(--radius-md);
+}
+
+.wide {
+  grid-column: 1 / -1;
+}
+
+.label {
+  font-family: var(--font-nav);
+  font-size: var(--text-xs);
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--text-dim);
+}
+
+.value {
+  font-family: var(--font-mono);
+  font-size: var(--text-title);
+  font-weight: 700;
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crit { color: var(--crit); }
+.warn { color: var(--warn); }
+
+.unit {
+  font-size: var(--text-xs);
+  font-weight: 400;
+  color: var(--text-dim);
+  letter-spacing: 0;
+}

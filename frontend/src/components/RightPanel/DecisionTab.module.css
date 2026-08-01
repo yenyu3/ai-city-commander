@@ -9,6 +9,13 @@
   border-top: 0;
 }
 
+.sectionTitle {
+  composes: sectionLabel from "../common/shared.module.css";
+}
+
 .section {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
   scroll-margin-top: 8px;
 }

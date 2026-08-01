@@ -1,0 +1,204 @@
+/*
+  永遠掛載（透過 createPortal 掛在 document.body，見 ProposalDocument.tsx），
+  預設 display:none。ExportProposalButton 呼叫 html2pdf 之前會把 display 切成
+  block，截圖完立刻切回 none。
+
+  三個實測踩到的 html2canvas 陷阱，別再犯：
+  1. 不能把節點擺在螢幕外的負座標（例如 left:-99999px）隱藏——html2canvas 只擷取
+     「瀏覽器視窗座標範圍內」的內容，超出範圍會截出整份空白。
+  2. 不能用 position:fixed——html2canvas 複製文件做截圖時不會正確套用 fixed
+     定位，元件會退回原本的巢狀版面位置，若原本巢狀在 flex 版面裡就可能被擠成
+     高度 0。改用 position:absolute + createPortal 掛到 body 上即可避開。
+  3. 不能用 clip-path 隱藏——html2canvas 官方文件列為不支援的 CSS 屬性，牽涉
+     vw 這類視窗相對單位時，它內部複製出來的離屏 iframe 計算容易出錯，會導致
+     擷取範圍誤判、內容被裁掉（曾經導致匯出的 PDF 右側被切掉）。改用
+     visibility:hidden，匯出時再切成 visible，是 html2canvas 有正式支援的屬性。
+
+  視覺樣式刻意貼近 `AI poc.tsx` 的 Tailwind slate 色票（這是給人看的正式文件輸出，
+  不是 dashboard 互動介面，不需要跟隨專案的 --text/--crit 等 CSS 變數）。
+*/
+.doc {
+  box-sizing: border-box;
+  visibility: hidden;
+  pointer-events: none;
+  position: absolute;
+  top: 0;
+  left: 0;
+  z-index: -1;
+  width: 794px;
+  padding: 32px;
+  background: #ffffff;
+  color: #0f172a;
+  font-family: "Poppins", "Noto Sans TC", sans-serif;
+  font-size: 12px;
+  line-height: 1.55;
+}
+
+.header {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid #0f172a;
+  margin-bottom: 18px;
+}
+
+.agencyLine {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  color: #475569;
+}
+
+.docTitle {
+  margin: 4px 0 0;
+  font-size: 24px;
+  font-weight: 800;
+  letter-spacing: 0.01em;
+  color: #0f172a;
+}
+
+.docSubtitle {
+  margin-top: 3px;
+  font-family: "Roboto Mono", monospace;
+  font-size: 10px;
+  color: #64748b;
+}
+
+.metaBox {
+  flex-shrink: 0;
+  max-width: 280px;
+  text-align: right;
+  font-family: "Roboto Mono", monospace;
+  font-size: 10px;
+  color: #334155;
+  overflow-wrap: anywhere;
+}
+
+.metaBox div {
+  margin-bottom: 2px;
+}
+
+.summaryBanner {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  padding: 12px 14px;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+  margin-bottom: 18px;
+  background: #f8fafc;
+}
+
+.summaryFull {
+  border-top: 1px solid #e2e8f0;
+  padding-top: 7px;
+}
+
+.summaryLabel {
+  font-weight: 700;
+  color: #64748b;
+  margin-right: 4px;
+}
+
+.summaryValue {
+  font-weight: 800;
+  font-size: 13px;
+  color: #0f172a;
+}
+
+.summaryMono {
+  font-family: "Roboto Mono", monospace;
+  color: #1e293b;
+}
+
+.summaryTag {
+  margin-left: 6px;
+  font-weight: 800;
+  color: #dc2626;
+}
+
+.section {
+  margin-bottom: 16px;
+}
+
+.section p {
+  margin: 3px 0;
+  padding-left: 12px;
+  color: #1e293b;
+}
+
+.sectionTitle {
+  margin: 0 0 5px;
+  padding-left: 8px;
+  border-left: 4px solid #0f172a;
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+  color: #0f172a;
+}
+
+.table {
+  width: 100%;
+  margin-top: 8px;
+  border-collapse: collapse;
+  table-layout: fixed;
+  font-size: 10.5px;
+  text-align: left;
+}
+
+.table th,
+.table td {
+  padding: 6px 8px;
+  border: 1px solid #cbd5e1;
+}
+
+.table th {
+  background: #f1f5f9;
+  font-weight: 700;
+  color: #334155;
+}
+
+.table td {
+  color: #1e293b;
+  overflow-wrap: anywhere;
+}
+
+.signatureRow {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 16px;
+  margin-top: 32px;
+  padding-top: 18px;
+  border-top: 1px solid #cbd5e1;
+  text-align: center;
+}
+
+.signatureBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.signatureName {
+  font-weight: 700;
+  color: #0f172a;
+}
+
+.signatureLine {
+  padding-top: 4px;
+  border-top: 1px solid #94a3b8;
+  margin: 0 14px;
+  font-size: 10px;
+  color: #94a3b8;
+}
+
+.docFooter {
+  margin-top: 20px;
+  padding-top: 10px;
+  border-top: 1px solid #f1f5f9;
+  text-align: center;
+  font-size: 9px;
+  color: #94a3b8;
+}

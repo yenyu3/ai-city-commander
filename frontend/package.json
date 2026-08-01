@@ -17,6 +17,8 @@
     "@deck.gl/layers": "9.3.6",
     "@deck.gl/mapbox": "9.3.6",
     "deck.gl": "9.3.6",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^4.2.1",
     "lucide-react": "^1.24.0",
     "mapbox-gl": "^3.26.0",
     "papaparse": "^5.5.4",

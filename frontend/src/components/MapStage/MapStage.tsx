@@ -1,13 +1,12 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Box, Layers, Map as MapIcon } from "lucide-react";
-import { useAppStore } from "../../store/appStore";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
-import PanelHeader from "../common/PanelHeader";
+import { useAppStore } from "../../store/appStore";
 import AlertOverlay from "../AlertOverlay/AlertOverlay";
+import PanelHeader from "../common/PanelHeader";
 import FieldInspectorFigure from "./FieldInspectorFigure";
-import NetworkGraph from "./NetworkGraph";
-import SegmentCard from "./SegmentCard";
 import styles from "./MapStage.module.css";
+import NetworkGraph from "./NetworkGraph";
 
 type CameraMode = "top" | "tilt";
 type DisplayMode = "flow" | "risk";
@@ -29,7 +28,9 @@ export default function MapStage() {
   const selectedStationId = useAppStore((s) => s.selectedStationId);
   const setSelectedStation = useAppStore((s) => s.setSelectedStation);
   const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
-  const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
+  const setFieldInspectorPosition = useAppStore(
+    (s) => s.setFieldInspectorPosition,
+  );
   const { language } = useLanguage();
   const [cameraMode, setCameraMode] = useState<CameraMode>("tilt");
   const [displayMode, setDisplayMode] = useState<DisplayMode>("flow");
@@ -55,8 +56,8 @@ export default function MapStage() {
 
   const segmentList = useMemo(() => Object.values(segments), [segments]);
   const stationList = useMemo(() => Object.values(stations), [stations]);
-  const selected = selectedId ? segments[selectedId] : null;
-  const cameraClass = cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
+  const cameraClass =
+    cameraMode === "top" ? styles.cameraTop : styles.cameraTilt;
 
   const handleSegmentClick = useCallback(
     (id: string) => setSelectedSegment(id === selectedId ? null : id),
@@ -89,12 +90,20 @@ export default function MapStage() {
     if (initialPoint) moveDragGhost(initialPoint.x, initialPoint.y);
 
     const handlePointerMove = (event: PointerEvent) => {
-      if (dragPointerIdRef.current !== null && event.pointerId !== dragPointerIdRef.current) return;
+      if (
+        dragPointerIdRef.current !== null &&
+        event.pointerId !== dragPointerIdRef.current
+      )
+        return;
       moveDragGhost(event.clientX, event.clientY);
     };
 
     const handlePointerUp = (event: PointerEvent) => {
-      if (dragPointerIdRef.current !== null && event.pointerId !== dragPointerIdRef.current) return;
+      if (
+        dragPointerIdRef.current !== null &&
+        event.pointerId !== dragPointerIdRef.current
+      )
+        return;
       setIsDragging(false);
       dragPointerIdRef.current = null;
       dragLatestPointRef.current = null;
@@ -159,7 +168,9 @@ export default function MapStage() {
         <div className={styles.layerControls} aria-label="Map view controls">
           <button
             type="button"
-            className={cameraMode === "top" ? styles.activeIconBtn : styles.iconBtn}
+            className={
+              cameraMode === "top" ? styles.activeIconBtn : styles.iconBtn
+            }
             title="Top view"
             aria-label="Top view"
             onClick={() => setCameraMode("top")}
@@ -168,7 +179,9 @@ export default function MapStage() {
           </button>
           <button
             type="button"
-            className={cameraMode === "tilt" ? styles.activeIconBtn : styles.iconBtn}
+            className={
+              cameraMode === "tilt" ? styles.activeIconBtn : styles.iconBtn
+            }
             title="Tilted 3D view"
             aria-label="Tilted 3D view"
             onClick={() => setCameraMode("tilt")}
@@ -179,7 +192,9 @@ export default function MapStage() {
             type="button"
             className={[
               isDragging ? styles.activePegmanBtn : styles.pegmanBtn,
-              fieldInspectorPosition && !isDragging ? styles.pegmanBtnPlaced : "",
+              fieldInspectorPosition && !isDragging
+                ? styles.pegmanBtnPlaced
+                : "",
             ]
               .filter(Boolean)
               .join(" ")}
@@ -189,12 +204,17 @@ export default function MapStage() {
                 : "Drag field inspector to map"
             }
             aria-label={
-              fieldInspectorPosition ? "Remove field inspector from map" : "Drag field inspector to map"
+              fieldInspectorPosition
+                ? "Remove field inspector from map"
+                : "Drag field inspector to map"
             }
             onPointerDown={(event) => {
               event.preventDefault();
               dragPointerIdRef.current = event.pointerId;
-              dragStartPointRef.current = { x: event.clientX, y: event.clientY };
+              dragStartPointRef.current = {
+                x: event.clientX,
+                y: event.clientY,
+              };
               event.currentTarget.setPointerCapture(event.pointerId);
               moveDragGhost(event.clientX, event.clientY);
               setIsDragging(true);
@@ -236,25 +256,41 @@ export default function MapStage() {
         </div>
 
         <div className={styles.bottomOverlay}>
-          <div className={styles.displayToggle} aria-label="Display mode">
+          <div className={styles.displayToggle}>
+            <span
+              className={
+                displayMode === "flow"
+                  ? `${styles.toggleLabel} ${styles.toggleLabelActive}`
+                  : styles.toggleLabel
+              }
+            >
+              {viewerMode === "public" ? "Hexagons" : "Hexagons"}
+            </span>
             <button
               type="button"
-              className={displayMode === "flow" ? styles.activeMode : styles.mode}
-              onClick={() => setDisplayMode("flow")}
+              role="switch"
+              aria-checked={displayMode === "risk"}
+              aria-label={
+                viewerMode === "public"
+                  ? "Toggle advisory view"
+                  : "Toggle risk view"
+              }
+              className={styles.switch}
+              onClick={() =>
+                setDisplayMode(displayMode === "risk" ? "flow" : "risk")
+              }
             >
-              {viewerMode === "public" ? "Routes" : "Flow"}
+              <span className={styles.switchKnob} />
             </button>
-            <button
-              type="button"
-              className={displayMode === "risk" ? styles.activeMode : styles.mode}
-              onClick={() => setDisplayMode("risk")}
-            >
-              {viewerMode === "public" ? "Advisory" : "Risk"}
-            </button>
+            <span
+              className={
+                displayMode === "risk"
+                  ? `${styles.toggleLabel} ${styles.toggleLabelActive}`
+                  : styles.toggleLabel
+              }
+            ></span>
           </div>
         </div>
-
-        {viewerMode === "government" && selected && <SegmentCard segment={selected} onClose={() => setSelectedSegment(null)} />}
 
         <AlertOverlay />
       </div>

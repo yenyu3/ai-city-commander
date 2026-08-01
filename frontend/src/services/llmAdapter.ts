@@ -65,6 +65,9 @@ export interface PublicContext {
   affectedRoads: { name: string; tier: string }[];
   busiestStation: { name: string; userCount: number } | null;
   activeIncidentCount: number;
+  /** 小人（field inspector）目前所在位置最近的路段；沒有小人（未放置/移除/定位失敗）時為 null，
+   *  此時所有回答都應退回城市整體概況，不提及使用者自身位置。 */
+  nearbyRoad: { name: string; tier: string } | null;
 }
 
 export interface LLMAdapter {
@@ -73,6 +76,8 @@ export interface LLMAdapter {
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+    /** 使用者在對話框附加的小人位置 Context Tag 所鄰近的路段；沒有附加時為 null。 */
+    nearbyRoad?: { name: string; tier: string } | null,
   ): Promise<string>;
   /** 市民模式：同樣的規則引擎結果，改用白話、去敏感化的說法回覆。 */
   answerPublic(
@@ -137,10 +142,21 @@ function publicRuleAnswer(result: PublicRuleResult): string | null {
   }
 }
 
-/** 沒有具體數字時，改用目前的即時路況回答常見的市民提問。 */
+/** 路段壅塞分級的白話說法，供結合小人（field inspector）位置的回答使用。 */
+function tierPhrase(tier: string): string {
+  if (tier === "A") return "壅塞，建議避開";
+  if (tier === "B") return "略有壅塞";
+  return "順暢";
+}
+
+/** 沒有具體數字時，改用目前的即時路況回答常見的市民提問。
+ *  ctx.nearbyRoad 有值代表小人已放置在地圖上（含自動定位成功），回答會結合使用者自身位置；
+ *  為 null（沒放小人、被移除、或定位失敗/超出資料涵蓋範圍）時，以下每個分支都退回原本純城市整體的回答，
+ *  和小人功能加入前完全一致。 */
 function publicContextAnswer(question: string, ctx: PublicContext): string {
   const roads = ctx.affectedRoads.slice(0, 3).map((r) => r.name).join("、");
   const station = ctx.busiestStation;
+  const nearby = ctx.nearbyRoad;
 
   if (/英文|外語|多語|旅客|外國|english|visitor|foreign/i.test(question)) {
     const location = ctx.affectedRoads[0]?.name ?? "市中心";
@@ -152,6 +168,12 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
   }
 
   if (/避開|避免|哪些區|哪幾|不要去|avoid|which area/i.test(question)) {
+    if (nearby && nearby.tier !== "Normal") {
+      const others = roads ? `其他建議避開的路段還有：${roads}。` : "";
+      return [`您目前所在的${nearby.name}本身已經${tierPhrase(nearby.tier)}，建議先改走周邊道路或改搭大眾運輸。`, others]
+        .filter(Boolean)
+        .join("\n");
+    }
     return roads
       ? `目前建議避開：${roads}。這幾個路段車流較滿，非必要請改走周邊道路或改搭大眾運輸。`
       : "目前沒有需要特別避開的區域，主要道路都算順暢，依原本路線移動即可。";
@@ -164,20 +186,30 @@ function publicContextAnswer(question: string, ctx: PublicContext): string {
   }
 
   if (/適合|現在|要去|出發|前往|該不該|is it ok|good time|go to|travel/i.test(question)) {
+    const station_tail = station ? `另外${station.name}人潮較多，可考慮從鄰近站點進出。` : "";
+    if (nearby) {
+      const head =
+        nearby.tier === "Normal"
+          ? `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}，現在出發沒有問題。`
+          : `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}，建議改走周邊道路或改搭捷運，並多預留一點時間。`;
+      return [head, station_tail].filter(Boolean).join("\n");
+    }
     const head = roads
       ? `${roads}一帶目前比較壅塞，建議改走周邊道路或改搭捷運，並多預留一點時間。`
       : "目前主要道路狀況穩定，現在出發沒有問題。";
-    const tail = station ? `另外${station.name}人潮較多，可考慮從鄰近站點進出。` : "";
-    return [head, tail].filter(Boolean).join("\n");
+    return [head, station_tail].filter(Boolean).join("\n");
   }
 
   return [
+    nearby ? `您目前位置鄰近${nearby.name}，目前${tierPhrase(nearby.tier)}。` : null,
     roads ? `目前需要留意的路段有：${roads}。` : "目前主要道路狀況穩定。",
     ctx.activeIncidentCount > 0
       ? `市區有 ${ctx.activeIncidentCount} 件事件處理中，公開資訊會以官方可發布內容為準。`
       : "目前沒有進行中的重大公開事件。",
     "您可以問我「哪幾個區域建議避開」或「現在適合出門嗎」。",
-  ].join("\n");
+  ]
+    .filter(Boolean)
+    .join("\n");
 }
 
 export class TemplateLLMAdapter implements LLMAdapter {
@@ -215,13 +247,17 @@ export class TemplateLLMAdapter implements LLMAdapter {
     question: string,
     ruleResult: unknown,
     sopExcerpt: string,
+    nearbyRoad?: { name: string; tier: string } | null,
   ): Promise<string> {
     await delay(500 + Math.random() * 500);
     const resultText =
       typeof ruleResult === "object"
         ? JSON.stringify(ruleResult)
         : String(ruleResult);
-    return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」`;
+    const nearbyLine = nearbyRoad
+      ? `\n\n（已附加現場定位：鄰近${nearbyRoad.name}，目前分級 ${nearbyRoad.tier}）`
+      : "";
+    return `針對您的問題「${question}」，規則引擎重新代入情境計算後結果如下：${resultText}。\n\n依據 SOP 原文：「${sopExcerpt.trim().slice(0, 220)}...」${nearbyLine}`;
   }
 
   async answerPublic(

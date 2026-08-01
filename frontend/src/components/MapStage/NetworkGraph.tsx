@@ -1,7 +1,7 @@
 import { memo, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { AttributionControl, Map, Marker, useControl, type MapRef } from "react-map-gl/mapbox";
 import { MapboxOverlay } from "@deck.gl/mapbox";
-import type { Map as MapboxMap } from "mapbox-gl";
+import type { ExpressionSpecification, Map as MapboxMap } from "mapbox-gl";
 import "mapbox-gl/dist/mapbox-gl.css";
 import {
   AmbientLight,
@@ -12,7 +12,7 @@ import {
   type PickingInfo,
   type Position,
 } from "@deck.gl/core";
-import { PathLayer, ScatterplotLayer, TextLayer } from "@deck.gl/layers";
+import { PathLayer, TextLayer } from "@deck.gl/layers";
 import { HexagonLayer } from "@deck.gl/aggregation-layers";
 import { TripsLayer } from "@deck.gl/geo-layers";
 import { withElevation } from "./geometry";
@@ -48,9 +48,21 @@ function roadRiskLabel(tier: string, language: Language): string {
   return pick(language, "暢通", "Open");
 }
 
-function crowdLabel(userCount: number, language: Language): string {
-  if (userCount >= 20000) return pick(language, "人潮較多", "Busy");
-  return pick(language, "人潮正常", "Normal");
+/** Maps each crowd-monitoring base station to the /public/icon asset for its real-world category. */
+const STATION_ICON_CATEGORY: Record<string, string> = {
+  BS_MRT_BL16: "metro",
+  BS_MRT_BL17: "metro",
+  BS_MRT_BL18: "metro",
+  BS_TPE_DOME: "bigegg",
+  BS_BUS_TERM: "bus",
+  BS_XY_VIESHOW: "shopping-center",
+  BS_XY_ATT: "shopping-center",
+  BS_TPE_101: "taipei-101",
+  BS_SS_PARK: "park",
+};
+
+function stationIconSrc(stationId: string): string {
+  return `/icon/${STATION_ICON_CATEGORY[stationId] ?? "metro"}.png`;
 }
 
 interface RoadPath {
@@ -168,6 +180,18 @@ function findNearestRoad(position: Position, roads: RoadPath[]): RoadPath | null
   return nearest;
 }
 
+function applyLabelLanguage(map: MapboxMap, language: Language) {
+  const field: ExpressionSpecification =
+    language === "en"
+      ? ["coalesce", ["get", "name_en"], ["get", "name"]]
+      : ["coalesce", ["get", "name_zh-Hant"], ["get", "name_zh"], ["get", "name"]];
+  const styleLayers = map.getStyle()?.layers ?? [];
+  for (const layer of styleLayers) {
+    if (layer.type !== "symbol" || !("text-field" in (layer.layout ?? {}))) continue;
+    map.setLayoutProperty(layer.id, "text-field", field);
+  }
+}
+
 function addBuildingLayer(map: MapboxMap) {
   if (map.getLayer("3d-buildings")) return;
   const styleLayers = map.getStyle()?.layers ?? [];
@@ -218,6 +242,13 @@ function NetworkGraph({
   const [placementSeq, setPlacementSeq] = useState(0);
   const fieldInspectorPosition = useAppStore((s) => s.fieldInspectorPosition);
   const setFieldInspectorPosition = useAppStore((s) => s.setFieldInspectorPosition);
+  const setFieldInspectorLocateStatus = useAppStore((s) => s.setFieldInspectorLocateStatus);
+  // Briefly shown once the camera finishes panning to a newly selected
+  // segment, so the operator can tell which road on the map just got
+  // selected without a label sitting on the map permanently.
+  const [flashSegmentId, setFlashSegmentId] = useState<string | null>(null);
+  const flashTimeoutRef = useRef<number | null>(null);
+  const [mapZoom, setMapZoom] = useState(VIEWS[cameraMode].zoom);
 
   useEffect(() => {
     if (pauseAnimation || isMarkerDragging) return;
@@ -246,12 +277,28 @@ function NetworkGraph({
   }, [cameraMode, mapCenter]);
 
   useEffect(() => {
-    if (!selectedSegmentId) return;
+    if (flashTimeoutRef.current !== null) {
+      window.clearTimeout(flashTimeoutRef.current);
+      flashTimeoutRef.current = null;
+    }
+    if (!selectedSegmentId) {
+      setFlashSegmentId(null);
+      return;
+    }
     const map = mapRef.current?.getMap();
     const def = roadPaths.get(selectedSegmentId);
     if (!map || !def || def.path.length === 0) return;
     const mid = def.path[Math.floor(def.path.length / 2)];
     map.easeTo({ center: [mid[0], mid[1]], duration: 700 });
+
+    const handleMoveEnd = () => {
+      setFlashSegmentId(selectedSegmentId);
+      flashTimeoutRef.current = window.setTimeout(() => setFlashSegmentId(null), 1600);
+    };
+    map.once("moveend", handleMoveEnd);
+    return () => {
+      map.off("moveend", handleMoveEnd);
+    };
   }, [selectedSegmentId, roadPaths]);
 
   useEffect(() => {
@@ -278,8 +325,18 @@ function NetworkGraph({
 
   const handleLoad = useCallback(() => {
     const map = mapRef.current?.getMap();
-    if (map) addBuildingLayer(map);
-  }, []);
+    if (!map) return;
+    addBuildingLayer(map);
+    applyLabelLanguage(map, language);
+    const onZoom = () => setMapZoom(map.getZoom());
+    map.on("zoom", onZoom);
+  }, [language]);
+
+  useEffect(() => {
+    const map = mapRef.current?.getMap();
+    if (!map || !map.isStyleLoaded()) return;
+    applyLabelLanguage(map, language);
+  }, [language]);
 
   const roads = useMemo<RoadPath[]>(() => {
     const list: RoadPath[] = [];
@@ -303,19 +360,25 @@ function NetworkGraph({
     return list;
   }, [segments, roadPaths]);
 
+  const roadNameCharacterSet = useMemo(
+    () => Array.from(new Set(roads.flatMap((road) => Array.from(road.name)))),
+    [roads],
+  );
+
   const stationPoints = useMemo<StationPoint[]>(
     () =>
-      stations.flatMap((station) => {
-        const position = stationCoords[station.stationId];
+      Object.keys(STATION_ICON_CATEGORY).flatMap((stationId) => {
+        const position = stationCoords[stationId];
         if (!position) return [];
+        const runtime = stations.find((s) => s.stationId === stationId);
         return [
           {
-            stationId: station.stationId,
-            name: station.name,
+            stationId,
+            name: runtime?.name ?? stationId,
             position: [position[0], position[1], 42],
-            userCount: station.userCount,
-            growthRate: station.growthRate,
-            roamingPct: station.roamingPct,
+            userCount: runtime?.userCount ?? 0,
+            growthRate: runtime?.growthRate ?? 0,
+            roamingPct: runtime?.roamingPct ?? 0,
           },
         ];
       }),
@@ -359,6 +422,59 @@ function NetworkGraph({
     },
     [roads, setFieldInspectorPosition],
   );
+
+  // Mirrors `roads` into a ref so the one-shot auto-locate effect below can read the latest
+  // value from inside an async geolocation callback without re-running every tick (roads is
+  // recomputed on every simulation tick since it carries live saturation/vehicleCount).
+  const roadsRef = useRef(roads);
+  useEffect(() => {
+    roadsRef.current = roads;
+  }, [roads]);
+
+  const hasAutoLocatedRef = useRef(false);
+  useEffect(() => {
+    if (hasAutoLocatedRef.current) return;
+    hasAutoLocatedRef.current = true;
+    if (fieldInspectorPosition) return;
+
+    if (!("geolocation" in navigator)) {
+      setFieldInspectorLocateStatus("unavailable");
+      return;
+    }
+
+    setFieldInspectorLocateStatus("pending");
+    navigator.geolocation.getCurrentPosition(
+      (geoPosition) => {
+        const point: Position = [geoPosition.coords.longitude, geoPosition.coords.latitude, 58];
+        const nearestRoad = findNearestRoad(point, roadsRef.current);
+        const nearestDistance = nearestRoad
+          ? samplePath(nearestRoad.path, 12).reduce(
+              (min, sample) => Math.min(min, positionDistance(point, sample)),
+              Number.POSITIVE_INFINITY,
+            )
+          : Number.POSITIVE_INFINITY;
+
+        // Demo dataset only covers Taipei's city core — a real-world fix that lands far outside
+        // it (e.g. testing from another city) shouldn't get snapped to a distant road; treat it
+        // the same as "couldn't locate you" so the chatbot falls back to the overall city answer.
+        if (!nearestRoad || nearestDistance > 0.05) {
+          setFieldInspectorLocateStatus("unavailable");
+          return;
+        }
+
+        setFieldInspectorPosition({
+          lng: geoPosition.coords.longitude,
+          lat: geoPosition.coords.latitude,
+          nearestRoadId: nearestRoad.segmentId,
+          nearestRoadName: nearestRoad.name,
+        });
+        setPlacementSeq((seq) => seq + 1);
+        setFieldInspectorLocateStatus("granted");
+      },
+      () => setFieldInspectorLocateStatus("denied"),
+      { timeout: 8000 },
+    );
+  }, [fieldInspectorPosition, setFieldInspectorPosition, setFieldInspectorLocateStatus]);
 
   useEffect(() => {
     const handleInspectionDrop = (event: Event) => {
@@ -442,36 +558,6 @@ function NetworkGraph({
           if (object) onSegmentClick(object.segmentId);
         },
       }),
-      new ScatterplotLayer<StationPoint>({
-        id: "station-glow",
-        data: stationPoints,
-        getFillColor: (station) =>
-          station.stationId === selectedStationId
-            ? [255, 255, 255, 200]
-            : station.roamingPct >= 0.3
-              ? [180, 255, 244, 132]
-              : [138, 205, 255, 104],
-        getLineColor: (station) =>
-          station.stationId === selectedStationId ? [255, 255, 255, 255] : [255, 255, 255, 145],
-        getLineWidth: (station) => (station.stationId === selectedStationId ? 4 : 2),
-        getPosition: (station) => station.position,
-        getRadius: (station) =>
-          (station.stationId === selectedStationId ? 96 : 58) + Math.min(130, station.userCount / 165),
-        lineWidthMinPixels: 1,
-        opacity: 0.75,
-        pickable: true,
-        radiusMinPixels: 10,
-        stroked: true,
-        updateTriggers: {
-          getFillColor: selectedStationId,
-          getLineColor: selectedStationId,
-          getLineWidth: selectedStationId,
-          getRadius: selectedStationId,
-        },
-        onClick: ({ object }) => {
-          if (object && onStationClick) onStationClick(object.stationId);
-        },
-      }),
       new TextLayer<RoadPath>({
         id: "map-labels",
         data: roads.filter((road) => road.isCityTrigger || road.isIncidentSource),
@@ -487,6 +573,35 @@ function NetworkGraph({
         getBackgroundColor: [8, 10, 13, 115],
         backgroundPadding: [4, 2],
         billboard: false,
+      }),
+      new TextLayer<RoadPath>({
+        id: "selection-flash-label",
+        data: roads.filter((road) => road.segmentId === flashSegmentId),
+        // "auto" only samples characters present in `data` at layer creation;
+        // since this layer mounts with empty data (nothing flashing yet), it
+        // never sees the label text and its atlas stays empty forever. Seed it
+        // from every road name up front so any segment's flash label works.
+        characterSet: roadNameCharacterSet,
+        fontFamily: "'Noto Sans TC', 'PingFang TC', 'Microsoft JhengHei', system-ui, sans-serif",
+        getColor: [255, 255, 255, 255],
+        getPosition: (road) => {
+          const [lng, lat] = road.path[Math.floor(road.path.length / 2)];
+          // Floated above street level so it clears typical rooftops in this
+          // dataset instead of getting hidden behind 3D buildings.
+          return [lng, lat, 70];
+        },
+        getSize: 16,
+        getText: (road) => road.name,
+        getTextAnchor: "middle",
+        getAlignmentBaseline: "center",
+        background: true,
+        getBackgroundColor: [32, 140, 255, 235],
+        backgroundPadding: [7, 5],
+        // Billboarded (unlike map-labels) so it stays legible from the tilted
+        // camera instead of lying flat on the ground and foreshortening away.
+        billboard: true,
+        pickable: false,
+        updateTriggers: { data: flashSegmentId },
       }),
     ];
 
@@ -524,14 +639,12 @@ function NetworkGraph({
     cameraMode,
     currentTime,
     displayMode,
+    flashSegmentId,
     heatPoints,
     maxVehicleCount,
     onSegmentClick,
-    onStationClick,
     roads,
     selectedSegmentId,
-    selectedStationId,
-    stationPoints,
   ]);
 
   const tooltip = ({ object, layer }: PickingInfo) => {
@@ -543,15 +656,6 @@ function NetworkGraph({
       }
       return {
         text: `${road.name}\nSaturation ${road.saturation.toFixed(2)}\n${road.vehicleCount.toLocaleString()} vehicles`,
-      };
-    }
-    if (layer.id === "station-glow") {
-      const station = object as StationPoint;
-      if (viewerMode === "public") {
-        return { text: `${station.name}\n${crowdLabel(station.userCount, language)}` };
-      }
-      return {
-        text: `${station.name}\n${station.userCount.toLocaleString()} users\nGrowth ${(station.growthRate * 100).toFixed(0)}%`,
       };
     }
     return null;
@@ -582,6 +686,12 @@ function NetworkGraph({
         }}
         mapStyle={MAP_STYLE}
         onLoad={handleLoad}
+        // Station markers stopPropagation on click, so this only ever fires
+        // for clicks elsewhere on the map (roads, empty space) - dismissing
+        // whichever station label is currently showing.
+        onClick={() => {
+          if (selectedStationId) onStationClick?.(selectedStationId);
+        }}
         attributionControl={false}
       >
         <AttributionControl compact position="bottom-right" />
@@ -613,6 +723,36 @@ function NetworkGraph({
             </div>
           </Marker>
         )}
+        {stationPoints.map((station) => {
+          const isSelected = station.stationId === selectedStationId;
+          const iconSize = Math.round(6 * Math.pow(2, mapZoom - 14));
+          return (
+            <Marker
+              key={station.stationId}
+              longitude={station.position[0]}
+              latitude={station.position[1]}
+              anchor="bottom"
+            >
+              <button
+                type="button"
+                className={styles.stationMarker}
+                aria-label={station.name}
+                onClick={(event) => {
+                  event.stopPropagation();
+                  onStationClick?.(station.stationId);
+                }}
+              >
+                {isSelected && <span className={styles.stationLabel}>{station.name}</span>}
+                <img
+                  src={stationIconSrc(station.stationId)}
+                  alt=""
+                  className={isSelected ? styles.stationIconSelected : styles.stationIcon}
+                  style={{ width: iconSize, height: iconSize }}
+                />
+              </button>
+            </Marker>
+          );
+        })}
       </Map>
       <div className={styles.vignette} />
     </div>

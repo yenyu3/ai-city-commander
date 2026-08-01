@@ -102,6 +102,21 @@ export interface ReasoningStep {
   sopRef?: string;
 }
 
+/** 事件觸發當下，來源路段的即時流量快照（僅 city_response/accident 有意義）。 */
+export interface SegmentMetricsSnapshot {
+  segmentName: string;
+  flowPcuh: number;
+  saturation: number;
+}
+
+/** 替代路徑疏散規劃的結構化版本，對應 selectEvacuationRoute 的計算結果（僅 accident 會填入）。 */
+export interface RerouteSnapshot {
+  primaryRouteName: string | null;
+  secondaryRouteNames: string[];
+  excluded: { segmentName: string; reason: string }[];
+  congestionWarning: boolean;
+}
+
 export interface AlertRecord {
   id: string;
   timestamp: string;
@@ -114,12 +129,16 @@ export interface AlertRecord {
     | "multilingual";
   title: string;
   ruleSummary: string;
+  /** SOP 規定的實際處置步驟（非觸發條件數據），供「建議行動」區塊顯示。 */
+  actions: string[];
   llmText?: string;
   sopRef?: string;
   ete?: number;
   eteBase?: number;
   etePenalty?: number;
   reasoningSteps?: ReasoningStep[];
+  segmentMetrics?: SegmentMetricsSnapshot;
+  reroute?: RerouteSnapshot;
 }
 
 export interface FieldInspectorPosition {
@@ -128,6 +147,9 @@ export interface FieldInspectorPosition {
   nearestRoadId: string | null;
   nearestRoadName: string | null;
 }
+
+/** 小人自動定位（瀏覽器 Geolocation）的狀態，用來決定要不要顯示「無法取得位置」提示。 */
+export type FieldInspectorLocateStatus = "idle" | "pending" | "granted" | "denied" | "unavailable";
 
 export interface ChatMessage {
   id: string;

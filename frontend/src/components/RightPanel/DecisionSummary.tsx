@@ -1,9 +1,12 @@
-import { ChevronDown, Clock3 } from "lucide-react";
+import { useState } from "react";
+import { ChevronDown, Clock3, Send } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
+import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import FieldPositionHint from "../common/FieldPositionHint";
+import PublishPreviewModal from "./PublishPreviewModal";
 import styles from "./DecisionSummary.module.css";
 
 function scrollToAnchor(event: React.MouseEvent<HTMLAnchorElement>, id: string) {
@@ -70,8 +73,26 @@ function getPrimaryMetric(
 export default function DecisionSummary() {
   const alerts = useAppStore((s) => s.alerts);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const stations = useAppStore((s) => s.stations);
+  const currentTime = useAppStore((s) => s.currentTime);
   const { language } = useLanguage();
   const latest = alerts[0];
+  const [modalOpen, setModalOpen] = useState(false);
+
+  const multilingualTriggered = checkMultilingualNeeded(
+    Object.values(stations).map((st) => ({
+      timestamp: currentTime,
+      stationId: st.stationId,
+      locationName: st.name,
+      userCount: st.userCount,
+      stayTimeAvg: st.stayTimeAvg,
+      growthRate: st.growthRate,
+      roamingPct: st.roamingPct,
+    })),
+  );
+  const [publishedAlertIds, setPublishedAlertIds] = useState<Set<string>>(() => new Set());
+  // canPublish 以卡片當前事件 id 為 key：事件換了就重新判斷，發布過的同一事件不重複發
+  const canPublish = multilingualTriggered.length > 0 && !publishedAlertIds.has(latest?.id ?? "");
 
   if (!latest) {
     return (
@@ -85,17 +106,27 @@ export default function DecisionSummary() {
     );
   }
 
-  const actionItems = latest.ruleSummary
-    .split(/[。；;]/)
-    .map((item) => item.trim())
-    .filter(Boolean);
+  const actionItems = latest.actions;
   const kindLabel = pick(language, ALERT_KIND_LABEL[latest.kind].zh, ALERT_KIND_LABEL[latest.kind].en);
   const primaryMetric = getPrimaryMetric(latest, language, kindLabel);
 
   return (
+    <>
     <div className={styles.wrap}>
       <div className={styles.summaryCard}>
-        <span className={styles.title}>{pick(language, "決策摘要", "Decision Summary")}</span>
+        <div className={styles.cardHeaderRow}>
+          <span className={styles.title}>{pick(language, "決策摘要", "Decision Summary")}</span>
+          <button
+            className={styles.publishTriggerBtn}
+            disabled={!canPublish}
+            onClick={() => setModalOpen(true)}
+            title={pick(language, "發布多語警示", "Publish multilingual alert")}
+            aria-label={pick(language, "發布多語警示", "Publish multilingual alert")}
+          >
+            <Send size={13} aria-hidden="true" />
+            {pick(language, "發布警示", "Publish Alert")}
+          </button>
+        </div>
         <FieldPositionHint />
         <div className={styles.cardHead}>
           <span className={styles.eventTitle}>{latest.title}</span>
@@ -127,11 +158,15 @@ export default function DecisionSummary() {
             <ChevronDown size={12} aria-hidden="true" />
           </a>
           <a href="#decision-reasoning" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-reasoning")}>
-            <span>{pick(language, "推理步驟", "Reasoning")}</span>
+            <span>{pick(language, "推理與數據依據", "Reasoning & metrics")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
-          <a href="#decision-multilingual" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-multilingual")}>
-            <span>{pick(language, "多語警示", "Multilingual")}</span>
+          <a href="#decision-reroute" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-reroute")}>
+            <span>{pick(language, "替代路徑", "Rerouting")}</span>
+            <ChevronDown size={12} aria-hidden="true" />
+          </a>
+          <a href="#decision-signals" className={styles.navLink} onClick={(e) => scrollToAnchor(e, "decision-signals")}>
+            <span>{pick(language, "號誌聯動", "Coordination")}</span>
             <ChevronDown size={12} aria-hidden="true" />
           </a>
         </div>
@@ -149,5 +184,16 @@ export default function DecisionSummary() {
         </ol>
       </div>
     </div>
+    {modalOpen && (
+      <PublishPreviewModal
+        onClose={() => setModalOpen(false)}
+        onPublished={(alertId) => {
+          setPublishedAlertIds((prev) => new Set(prev).add(alertId));
+          setModalOpen(false);
+        }}
+        alertId={latest.id}
+      />
+    )}
+    </>
   );
 }

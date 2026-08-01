@@ -14,6 +14,12 @@ export default function StationList() {
       <div className={styles.title}>
         {pick(language, "基地台人流 / 漫遊率", "Cell Site Traffic / Roaming")}
       </div>
+      <div className={styles.header}>
+        <span />
+        <span className={styles.headerCell}>{pick(language, "人數", "Users")}</span>
+        <span className={styles.headerCell}>{pick(language, "成長率", "Growth")}</span>
+        <span className={styles.headerCell}>{pick(language, "漫遊率", "Roaming")}</span>
+      </div>
       <div className={styles.list}>
         {list.map((st) => (
           <div

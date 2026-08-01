@@ -51,6 +51,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import db
+import s3_cache
 from agent.chat import answer_chat
 from agent.decision_agent import Decision
 from agent.facts import (
@@ -126,7 +127,7 @@ def _now_iso() -> str:
 
 
 def _congestion_decision(
-    conn, segment_id: str, segment_name: str, saturation_score: float, scenario_at: datetime
+    segment_id: str, segment_name: str, saturation_score: float, scenario_at: datetime
 ) -> Decision:
     """Cache-then-compute for the periodic per-segment SOP §1 judgment.
 
@@ -136,26 +137,26 @@ def _congestion_decision(
     hardcoded threshold. Cached per (segment_id, scenario_at) so repeat
     polls for a scenario time already judged don't re-invoke the LLM.
     """
-    cached = db.fetch_cached_congestion_decision(conn, segment_id, scenario_at)
+    cached = s3_cache.fetch_cached_congestion_decision(segment_id, scenario_at)
     if cached is not None:
         return cached
 
     decision = decide_congestion(segment_id, segment_name, saturation_score)
-    db.save_congestion_decision(conn, segment_id=segment_id, scenario_at=scenario_at, decision=decision)
+    s3_cache.save_congestion_decision(segment_id=segment_id, scenario_at=scenario_at, decision=decision)
     return decision
 
 
 _MULTILINGUAL_CACHE_KEY = "_ALL_STATIONS_"
 
 
-def _mrt_decision(conn, snapshot: CrowdSnapshot, scenario_at: datetime) -> Decision:
+def _mrt_decision(snapshot: CrowdSnapshot, scenario_at: datetime) -> Decision:
     """Cache-then-compute for SOP §3 (BS_MRT_BL17 only)."""
-    cached = db.fetch_cached_crowd_decision(conn, snapshot.station_id, scenario_at, "mrt_diversion")
+    cached = s3_cache.fetch_cached_crowd_decision(snapshot.station_id, scenario_at, "mrt_diversion")
     if cached is not None:
         return cached
     decision = decide_mrt_diversion(snapshot)
-    db.save_crowd_decision(
-        conn, station_id=snapshot.station_id, scenario_at=scenario_at,
+    s3_cache.save_crowd_decision(
+        station_id=snapshot.station_id, scenario_at=scenario_at,
         decision_kind="mrt_diversion", decision=decision,
     )
     return decision
@@ -163,7 +164,7 @@ def _mrt_decision(conn, snapshot: CrowdSnapshot, scenario_at: datetime) -> Decis
 
 def _dome_decision(conn, station_id: str, scenario_at: datetime) -> Decision:
     """Cache-then-compute for SOP §4 (BS_TPE_DOME only)."""
-    cached = db.fetch_cached_crowd_decision(conn, station_id, scenario_at, "dome_dispersal")
+    cached = s3_cache.fetch_cached_crowd_decision(station_id, scenario_at, "dome_dispersal")
     if cached is not None:
         return cached
     history = db.fetch_crowd_history(conn, station_id, scenario_at)
@@ -171,23 +172,23 @@ def _dome_decision(conn, station_id: str, scenario_at: datetime) -> Decision:
     if current is None:
         return Decision(triggered=False, sop_section_id=None, source="fallback")
     decision = decide_dome_dispersal(history, current)
-    db.save_crowd_decision(
-        conn, station_id=station_id, scenario_at=scenario_at,
+    s3_cache.save_crowd_decision(
+        station_id=station_id, scenario_at=scenario_at,
         decision_kind="dome_dispersal", decision=decision,
     )
     return decision
 
 
-def _multilingual_decision(conn, stations: list[CrowdSnapshot], scenario_at: datetime) -> Decision:
+def _multilingual_decision(stations: list[CrowdSnapshot], scenario_at: datetime) -> Decision:
     """Cache-then-compute for SOP §6 across all currently-visible stations in
     one LLM call -- cached under a synthetic station_id since it's a batch
-    judgment, not per-station (see schema.sql's crowd_decisions)."""
-    cached = db.fetch_cached_crowd_decision(conn, _MULTILINGUAL_CACHE_KEY, scenario_at, "multilingual")
+    judgment, not per-station (see s3_cache.py's "all.json" key)."""
+    cached = s3_cache.fetch_cached_crowd_decision(_MULTILINGUAL_CACHE_KEY, scenario_at, "multilingual")
     if cached is not None:
         return cached
     decision = decide_multilingual(stations)
-    db.save_crowd_decision(
-        conn, station_id=_MULTILINGUAL_CACHE_KEY, scenario_at=scenario_at,
+    s3_cache.save_crowd_decision(
+        station_id=_MULTILINGUAL_CACHE_KEY, scenario_at=scenario_at,
         decision_kind="multilingual", decision=decision,
     )
     return decision
@@ -213,7 +214,7 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
 
         traffic_out = []
         for t in traffic:
-            decision = _congestion_decision(conn, t.segment_id, t.road_name, t.saturation_score, scenario_at)
+            decision = _congestion_decision(t.segment_id, t.road_name, t.saturation_score, scenario_at)
             traffic_out.append(
                 {
                     "segmentId": t.segment_id,
@@ -237,7 +238,7 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
             )
         # §6 多語通報：對「目前看得到的所有站點」批次判斷一次，不逐站分開呼叫
         # LLM，跟 §3/§4 是針對特定站點的判斷不同（見 agent/facts.py::decide_multilingual）。
-        multilingual_decision = _multilingual_decision(conn, crowd, scenario_at)
+        multilingual_decision = _multilingual_decision(crowd, scenario_at)
         multilingual_triggered_ids = set(multilingual_decision.result.get("stations", []))
 
         crowd_out = []
@@ -255,7 +256,7 @@ def _handle_city_state(query: dict[str, str]) -> dict[str, Any]:
             }
             # SOP §3：只有 BS_MRT_BL17 適用（見 rules/mrt_diversion.py 對照的 SOP 條文）。
             if c.station_id == "BS_MRT_BL17":
-                mrt = _mrt_decision(conn, c, scenario_at)
+                mrt = _mrt_decision(c, scenario_at)
                 entry["mrtDiversionTriggered"] = mrt.triggered
                 entry["mrtDiversionReasoning"] = mrt.reasoning
                 entry["mrtDiversionPublicMessage"] = mrt.public_message
@@ -367,10 +368,7 @@ def _handle_create_incident(event: dict[str, Any]) -> dict[str, Any]:
         return _response(503, {"error": str(exc)})
 
     try:
-        db.insert_incident(
-            conn, incident, occurred_at=occurred_at,
-            road_segment_ids=road_segment_ids, station_ids=station_ids,
-        )
+        db.insert_incident(conn, incident, occurred_at=occurred_at)
         conn.commit()
     finally:
         conn.close()
@@ -415,14 +413,14 @@ def _decision_to_dict(decision: Decision) -> dict[str, Any]:
 
 
 def _cached_or_computed(
-    conn, *, event_id: str, scenario_at: datetime, alert_kind: str, title: str, compute
+    *, event_id: str, scenario_at: datetime, alert_kind: str, title: str, compute
 ) -> Decision:
-    cached = db.fetch_cached_decision(conn, event_id, scenario_at, alert_kind)
+    cached = s3_cache.fetch_cached_decision(event_id, scenario_at, alert_kind)
     if cached is not None:
         return cached
     decision = compute()
-    db.save_decision(
-        conn, event_id=event_id, scenario_at=scenario_at,
+    s3_cache.save_decision(
+        event_id=event_id, scenario_at=scenario_at,
         alert_kind=alert_kind, title=title, decision=decision,
     )
     return decision
@@ -448,12 +446,12 @@ def _evaluate_incident(
     saturation = {t.segment_id: t.saturation_score for t in traffic}
 
     accident_decision = _cached_or_computed(
-        conn, event_id=event_id, scenario_at=scenario_at, alert_kind="accident",
+        event_id=event_id, scenario_at=scenario_at, alert_kind="accident",
         title=incident.location,
         compute=lambda: decide_accident(incident, segments, saturation),
     )
     signal_decision = _cached_or_computed(
-        conn, event_id=event_id, scenario_at=scenario_at, alert_kind="signal_failure",
+        event_id=event_id, scenario_at=scenario_at, alert_kind="signal_failure",
         title=incident.location,
         compute=lambda: decide_signal_failure(incident),
     )

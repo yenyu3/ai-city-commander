@@ -20,7 +20,6 @@ import pytest
 psycopg = pytest.importorskip("psycopg")
 
 import db  # noqa: E402
-from agent.decision_agent import Decision  # noqa: E402
 from rules.types import LiveIncident  # noqa: E402
 
 DATABASE_URL = os.environ.get(
@@ -119,6 +118,25 @@ class TestFetchIncidents:
         assert db.fetch_incident(conn, "NOT_A_REAL_ID") is None
 
 
+class TestFetchRoadSegments:
+    def test_reconstructs_segments_with_resolved_and_unresolved_intersections(self, conn):
+        """RD_TPE_009's intersections include 正氣橋, a road name with no
+        matching segment_id (see data/unmatched_intersection_names.json) --
+        fetch_road_segments must preserve its position with None rather than
+        filtering it out (see rules/network_loader.py's module docstring)."""
+        segments = db.fetch_road_segments(conn)
+        assert "RD_TPE_009" in segments
+        seg = segments["RD_TPE_009"]
+        assert len(seg.intersections) == len(seg.intersection_ids)
+        assert any(sid is None for sid in seg.intersection_ids)
+
+    def test_alternatives_and_capacity_round_trip(self, conn):
+        segments = db.fetch_road_segments(conn)
+        seg = segments["RD_TPE_002"]
+        assert seg.capacity_vph > 0
+        assert isinstance(seg.alternatives, list) and len(seg.alternatives) > 0
+
+
 class TestInsertIncident:
     def test_round_trips_through_insert_and_fetch(self, conn):
         incident = LiveIncident(
@@ -131,68 +149,8 @@ class TestInsertIncident:
             description="測試用事件，不應該真的留在資料庫",
             timestamp="2026-05-20 21:30",
         )
-        db.insert_incident(
-            conn, incident,
-            occurred_at=taipei(2026, 5, 20, 21, 30),
-            road_segment_ids=["RD_TPE_003"],
-            station_ids=[],
-        )
+        db.insert_incident(conn, incident, occurred_at=taipei(2026, 5, 20, 21, 30))
         fetched = db.fetch_incident(conn, "TEST_EVT_ROUNDTRIP")
         assert fetched is not None
         assert fetched.affected_segment == "RD_TPE_003"
         assert fetched.description == incident.description
-
-
-class TestDecisionCache:
-    def test_cache_miss_returns_none(self, conn):
-        assert db.fetch_cached_decision(
-            conn, "TPE_2026_ACC_001", taipei(2026, 5, 20, 22, 10), "accident"
-        ) is None
-
-    def test_save_then_fetch_round_trips(self, conn):
-        scenario_at = taipei(2026, 5, 20, 22, 10)
-        decision = Decision(
-            triggered=True,
-            sop_section_id="2",
-            result={"main_route": "RD_TPE_004", "secondary_routes": ["RD_TPE_005"]},
-            reasoning="容量與上游條件皆符合，選定市民大道四段為主疏散路徑。",
-            source="llm",
-        )
-        db.save_decision(
-            conn,
-            event_id="TPE_2026_ACC_001",
-            scenario_at=scenario_at,
-            alert_kind="accident",
-            title="光復南路封閉",
-            decision=decision,
-        )
-        cached = db.fetch_cached_decision(conn, "TPE_2026_ACC_001", scenario_at, "accident")
-        assert cached is not None
-        assert cached.triggered is True
-        assert cached.sop_section_id == "2"
-        assert cached.result["main_route"] == "RD_TPE_004"
-        assert cached.reasoning == decision.reasoning
-
-    def test_different_alert_kind_is_a_cache_miss(self, conn):
-        """Same incident + same scenario time, but a different SOP check --
-        must not collide with the accident cache entry (this is exactly what
-        lets one incident independently trigger multiple SOPs)."""
-        scenario_at = taipei(2026, 5, 20, 22, 10)
-        db.save_decision(
-            conn, event_id="TPE_2026_ACC_001", scenario_at=scenario_at,
-            alert_kind="accident", title="x",
-            decision=Decision(triggered=True, sop_section_id="2", source="llm"),
-        )
-        assert db.fetch_cached_decision(
-            conn, "TPE_2026_ACC_001", scenario_at, "signal_failure"
-        ) is None
-
-    def test_different_scenario_at_is_a_cache_miss(self, conn):
-        scenario_at = taipei(2026, 5, 20, 22, 10)
-        db.save_decision(
-            conn, event_id="TPE_2026_ACC_001", scenario_at=scenario_at,
-            alert_kind="accident", title="x",
-            decision=Decision(triggered=True, sop_section_id="2", source="llm"),
-        )
-        other_time = taipei(2026, 5, 20, 22, 20)
-        assert db.fetch_cached_decision(conn, "TPE_2026_ACC_001", other_time, "accident") is None

@@ -1,8 +1,8 @@
 """Tests for the DB-backed handler routes (GET /api/city-state,
 POST /api/incidents, POST /api/incidents/{eventId}/evaluate), run against a
-real local Postgres -- see tests/test_db.py's module docstring for the setup
-and the skip-if-unreachable/rollback-per-test conventions, which this file
-reuses.
+real local Postgres for operational data (see tests/test_db.py's module
+docstring for the setup) plus moto's in-memory S3 mock for the decision
+cache (see tests/test_s3_cache.py) -- never a real AWS call.
 """
 from __future__ import annotations
 
@@ -12,13 +12,16 @@ import os
 import pytest
 
 psycopg = pytest.importorskip("psycopg")
+moto = pytest.importorskip("moto")
 
 import db  # noqa: E402
 import handler  # noqa: E402
+import s3_cache  # noqa: E402
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:aicity@localhost:5432/aicity"
 )
+_BUCKET = "test-internal-results"
 
 try:
     _probe = psycopg.connect(DATABASE_URL, connect_timeout=2)
@@ -34,33 +37,38 @@ pytestmark = pytest.mark.skipif(
 
 @pytest.fixture(autouse=True)
 def clean_test_rows(monkeypatch):
-    """These routes commit internally (city-state/evaluate need to persist
-    across the two separate Lambda invocations a cache is supposed to span),
-    so -- unlike test_db.py -- this suite can't rely on a rolled-back
-    transaction for isolation. Instead it deletes only the rows it created,
-    by a recognizable TEST_ prefix, before and after each test.
+    """City-state/evaluate commit internally (need to persist across the two
+    separate Lambda invocations a cache is supposed to span), so -- unlike
+    test_db.py -- this suite can't rely on a rolled-back transaction for
+    incidents isolation. Instead it deletes only the rows it created, by a
+    recognizable TEST_ prefix, before and after each test. The S3 decision
+    cache is moto-mocked fresh (empty bucket) for every test, so it never
+    needs manual cleanup.
     """
     monkeypatch.setenv("DATABASE_URL", DATABASE_URL)
+    monkeypatch.setenv("INTERNAL_RESULTS_BUCKET", _BUCKET)
     _delete_test_rows()
-    yield
+    with moto.mock_aws():
+        import boto3
+
+        boto3.client("s3", region_name="us-east-1").create_bucket(Bucket=_BUCKET)
+        yield
     _delete_test_rows()
 
 
 def _delete_test_rows():
     conn = psycopg.connect(DATABASE_URL)
-    conn.execute("DELETE FROM incident_road_impacts WHERE event_id LIKE 'TEST_%'")
-    conn.execute("DELETE FROM incident_station_impacts WHERE event_id LIKE 'TEST_%'")
     conn.execute("DELETE FROM incidents WHERE event_id LIKE 'TEST_%'")
-    # response_alerts/congestion_decisions/crowd_decisions are pure cache
-    # (see schema.sql) -- city-state now auto-evaluates every real seeded
-    # incident too (not just TEST_-prefixed ones), so a TEST_-only filter on
-    # response_alerts would leave cross-test pollution; safe to wipe all
-    # three entirely between tests.
-    conn.execute("DELETE FROM response_alerts")
-    conn.execute("DELETE FROM congestion_decisions")
-    conn.execute("DELETE FROM crowd_decisions")
     conn.commit()
     conn.close()
+
+
+def _s3_object_count(prefix: str = "decisions/") -> int:
+    import boto3
+
+    client = boto3.client("s3", region_name="us-east-1")
+    resp = client.list_objects_v2(Bucket=_BUCKET, Prefix=prefix)
+    return resp.get("KeyCount", 0)
 
 
 def _event(method: str, path: str, body: dict | None = None, query: dict | None = None) -> dict:
@@ -128,20 +136,13 @@ class TestCityState:
     def test_repeated_poll_for_the_same_scenario_time_is_cached(self):
         query = {"scenarioAt": "2026-05-20T21:00:00+08:00"}
         handler.handler(_event("GET", "/api/city-state", query=query), None)
-
-        conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
-        count_after_first = conn.execute(
-            "SELECT count(*) AS n FROM congestion_decisions"
-        ).fetchone()["n"]
+        count_after_first = _s3_object_count()
 
         handler.handler(_event("GET", "/api/city-state", query=query), None)
-        count_after_second = conn.execute(
-            "SELECT count(*) AS n FROM congestion_decisions"
-        ).fetchone()["n"]
-        conn.close()
+        count_after_second = _s3_object_count()
 
         assert count_after_first > 0
-        assert count_after_second == count_after_first  # no new rows -- cache hit
+        assert count_after_second == count_after_first  # no new objects -- cache hit
 
     def test_crowd_judgments_are_present_and_match_known_boundary_cases(self):
         """Module 1 of the brief requires the periodic poll to cover 人流
@@ -163,17 +164,20 @@ class TestCityState:
 
     def test_crowd_judgments_are_cached_across_repeated_polls(self):
         query = {"scenarioAt": "2026-05-20T21:00:00+08:00"}
+        scenario_at = handler._parse_scenario_at(query["scenarioAt"])
         handler.handler(_event("GET", "/api/city-state", query=query), None)
 
-        conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
-        count_after_first = conn.execute("SELECT count(*) AS n FROM crowd_decisions").fetchone()["n"]
+        # mrt_diversion (BS_MRT_BL17) + dome_dispersal (BS_TPE_DOME) +
+        # multilingual (batched under "all") each land as a distinct S3 key.
+        assert s3_cache.fetch_cached_crowd_decision("BS_MRT_BL17", scenario_at, "mrt_diversion") is not None
+        assert s3_cache.fetch_cached_crowd_decision("BS_TPE_DOME", scenario_at, "dome_dispersal") is not None
+        assert s3_cache.fetch_cached_crowd_decision("_ALL_STATIONS_", scenario_at, "multilingual") is not None
+        count_after_first = _s3_object_count()
 
         handler.handler(_event("GET", "/api/city-state", query=query), None)
-        count_after_second = conn.execute("SELECT count(*) AS n FROM crowd_decisions").fetchone()["n"]
-        conn.close()
+        count_after_second = _s3_object_count()
 
-        assert count_after_first == 3  # mrt_diversion + dome_dispersal + multilingual
-        assert count_after_second == count_after_first
+        assert count_after_second == count_after_first  # no new objects -- cache hit
 
     def test_crowd_judgment_llm_path_is_actually_invoked_when_configured(self, monkeypatch):
         import json as _json
@@ -261,17 +265,9 @@ class TestEvaluateIncident:
         assert decisions["accident"]["result"]["main_route"] == "RD_TPE_004"
         assert decisions["signal_failure"]["triggered"] is False
 
-        conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
-        row = conn.execute(
-            "SELECT count(*) AS n FROM response_alerts "
-            "WHERE event_id = 'TPE_2026_ACC_001' AND scenario_at = '2026-05-20T22:10:00+08:00'"
-        ).fetchone()
-        assert row["n"] == 2  # one row per alert_kind checked, at this scenario time
-        conn.close()
-        conn = psycopg.connect(DATABASE_URL)
-        conn.execute("DELETE FROM response_alerts WHERE event_id = 'TPE_2026_ACC_001'")
-        conn.commit()
-        conn.close()
+        scenario_at = handler._parse_scenario_at("2026-05-20T22:10:00+08:00")
+        assert s3_cache.fetch_cached_decision("TPE_2026_ACC_001", scenario_at, "accident") is not None
+        assert s3_cache.fetch_cached_decision("TPE_2026_ACC_001", scenario_at, "signal_failure") is not None
 
     def test_second_call_for_same_scenario_time_is_served_from_cache(self):
         req = _event(
@@ -280,24 +276,14 @@ class TestEvaluateIncident:
         )
         first = handler.handler(req, None)
         assert first["statusCode"] == 200
-
-        conn = psycopg.connect(DATABASE_URL, row_factory=psycopg.rows.dict_row)
-        count_query = (
-            "SELECT count(*) AS n FROM response_alerts "
-            "WHERE event_id = 'TPE_2026_ACC_001' AND scenario_at = '2026-05-20T22:10:00+08:00'"
-        )
-        count_after_first = conn.execute(count_query).fetchone()["n"]
+        count_after_first = _s3_object_count()
 
         second = handler.handler(req, None)
         assert second["statusCode"] == 200
-        count_after_second = conn.execute(count_query).fetchone()["n"]
+        count_after_second = _s3_object_count()
 
         assert count_after_first == 2  # accident + signal_failure, each cached once
-        assert count_after_second == 2  # no new rows -- cache hit
-
-        conn.execute("DELETE FROM response_alerts WHERE event_id = 'TPE_2026_ACC_001'")
-        conn.commit()
-        conn.close()
+        assert count_after_second == count_after_first  # no new objects -- cache hit
 
     def test_signal_failure_incident_also_checked_against_accident_and_not_triggered(self):
         """Mirror case: a Power_Failure incident should still get checked
@@ -317,11 +303,6 @@ class TestEvaluateIncident:
         assert decisions["signal_failure"]["triggered"] is True
         assert decisions["signal_failure"]["sopSectionId"] == "5"
         assert decisions["accident"]["triggered"] is False
-
-        conn = psycopg.connect(DATABASE_URL)
-        conn.execute("DELETE FROM response_alerts WHERE event_id = 'TPE_2026_EVT_003'")
-        conn.commit()
-        conn.close()
 
 
 class TestChatWithDbContext:
