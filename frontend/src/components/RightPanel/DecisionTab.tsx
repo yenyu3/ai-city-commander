@@ -1,4 +1,3 @@
-import { useLanguage } from "../../i18n";
 import DecisionSummary from "./DecisionSummary";
 import styles from "./DecisionTab.module.css";
 import ETEBreakdownCard from "./ETEBreakdownCard";
@@ -8,8 +7,6 @@ import RerouteSection from "./RerouteSection";
 import SignalCoordinationSection from "./SignalCoordinationSection";
 
 export default function DecisionTab() {
-  const { language } = useLanguage();
-
   return (
     <div className={styles.wrap}>
       <DecisionSummary />

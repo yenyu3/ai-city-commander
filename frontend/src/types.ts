@@ -8,23 +8,27 @@ export type LaneStatus =
   | "Partial_Open";
 
 export interface TrafficSnapshot {
-  timestamp: string; // "2026-05-20 21:00"
+  observedAt: string; // "2026-05-20 21:00" (demo) / ISO 8601 (api), 對應後端 observedAt
   segmentId: string; // "RD_TPE_001"
+  /** 前端本地 join 補上的展示欄位（segmentDefs 查表），並非後端 city-state API 直接提供。 */
   roadName: string;
-  avgSpeed: number;
+  avgSpeedKph: number;
   vehicleCount: number;
   saturationScore: number; // 0~1+
   laneStatus: LaneStatus;
+  /** 後端 city-state traffic item 可能已附上壅塞分級，demo 模式維持本地 getTier() 計算。 */
+  tier?: Tier;
 }
 
 export interface CrowdSnapshot {
-  timestamp: string;
+  observedAt: string;
   stationId: string; // "BS_MRT_BL17"
+  /** 前端本地 join 補上的展示欄位（站名查表），並非後端 city-state API 直接提供。 */
   locationName: string;
   userCount: number;
-  stayTimeAvg: number;
+  stayTimeAvgMinutes: number;
   growthRate: number; // -1 ~ +N
-  roamingPct: number; // 0~1 decimal (parsed from "8%")
+  roamingUserPct: number; // 0~1 decimal (parsed from "8%")
 }
 
 export interface RoadSegment {
@@ -56,12 +60,15 @@ export interface LiveIncident {
   eventId: string;
   type: string;
   location: string;
-  affectedSegment: string; // RD_ or BS_ prefixed
+  affectedSegmentId: string; // RD_ or BS_ prefixed
+  /** 新版後端 API request/response 範例未包含此欄位，僅 demo 資料/展示用。 */
   affectedRoad?: string;
   status: IncidentStatus;
   severity: IncidentSeverity;
   description: string;
-  timestamp: string;
+  occurredAt: string;
+  /** POST /api/incidents 202 回應帶回的非同步處理狀態，demo 模式不會有值。 */
+  processing?: { jobId: string; status: string };
 }
 
 export type Tier = "Normal" | "B" | "A";
@@ -120,6 +127,8 @@ export interface RerouteSnapshot {
 export interface AlertRecord {
   id: string;
   timestamp: string;
+  /** 觸發此 alert 的原始事件 eventId（若有），用來在 api 模式下比對 GET /api/decisions 的結果。 */
+  sourceIncidentId?: string;
   kind:
     | "city_response"
     | "accident"

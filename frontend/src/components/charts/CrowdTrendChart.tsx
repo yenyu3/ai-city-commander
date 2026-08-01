@@ -42,9 +42,9 @@ export default function CrowdTrendChart({
     for (const row of crowd) {
       if (!stationIds.includes(row.stationId)) continue;
       names[row.stationId] = row.locationName;
-      const entry = byTime.get(row.timestamp) ?? { timestamp: row.timestamp };
+      const entry = byTime.get(row.observedAt) ?? { timestamp: row.observedAt };
       entry[row.stationId] = row.userCount;
-      byTime.set(row.timestamp, entry);
+      byTime.set(row.observedAt, entry);
     }
     const data = Array.from(byTime.values()).sort((a, b) =>
       String(a.timestamp).localeCompare(String(b.timestamp)),

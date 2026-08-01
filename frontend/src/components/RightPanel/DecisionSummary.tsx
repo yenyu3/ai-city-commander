@@ -82,13 +82,13 @@ export default function DecisionSummary() {
 
   const multilingualTriggered = checkMultilingualNeeded(
     Object.values(stations).map((st) => ({
-      timestamp: currentTime,
+      observedAt: currentTime,
       stationId: st.stationId,
       locationName: st.name,
       userCount: st.userCount,
-      stayTimeAvg: st.stayTimeAvg,
+      stayTimeAvgMinutes: st.stayTimeAvg,
       growthRate: st.growthRate,
-      roamingPct: st.roamingPct,
+      roamingUserPct: st.roamingPct,
     })),
   );
   const [publishedAlertIds, setPublishedAlertIds] = useState<Set<string>>(() => new Set());

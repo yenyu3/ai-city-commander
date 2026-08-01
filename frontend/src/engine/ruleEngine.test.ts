@@ -130,11 +130,11 @@ describe("§4.2 / §4.3 驗證用例 A：RD_TPE_002 光復南路封閉", () => {
     eventId: "TPE_2026_ACC_001",
     type: "Road_Collapse_Accident",
     location: "光復南路與忠孝東路口南側",
-    affectedSegment: "RD_TPE_002",
+    affectedSegmentId: "RD_TPE_002",
     status: "Closed",
     severity: "Critical",
     description: "地下管線爆裂導致路面塌陷並引發三車連環追撞，光復南路南下全線封鎖",
-    timestamp: "2026-05-20 22:10",
+    occurredAt: "2026-05-20 22:10",
   };
 
   it("triggers the accident rule", () => {
@@ -201,12 +201,12 @@ describe("§4.4 驗證用例 B：BS_MRT_BL17 人潮推擠事件（邊界案例�
       eventId: "TPE_2026_EVT_002",
       type: "Crowd_Surge_Injury",
       location: "捷運國父紀念館站 5 號出口",
-      affectedSegment: "BS_MRT_BL17",
+      affectedSegmentId: "BS_MRT_BL17",
       affectedRoad: "RD_TPE_001",
       status: "Restricted",
       severity: "High",
       description: "散場人群推擠受傷，救護車佔用單向車道，人流進站動線中斷",
-      timestamp: "2026-05-20 22:20",
+      occurredAt: "2026-05-20 22:20",
     };
     expect(isAccidentTrigger(incident)).toBe(false);
   });
@@ -215,13 +215,13 @@ describe("§4.4 驗證用例 B：BS_MRT_BL17 人潮推擠事件（邊界案例�
 describe("§4.5 捷運與接駁分流", () => {
   function crowd(userCount: number, growthRate: number): CrowdSnapshot {
     return {
-      timestamp: "2026-05-20 18:00",
+      observedAt: "2026-05-20 18:00",
       stationId: "BS_MRT_BL17",
       locationName: "捷運國父紀念館站",
       userCount,
-      stayTimeAvg: 20,
+      stayTimeAvgMinutes: 20,
       growthRate,
-      roamingPct: 0.1,
+      roamingUserPct: 0.1,
     };
   }
 
@@ -242,25 +242,25 @@ describe("§4.5 捷運與接駁分流", () => {
 describe("§4.6 大巨蛋散場啟動", () => {
   const history: CrowdSnapshot[] = [15000, 35000, 40000, 38000].map(
     (userCount) => ({
-      timestamp: "t",
+      observedAt: "t",
       stationId: "BS_TPE_DOME",
       locationName: "大巨蛋場館內",
       userCount,
-      stayTimeAvg: 100,
+      stayTimeAvgMinutes: 100,
       growthRate: 0,
-      roamingPct: 0.05,
+      roamingUserPct: 0.05,
     }),
   );
 
   function current(growthRate: number): CrowdSnapshot {
     return {
-      timestamp: "t",
+      observedAt: "t",
       stationId: "BS_TPE_DOME",
       locationName: "大巨蛋場館內",
       userCount: 22000,
-      stayTimeAvg: 180,
+      stayTimeAvgMinutes: 180,
       growthRate,
-      roamingPct: 0.05,
+      roamingUserPct: 0.05,
     };
   }
 
@@ -281,11 +281,11 @@ describe("§4.7 號誌故障應變", () => {
       eventId: "TPE_2026_EVT_003",
       type: "Power_Failure",
       location: "信義威秀/ATT4FUN周邊路燈號誌故障",
-      affectedSegment: "RD_TPE_007",
+      affectedSegmentId: "RD_TPE_007",
       status: "Caution",
       severity: "Medium",
       description: "信義區部分路段號誌失效，需改由人工交通指揮",
-      timestamp: "2026-05-20 22:30",
+      occurredAt: "2026-05-20 22:30",
     };
     expect(checkSignalFailure(incident)).toBe(true);
     expect(isAccidentTrigger(incident)).toBe(false);
@@ -293,15 +293,15 @@ describe("§4.7 號誌故障應變", () => {
 });
 
 describe("§4.8 數位通報與多語化", () => {
-  function station(roamingPct: number): CrowdSnapshot {
+  function station(roamingUserPct: number): CrowdSnapshot {
     return {
-      timestamp: "t",
+      observedAt: "t",
       stationId: "BS_XY_ATT",
       locationName: "ATT4FUN周邊",
       userCount: 1000,
-      stayTimeAvg: 10,
+      stayTimeAvgMinutes: 10,
       growthRate: 0,
-      roamingPct,
+      roamingUserPct,
     };
   }
 

@@ -11,8 +11,7 @@ const DEMO_INJECT_COUNT = 3;
 export default function InjectIncidentButton() {
   const allIncidents = useAppStore((s) => s.allIncidents);
   const injectedIncidentIds = useAppStore((s) => s.injectedIncidentIds);
-  const injectIncident = useAppStore((s) => s.injectIncident);
-  const addIncidents = useAppStore((s) => s.addIncidents);
+  const submitIncident = useAppStore((s) => s.submitIncident);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
   const [showMenu, setShowMenu] = useState(false);
@@ -41,18 +40,20 @@ export default function InjectIncidentButton() {
     for (const item of arr) {
       if (typeof item !== "object" || item === null) { skipped++; continue; }
       const i = item as Record<string, unknown>;
+      // 同時接受新版後端 POST /api/incidents 的欄位命名（affectedSegmentId/occurredAt）
+      // 與既有 demo JSON 的舊命名（affected_segment/timestamp），維持相容。
       const incident: LiveIncident = {
         eventId: String(i.event_id ?? i.eventId ?? ""),
         type: String(i.type ?? ""),
         location: String(i.location ?? ""),
-        affectedSegment: String(i.affected_segment ?? i.affectedSegment ?? ""),
+        affectedSegmentId: String(i.affectedSegmentId ?? i.affected_segment ?? i.affectedSegment ?? ""),
         affectedRoad: i.affected_road != null ? String(i.affected_road) : i.affectedRoad != null ? String(i.affectedRoad) : undefined,
         status: String(i.status ?? ""),
         severity: String(i.severity ?? ""),
         description: String(i.description ?? ""),
-        timestamp: String(i.timestamp ?? ""),
+        occurredAt: String(i.occurredAt ?? i.timestamp ?? ""),
       };
-      if (incident.eventId && incident.type && incident.location && incident.affectedSegment && incident.status && incident.severity && incident.timestamp) {
+      if (incident.eventId && incident.type && incident.location && incident.affectedSegmentId && incident.status && incident.severity && incident.occurredAt) {
         valid.push(incident);
       } else {
         skipped++;
@@ -62,7 +63,7 @@ export default function InjectIncidentButton() {
       setUploadStatus({ type: "error", message: pick(language, skipped > 0 ? `所有 ${skipped} 筆事件皆缺少必要欄位` : "檔案中未找到有效事件", skipped > 0 ? `All ${skipped} incident(s) missing required fields` : "No valid incidents found") });
       return;
     }
-    addIncidents(valid);
+    valid.forEach(submitIncident);
     setUploadStatus({ type: "ok", message: pick(language, skipped > 0 ? `已新增 ${valid.length} 筆，略過 ${skipped} 筆` : `已新增 ${valid.length} 筆事件`, skipped > 0 ? `Added ${valid.length}, skipped ${skipped}` : `Added ${valid.length} incident(s)`) });
   }
 
@@ -132,9 +133,9 @@ export default function InjectIncidentButton() {
                 key={incident.eventId}
                 className={`${styles.option} ${injected ? styles.optionDone : ""}`}
                 disabled={injected}
-                title={reformatEmbeddedTimestamp(incident.description, incident.timestamp, timeOffsetMs)}
+                title={reformatEmbeddedTimestamp(incident.description, incident.occurredAt, timeOffsetMs)}
                 onClick={() => {
-                  injectIncident(incident.eventId);
+                  submitIncident(incident);
                   setShowMenu(false);
                 }}
               >

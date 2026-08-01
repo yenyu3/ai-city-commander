@@ -4,6 +4,9 @@ import { useAppStore } from "../../store/appStore";
 import { checkMultilingualNeeded } from "../../engine/multilingualCheck";
 import { calcETE } from "../../engine/ete";
 import { llmAdapter } from "../../services/llmAdapter";
+import * as apiClient from "../../services/apiClient";
+import { DATA_SOURCE } from "../../config";
+import { toScenarioAt } from "../../utils/timeUtils";
 import { pick, useLanguage } from "../../i18n";
 import styles from "./PublishPreviewModal.module.css";
 
@@ -29,13 +32,13 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
 
   const triggered = checkMultilingualNeeded(
     Object.values(stations).map((st) => ({
-      timestamp: currentTime,
+      observedAt: currentTime,
       stationId: st.stationId,
       locationName: st.name,
       userCount: st.userCount,
-      stayTimeAvg: st.stayTimeAvg,
+      stayTimeAvgMinutes: st.stayTimeAvg,
       growthRate: st.growthRate,
-      roamingPct: st.roamingPct,
+      roamingUserPct: st.roamingPct,
     })),
   );
 
@@ -72,7 +75,11 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
   function toggleLang(code: "zh" | "en" | "ja" | "ko") {
     setSelectedLangs((prev) => {
       const next = new Set(prev);
-      next.has(code) ? next.delete(code) : next.add(code);
+      if (next.has(code)) {
+        next.delete(code);
+      } else {
+        next.add(code);
+      }
       return next;
     });
   }
@@ -81,8 +88,24 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
     if (selectedCount === 0 || publishState !== "idle") return;
     setPublishState("loading");
     try {
-      // 模擬 API 呼叫（實際接入時替換此處）
-      await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+      if (DATA_SOURCE === "api" && current && messages) {
+        const langs = LANGS.filter((l) => selectedLangs.has(l.code)).map((l) => l.code);
+        const selectedMessages: Record<string, string> = {};
+        for (const code of langs) selectedMessages[code] = messages[code];
+        // targetStationIds/channels 目前沒有對應的選擇 UI，先用觸發站點與後端範例預設值。
+        // 多語文案仍由前端 llmAdapter 產生（後端尚無 preview/generate 端點，見協調文件第 10 項）。
+        await apiClient.publishAlert({
+          context: { scenarioAt: toScenarioAt(currentTime) },
+          alertId,
+          targetStationIds: [current.stationId],
+          channels: ["cms", "web"],
+          languages: langs,
+          messages: selectedMessages,
+        });
+      } else {
+        // demo 模式：模擬 API 呼叫
+        await new Promise<void>((resolve) => setTimeout(resolve, 1200));
+      }
       setPublishState("success");
       onPublished(alertId);
       setTimeout(onClose, 1600);
@@ -118,7 +141,7 @@ export default function PublishPreviewModal({ onClose, onPublished, alertId }: P
               <div className={styles.metaChips}>
                 <span className={styles.chip}>
                   {pick(language, "漫遊比例", "Roaming")}
-                  <strong>{(current.roamingPct * 100).toFixed(0)}%</strong>
+                  <strong>{(current.roamingUserPct * 100).toFixed(0)}%</strong>
                 </span>
                 <span className={styles.chip}>
                   {pick(language, "已選語言", "Languages")}

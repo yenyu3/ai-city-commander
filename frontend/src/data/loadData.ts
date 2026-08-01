@@ -16,6 +16,7 @@ export interface LoadedData {
   sopText: string;
   roadPaths: Map<string, RoadPathDef>;
   stationCoords: Record<string, [number, number]>;
+  stationNames: Record<string, string>;
   mapCenter: [number, number];
 }
 
@@ -42,10 +43,10 @@ async function loadTraffic(): Promise<TrafficSnapshot[]> {
   const csv = await fetchText("/data/city_traffic_flow.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   return rows.map((r) => ({
-    timestamp: r.Timestamp,
+    observedAt: r.Timestamp,
     segmentId: r.Segment_ID,
     roadName: r.Road_Name,
-    avgSpeed: Number(r.Avg_Speed),
+    avgSpeedKph: Number(r.Avg_Speed),
     vehicleCount: Number(r.Vehicle_Count),
     saturationScore: Number(r.Saturation_Score),
     laneStatus: r.Lane_Status as TrafficSnapshot["laneStatus"],
@@ -56,14 +57,31 @@ async function loadCrowd(): Promise<CrowdSnapshot[]> {
   const csv = await fetchText("/data/signaling_crowd_density.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   return rows.map((r) => ({
-    timestamp: r.Timestamp,
+    observedAt: r.Timestamp,
     stationId: r.BS_ID,
     locationName: r.Location_Name,
     userCount: Number(r.User_Count),
-    stayTimeAvg: Number(r.Stay_Time_Avg),
+    stayTimeAvgMinutes: Number(r.Stay_Time_Avg),
     growthRate: Number(r.Growth_Rate),
-    roamingPct: parsePercent(r.Roaming_User_Pct),
+    roamingUserPct: parsePercent(r.Roaming_User_Pct),
   }));
+}
+
+/**
+ * 後端目前沒有 reference-data API（見 docs/frontend-backend-coordination-issues.md 第 3 項），
+ * city-state 的 crowd item 也不含站名，因此站名對照表暫時從既有 demo CSV 衍生，
+ * demo/api 兩種模式共用。
+ */
+async function loadStationNames(): Promise<Record<string, string>> {
+  const csv = await fetchText("/data/signaling_crowd_density.csv");
+  const rows = parseCsv<Record<string, string>>(csv);
+  const names: Record<string, string> = {};
+  for (const r of rows) {
+    if (r.BS_ID && r.Location_Name && !names[r.BS_ID]) {
+      names[r.BS_ID] = r.Location_Name;
+    }
+  }
+  return names;
 }
 
 interface RawSegment {
@@ -129,12 +147,12 @@ async function loadIncidents(): Promise<LiveIncident[]> {
     eventId: i.event_id,
     type: i.type,
     location: i.location,
-    affectedSegment: i.affected_segment,
+    affectedSegmentId: i.affected_segment,
     affectedRoad: i.affected_road,
     status: i.status,
     severity: i.severity,
     description: i.description,
-    timestamp: i.timestamp,
+    occurredAt: i.timestamp,
   }));
 }
 
@@ -178,6 +196,7 @@ export async function loadAllData(): Promise<LoadedData> {
     sopText,
     roadPaths,
     { stationCoords, mapCenter },
+    stationNames,
   ] = await Promise.all([
     loadTraffic(),
     loadCrowd(),
@@ -186,6 +205,7 @@ export async function loadAllData(): Promise<LoadedData> {
     fetchText("/data/emergency_traffic_sop.txt"),
     loadRoadPaths(),
     loadStationCoords(),
+    loadStationNames(),
   ]);
 
   return {
@@ -197,6 +217,7 @@ export async function loadAllData(): Promise<LoadedData> {
     sopText,
     roadPaths,
     stationCoords,
+    stationNames,
     mapCenter,
   };
 }

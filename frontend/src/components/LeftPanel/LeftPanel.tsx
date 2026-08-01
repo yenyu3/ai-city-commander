@@ -26,7 +26,6 @@ function scrollToAnchor(event: React.MouseEvent<HTMLAnchorElement>, id: string) 
 export default function SituationTab() {
   const { language } = useLanguage();
   const segments = useAppStore((s) => s.segments);
-  const stations = useAppStore((s) => s.stations);
   // const traffic = useAppStore((s) => s.traffic);
   // const crowd = useAppStore((s) => s.crowd);
   // const segmentDefs = useAppStore((s) => s.segmentDefs);
@@ -41,11 +40,6 @@ export default function SituationTab() {
         .slice(0, 3),
     [segments],
   );
-
-  // const topStations = useMemo(
-  //   () => Object.values(stations).sort((a, b) => b.userCount - a.userCount).slice(0, 3),
-  //   [stations],
-  // );
 
   const riskSource = useMemo(() => {
     if (activeIncidents.length > 0) {
