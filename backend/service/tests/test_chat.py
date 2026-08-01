@@ -56,6 +56,50 @@ class TestAnswerChatWiring:
         assert answer.sop_refs == ["SOP §3"]
         assert answer.source == "llm"
 
+    def test_government_answer_includes_reasoning_steps(self):
+        """data/api.md §5's government-mode example (lines 738-759) shows a
+        populated reasoningSteps array -- verify the LLM's steps survive
+        parsing, in order, with sopRef preserved."""
+        fake = FakeLLMClient(json.dumps({
+            "text": "建議過站不停",
+            "sopRefs": ["SOP §3"],
+            "reasoningSteps": [
+                {"order": 1, "status": "info", "title": "取得情境輸入", "detail": "BL17 人數 26,000"},
+                {"order": 2, "status": "pass", "title": "檢核捷運分流門檻", "detail": "26,000 > 25,000", "sopRef": "SOP §3"},
+            ],
+        }))
+        answer = answer_chat("問題", {}, audience="government", llm_client=fake)
+        assert len(answer.reasoning_steps) == 2
+        assert answer.reasoning_steps[0].status == "info"
+        assert answer.reasoning_steps[0].sop_ref is None
+        assert answer.reasoning_steps[1].sop_ref == "SOP §3"
+        prompt = fake.calls[0]["prompt"]
+        assert "reasoningSteps" in prompt
+
+    def test_malformed_reasoning_step_is_dropped_not_fatal(self):
+        fake = FakeLLMClient(json.dumps({
+            "text": "建議過站不停",
+            "sopRefs": ["SOP §3"],
+            "reasoningSteps": [
+                {"order": 1, "status": "info", "title": "ok", "detail": "ok"},
+                {"order": "not-a-number-but-unparseable", "status": "pass"},  # missing title/detail
+            ],
+        }))
+        answer = answer_chat("問題", {}, audience="government", llm_client=fake)
+        assert len(answer.reasoning_steps) == 1
+
+    def test_public_answer_never_includes_reasoning_steps(self):
+        """Public audience's doc example (lines 764-779) has no reasoningSteps
+        key at all -- even if a misbehaving LLM included one, it must not
+        leak through (same defense-in-depth as sopRefs)."""
+        fake = FakeLLMClient(json.dumps({
+            "text": "建議改道",
+            "sopRefs": [],
+            "reasoningSteps": [{"order": 1, "status": "info", "title": "x", "detail": "x", "sopRef": "SOP §3"}],
+        }))
+        answer = answer_chat("問題", {}, audience="public", llm_client=fake)
+        assert answer.reasoning_steps == []
+
     def test_public_prompt_instructs_no_sop_refs(self):
         fake = FakeLLMClient(json.dumps({"text": "建議改道", "sopRefs": []}))
         answer_chat("問題", {}, audience="public", llm_client=fake)
@@ -73,6 +117,7 @@ class TestAnswerChatFallback:
         answer = answer_chat("BL17 人數增加到 40000 人會怎樣？", {}, llm_client=None)
         assert answer.source == "fallback"
         assert "SOP §3" in answer.sop_refs
+        assert answer.reasoning_steps == []  # no LLM judgment to trace
 
     def test_client_exception_falls_back(self):
         answer = answer_chat("問題", {}, llm_client=RaisingLLMClient())
