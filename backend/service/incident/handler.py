@@ -32,6 +32,7 @@ built.
 from __future__ import annotations
 
 import json
+import logging
 from datetime import datetime, timezone
 from typing import Any
 
@@ -40,6 +41,9 @@ import db
 import s3_common
 import worker_invoke
 from rules.types import LiveIncident
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -77,6 +81,19 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     except KeyError as exc:
         return api_common.response(400, {"error": f"missing field: {exc}"})
 
+    logger.info(
+        "incident_request_validated %s",
+        json.dumps({
+            "eventId": event_id,
+            "scenarioAt": scenario_at.isoformat(),
+            "occurredAt": occurred_at.isoformat(),
+            "affectedSegmentId": affected_segment,
+            "type": incident.type,
+            "status": incident.status,
+            "severity": incident.severity,
+        }),
+    )
+
     try:
         conn = db.connect()
     except RuntimeError as exc:
@@ -87,13 +104,17 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     finally:
         conn.close()
 
+    logger.info("incident_persisted %s", json.dumps({"eventId": event_id, "occurredAt": occurred_at.isoformat()}))
+
     date = occurred_at.date().isoformat()
+    incident_s3_key = f"incidents/{date}/{event_id}.json"
     s3_common.client().put_object(
         Bucket=s3_common.internal_bucket(),
-        Key=f"incidents/{date}/{event_id}.json",
+        Key=incident_s3_key,
         Body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
         ContentType="application/json; charset=utf-8",
     )
+    logger.info("incident_raw_payload_saved %s", json.dumps({"eventId": event_id, "s3Key": incident_s3_key}))
 
     # Best-effort cache warm -- not required for correctness (a GET
     # /api/decisions that lands before this finishes just computes it itself
@@ -105,7 +126,9 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     # _write_incident_report_and_notice). This is the incident API entry --
     # decision-vs-incident is decided by which API invoked the worker, not
     # by SOP kind (see decision_routing.py's run_incident_flow).
-    worker_invoke.invoke_async({"mode": "incident", "scenarioAt": context["scenarioAt"], "eventId": event_id})
+    worker_payload = {"mode": "incident", "scenarioAt": context["scenarioAt"], "eventId": event_id}
+    logger.info("incident_worker_invocation_requested %s", json.dumps(worker_payload))
+    worker_invoke.invoke_async(worker_payload)
 
     generated_at = api_common.now_iso()
     notice_id = f"PUB_{event_id}_v1"

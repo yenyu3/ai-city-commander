@@ -66,6 +66,8 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
+import json
+import logging
 from typing import Any, Callable, Optional
 
 import db
@@ -85,6 +87,9 @@ from agent.facts import (
 from agent.router_agent import Narrative, NarrativeSummary, Trigger, narrate_for_focus, route_triggers
 from rules.congestion_tier import CITY_TRIGGER_SEGMENTS
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapshot
+
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
 
 _MULTILINGUAL_CACHE_KEY = "_ALL_STATIONS_"
 _GLOBAL_NARRATIVE_KEY = "_global"
@@ -718,9 +723,34 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     direction that the notice format must match the decisions API's shape
     (see decision_item_json/summary_json's docstrings)."""
     data = _fetch_city_data(conn, scenario_at)
-    incident = data.incidents.get(event_id)
+    # An injected incident is an explicit work request. Do not use the city
+    # snapshot's `occurred_at <= scenario_at` visibility filter here: callers
+    # may intentionally request a scenario context that predates the event,
+    # but the event must still go through SOP/LLM evaluation.
+    incident = db.fetch_incident(conn, event_id)
     if incident is None:
+        logger.warning(
+            "incident_flow_event_not_found %s",
+            json.dumps({
+                "eventId": event_id,
+                "scenarioAt": scenario_at.isoformat(),
+            }),
+        )
         return []
+
+    # Keep the explicitly requested event in the in-memory city context for
+    # report/narrative builders while preserving the snapshot data above.
+    data.incidents[event_id] = incident
+
+    logger.info(
+        "incident_flow_event_loaded_forced %s",
+        json.dumps({
+            "eventId": event_id,
+            "scenarioAt": scenario_at.isoformat(),
+            "occurredAt": incident.timestamp,
+            "affectedSegmentId": incident.affected_segment,
+        }),
+    )
 
     date = incident.timestamp.split("T")[0].split(" ")[0]
     saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
@@ -758,6 +788,16 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
 
     if pairs:
         _write_incident_report_and_notice(scenario_at, data, incident, date, pairs)
+        logger.info(
+            "incident_flow_report_and_notice_published %s",
+            json.dumps({
+                "eventId": event_id,
+                "triggeredSopSections": [trigger.sop_section_id for trigger, _decision in pairs],
+                "decisionSources": [decision.source for _trigger, decision in pairs],
+            }),
+        )
+    else:
+        logger.info("incident_flow_no_sop_trigger %s", json.dumps({"eventId": event_id, "scenarioAt": scenario_at.isoformat()}))
 
     return pairs
 

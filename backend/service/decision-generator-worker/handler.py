@@ -37,15 +37,30 @@ Two invocation shapes:
 from __future__ import annotations
 
 import json
+import logging
 from typing import Any
 
 import db
 from api_common import decision_snapshot_at, parse_scenario_at
 from decision_routing import run_incident_flow, run_worker_phases
 
+logger = logging.getLogger(__name__)
+logger.setLevel(logging.INFO)
+
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
+    logger.info(
+        "decision_worker_invocation_received %s",
+        json.dumps({
+            "source": event.get("source"),
+            "mode": event.get("mode"),
+            "eventId": event.get("eventId"),
+            "scenarioAt": event.get("scenarioAt"),
+            "hasS3Records": bool(event.get("Records")),
+        }),
+    )
     if event.get("source") == "eventbridge":
+        logger.info("decision_worker_scheduled_noop %s", json.dumps({"mode": event.get("mode")}))
         return {
             "statusCode": 200,
             "body": json.dumps({"status": "accepted", "source": "eventbridge", "mode": event.get("mode")}),
@@ -53,6 +68,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
     scenario_at_raw = event.get("scenarioAt")
     if not scenario_at_raw:
+        logger.warning("decision_worker_ignored_missing_scenario_at")
         return {"statusCode": 400, "body": json.dumps({"error": "reactive invocation needs 'scenarioAt'"})}
 
     # Which API entry this came from decides what the worker computes and
@@ -61,6 +77,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     mode = event.get("mode", "decision")
     event_id = event.get("eventId")
     if mode == "incident" and not event_id:
+        logger.warning("decision_worker_ignored_missing_event_id %s", json.dumps({"scenarioAt": scenario_at_raw}))
         return {"statusCode": 400, "body": json.dumps({"error": "incident invocation needs 'eventId'"})}
 
     parsed_scenario_at = parse_scenario_at(scenario_at_raw)
@@ -71,15 +88,20 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         return {"statusCode": 503, "body": json.dumps({"error": str(exc)})}
     try:
         if mode == "incident":
-            # No 15-minute rounding here -- that's the decision API's cache
-            # slot, unrelated to this event. db.fetch_active_incidents filters
-            # on `occurred_at <= scenario_at`; rounding down could push
-            # scenario_at earlier than the incident's own occurred_at (e.g.
-            # 22:10 -> 22:00), making the incident invisible to its own flow
-            # (run_incident_flow would silently find nothing -- see
-            # decision_routing.py). Use the exact scenario_at instead.
+            # Incident processing preserves the exact caller-supplied
+            # scenarioAt for its traffic/crowd context. Unlike a city sweep,
+            # the injected event itself is fetched by eventId regardless of
+            # its occurredAt, so every accepted incident is evaluated.
+            logger.info(
+                "decision_worker_incident_processing_started %s",
+                json.dumps({"eventId": event_id, "scenarioAt": parsed_scenario_at.isoformat()}),
+            )
             pairs = run_incident_flow(conn, parsed_scenario_at, event_id)
             conn.commit()
+            logger.info(
+                "decision_worker_incident_processing_finished %s",
+                json.dumps({"eventId": event_id, "scenarioAt": parsed_scenario_at.isoformat(), "triggeredCount": len(pairs)}),
+            )
             result: dict[str, Any] = {
                 "status": "ready",
                 "mode": "incident",
@@ -100,6 +122,12 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "resolvedScenarioAt": scenario_at.isoformat(),
                 "triggeredCount": len(pairs),
             }
+    except Exception:
+        logger.exception(
+            "decision_worker_processing_failed %s",
+            json.dumps({"mode": mode, "eventId": event_id, "scenarioAt": scenario_at_raw}),
+        )
+        raise
     finally:
         conn.close()
 

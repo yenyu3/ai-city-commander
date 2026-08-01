@@ -69,8 +69,11 @@ resource "aws_lambda_function" "api" {
   package_type  = "Image"
   image_uri     = "${aws_ecr_repository.api[each.key].repository_url}:${local.api_images[each.key].tag}"
   architectures = ["x86_64"]
-  timeout       = 30
-  memory_size   = 512
+  # The worker may make one or more LLM calls, render a PDF, and publish both
+  # internal and public S3 artefacts. Keep request/response API Lambdas fast,
+  # but give this asynchronous path enough time to finish the full workflow.
+  timeout     = each.key == "decision-generator-worker" ? 120 : 30
+  memory_size = 512
 
   environment {
     variables = {
