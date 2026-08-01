@@ -16,10 +16,22 @@ variable "db_name" {
   default     = "aicity"
 }
 
-variable "db_instance_class" {
-  description = "RDS instance class. Use a larger class before production."
+variable "aurora_postgres_engine_version" {
+  description = "Aurora PostgreSQL engine version for the Serverless v2 cluster."
   type        = string
-  default     = "db.t4g.micro"
+  default     = "16.6"
+}
+
+variable "aurora_serverless_min_acu" {
+  description = "Minimum Aurora Serverless v2 capacity units."
+  type        = number
+  default     = 0.5
+}
+
+variable "aurora_serverless_max_acu" {
+  description = "Maximum Aurora Serverless v2 capacity units."
+  type        = number
+  default     = 1
 }
 
 variable "availability_zones" {

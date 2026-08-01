@@ -2,8 +2,10 @@
 aws_region   = "us-west-2"
 project_name = "ai-city-commander-dev"
 
-db_name           = "aicity"
-db_instance_class = "db.t4g.micro"
+db_name                        = "aicity"
+aurora_postgres_engine_version = "16.11"
+aurora_serverless_min_acu      = 0.5
+aurora_serverless_max_acu      = 1
 availability_zones = [
   "us-west-2a",
   "us-west-2b",

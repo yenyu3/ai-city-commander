@@ -8,29 +8,43 @@ resource "aws_db_subnet_group" "this" {
   subnet_ids = [for subnet in aws_subnet.private : subnet.id]
 }
 
-resource "aws_db_instance" "postgres" {
-  identifier = "${local.name}-postgres"
+# Aurora Serverless v2 is required for the RDS Console Query Editor/Data API
+# workflow. Keep it private: the Data API and the seed Lambda access it without
+# exposing PostgreSQL to the public internet.
+resource "aws_rds_cluster" "aurora_postgres" {
+  cluster_identifier = "${local.name}-aurora-postgres"
+  engine             = "aurora-postgresql"
+  engine_version     = var.aurora_postgres_engine_version
+  engine_mode        = "provisioned"
 
-  engine         = "postgres"
-  engine_version = "16"
-  instance_class = var.db_instance_class
-
-  allocated_storage     = 20
-  max_allocated_storage = 100
-  storage_encrypted     = true
-  db_name               = var.db_name
-  username              = "aicity_admin"
-  password              = random_password.rds.result
-  port                  = 5432
+  database_name   = var.db_name
+  master_username = "aicity_admin"
+  master_password = random_password.rds.result
+  port            = 5432
 
   db_subnet_group_name   = aws_db_subnet_group.this.name
   vpc_security_group_ids = [aws_security_group.rds.id]
-  publicly_accessible    = false
-  skip_final_snapshot    = true # Set false and provide final_snapshot_identifier in production.
-  deletion_protection    = false
+  storage_encrypted      = true
+  enable_http_endpoint   = true
 
   backup_retention_period = 7
   copy_tags_to_snapshot   = true
+  deletion_protection     = false
+  skip_final_snapshot     = true
+
+  serverlessv2_scaling_configuration {
+    min_capacity = var.aurora_serverless_min_acu
+    max_capacity = var.aurora_serverless_max_acu
+  }
+}
+
+resource "aws_rds_cluster_instance" "aurora_postgres" {
+  identifier          = "${local.name}-aurora-postgres-1"
+  cluster_identifier  = aws_rds_cluster.aurora_postgres.id
+  instance_class      = "db.serverless"
+  engine              = aws_rds_cluster.aurora_postgres.engine
+  engine_version      = aws_rds_cluster.aurora_postgres.engine_version
+  publicly_accessible = false
 }
 
 resource "aws_secretsmanager_secret" "database" {
@@ -41,10 +55,10 @@ resource "aws_secretsmanager_secret" "database" {
 resource "aws_secretsmanager_secret_version" "database" {
   secret_id = aws_secretsmanager_secret.database.id
   secret_string = jsonencode({
-    host     = aws_db_instance.postgres.address
-    port     = aws_db_instance.postgres.port
+    host     = aws_rds_cluster.aurora_postgres.endpoint
+    port     = aws_rds_cluster.aurora_postgres.port
     database = var.db_name
-    username = aws_db_instance.postgres.username
+    username = aws_rds_cluster.aurora_postgres.master_username
     password = random_password.rds.result
   })
 }
@@ -110,18 +124,19 @@ resource "aws_lambda_function" "database_seed" {
   }
 }
 
-# This runs only for a newly built seed package or a newly created RDS instance.
+# This runs only for a newly built seed package or a newly created Aurora cluster.
 resource "aws_lambda_invocation" "database_seed" {
   function_name = aws_lambda_function.database_seed.function_name
   input         = jsonencode({ action = "seed" })
 
   triggers = {
     package_hash = data.archive_file.database_seed.output_base64sha256
-    database_id  = aws_db_instance.postgres.id
+    database_id  = aws_rds_cluster.aurora_postgres.id
   }
 
   depends_on = [
     aws_secretsmanager_secret_version.database,
+    aws_rds_cluster_instance.aurora_postgres,
     aws_iam_role_policy_attachment.database_seed_vpc,
   ]
 }
