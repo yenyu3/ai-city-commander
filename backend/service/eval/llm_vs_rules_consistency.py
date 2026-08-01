@@ -70,7 +70,8 @@ class _ArticleScore:
 
 def _score_congestion(conn, timestamps, scores: dict[str, _ArticleScore]) -> None:
     score = scores["§1 congestion"]
-    for scenario_at in timestamps:
+    for i, scenario_at in enumerate(timestamps, 1):
+        print(f"  [{i}/{len(timestamps)}] {scenario_at} ...", file=sys.stderr, flush=True)
         for t in db.fetch_latest_traffic_snapshots(conn, scenario_at):
             llm = decide_congestion(t.segment_id, t.road_name, t.saturation_score)
             rules_tier = _rules_congestion.get_tier(t.saturation_score)

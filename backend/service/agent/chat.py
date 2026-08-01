@@ -102,7 +102,14 @@ def answer_chat(
         f'{{"text": "回答內容", {response_shape}}}'
     )
     try:
-        raw = client.complete(system=system, prompt=prompt, max_tokens=1500)
+        # 1500 was too tight for government answers -- text + sopRefs + a
+        # full reasoningSteps array (each step its own title/detail) on a
+        # complex What-if question can run long, and a truncated response
+        # means json.loads() fails and this silently falls back to the
+        # keyword-excerpt path below, discarding a real LLM answer. Same
+        # failure mode caught live in router_agent.py's narrate_for_focus,
+        # which needed the same 8000 ceiling for the same reason.
+        raw = client.complete(system=system, prompt=prompt, max_tokens=8000)
         parsed = _parse_json_response(raw)
         return ChatAnswer(
             text=parsed["text"],
@@ -138,13 +145,21 @@ def _parse_reasoning_steps(raw: Any) -> list[ReasoningStep]:
 
 
 def _parse_json_response(raw: str) -> dict[str, Any]:
+    import re
+
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # Same long-JSON trailing-comma slip caught live in
+        # router_agent.py's _parse_json_response -- one retry with trailing
+        # commas stripped before giving up and falling back.
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))
 
 
 def _fallback_answer(question: str, audience: str) -> ChatAnswer:

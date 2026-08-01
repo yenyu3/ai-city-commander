@@ -36,6 +36,7 @@ Usage (from backend/service/, with DATABASE_URL and an LLM configured):
 from __future__ import annotations
 
 import argparse
+import sys
 from dataclasses import dataclass, field
 
 import api_common
@@ -84,12 +85,12 @@ def evaluate(scenario_at_str: str = "2026-05-20T22:10:00+08:00") -> list[_RouteR
         traffic = db.fetch_latest_traffic_snapshots(conn, scenario_at)
         saturation = {t.segment_id: t.saturation_score for t in traffic}
 
+        candidates = [sid for sid, seg in segments.items() if seg.alternatives]
         results = []
-        for segment_id, seg in segments.items():
-            if not seg.alternatives:
-                continue  # no candidates to choose among -- not a meaningful test case
+        for i, segment_id in enumerate(candidates, 1):
             incident = _synthetic_incident(segment_id)
 
+            print(f"  [{i}/{len(candidates)}] {segment_id} ...", file=sys.stderr, end="", flush=True)
             llm = decide_accident(incident, segments, saturation)
             rules_route = _rules_accident.select_evacuation_route(
                 segment_id, incident.location, segments, saturation
@@ -110,6 +111,10 @@ def evaluate(scenario_at_str: str = "2026-05-20T22:10:00+08:00") -> list[_RouteR
                 llm_secondary=llm_secondary,
                 rules_secondary=rules_secondary,
             ))
+            print(
+                f" main={llm_main!r} ({'match' if llm_main == rules_route.main_route else 'MISMATCH'})",
+                file=sys.stderr,
+            )
         conn.commit()
         return results
     finally:
