@@ -2,20 +2,19 @@
 
 Creates the incident in RDS (operational source of truth), writes the raw
 payload to S3 (internal-results/incidents/{date}/{eventId}.json, per the
-doc's data flow), and best-effort warms the decision cache for this
-scenario_at (see worker_invoke.py -- this is optional/non-blocking, not
+doc's data flow), and best-effort warms this incident's judgment + report
+(worker_invoke.py, mode="incident" -- see below; optional/non-blocking, not
 required for correctness).
 
-2026-08-01: the warm-up call no longer targets a single locationId --
-decision-generator-worker now sweeps the whole city per scenario_at (see
-decision_routing.py). It's called with `forceRefresh: true` because a sweep
-for this exact scenario_at could already be cached from moments earlier
-(e.g. someone polled GET /api/city-state just before this incident was
-created) and wouldn't know about this brand-new incident otherwise --
-without forcing, that stale sweep would silently miss it until a different
-scenario_at happened to be queried. This is best-effort/non-blocking, same
-as before -- if it fails, the next real GET /api/decisions call still
-computes fresh (just without the head start).
+2026-08-01: the warm-up call is now `mode="incident"` with this incident's
+eventId -- the shared worker (decision-generator-worker/handler.py) processes
+ONLY this one event and writes its judgment + 交控中心建議書 under the
+incident's own S3 folder (incidents/{date}/{eventId}/decisions/... +
+emergency-reports/), served by GET /api/incidents/{eventId}/report. It is
+NOT the decision API's city sweep: which API invoked the worker decides
+decision-vs-incident (see decision_routing.py's run_incident_flow). This is
+best-effort/non-blocking, same as before -- if it fails, the report simply
+isn't warm when the government queries it (still "processing").
 
 Always returns 202 -- per the doc, this never waits for judgment/report/
 publication to finish. `publication.status` stays "pending": there's no
@@ -91,9 +90,14 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
     # Best-effort cache warm -- not required for correctness (a GET
     # /api/decisions that lands before this finishes just computes it itself
-    # instead of hitting a warm cache). forceRefresh=True busts any sweep
-    # already cached for this scenario_at that predates this incident.
-    worker_invoke.invoke_async({"scenarioAt": context["scenarioAt"], "forceRefresh": True})
+    # instead of hitting a warm cache). mode="incident" tells the shared
+    # worker to process ONLY this one event: compute its SOP judgment under
+    # incidents/{date}/{eventId}/decisions/... and write the 交控中心建議書 to
+    # emergency-reports/ (GET /api/incidents/{eventId}/report then serves it
+    # from S3). This is the incident API entry -- decision-vs-incident is
+    # decided by which API invoked the worker, not by SOP kind (see
+    # decision_routing.py's run_incident_flow).
+    worker_invoke.invoke_async({"mode": "incident", "scenarioAt": context["scenarioAt"], "eventId": event_id})
 
     generated_at = api_common.now_iso()
     return api_common.response(

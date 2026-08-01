@@ -9,9 +9,13 @@ key, matching data/api.md's internal-results bucket layout:
     decisions/{scenario_at}/{segment_id}.json                  congestion (SOP §1)
     decisions/{scenario_at}/{station_id}__{decision_kind}.json mrt/dome diversion (SOP §3/§4)
     decisions/{scenario_at}/all.json                            multilingual (SOP §6, batched across all stations)
-    decisions/{scenario_at}/{event_id}__{alert_kind}.json      incident SOP checks (SOP §2/§5)
     decisions/{scenario_at}/_triggers.json                      router agent's city-wide sweep (2026-08-01)
     decisions/{scenario_at}/_summary/{locationId|_global}.json  focused narrative for one caller's view
+    incidents/{date}/{eventId}/decisions/{scenario_at}/{kind}.json
+                                                                 incident SOP checks (SOP §2/§5, 2026-08-01:
+                                                                 keyed under the incident's own folder, NOT
+                                                                 decisions/ -- which API invoked the worker
+                                                                 decides decision vs incident)
 
 `:` in scenario_at's ISO8601 string is replaced with `-` (S3 keys allow
 colons, but some HTTP clients/tools handle them poorly) -- mirrors the
@@ -49,10 +53,6 @@ def _crowd_location_id(station_id: str, decision_kind: str) -> str:
     return f"{station_id}__{decision_kind}"
 
 
-def _incident_location_id(event_id: str, alert_kind: str) -> str:
-    return f"{event_id}__{alert_kind}"
-
-
 def _decision_from_json(payload: dict) -> Decision:
     return Decision(
         triggered=payload["triggered"],
@@ -78,11 +78,11 @@ def _decision_to_json(decision: Decision, *, title: Optional[str] = None) -> dic
     return payload
 
 
-def _fetch(location_id: str, scenario_at: datetime) -> Optional[Decision]:
+def _fetch_from(key: str) -> Optional[Decision]:
     from botocore.exceptions import ClientError
 
     try:
-        obj = s3_common.client().get_object(Bucket=s3_common.internal_bucket(), Key=_key(scenario_at, location_id))
+        obj = s3_common.client().get_object(Bucket=s3_common.internal_bucket(), Key=key)
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return None
@@ -91,14 +91,22 @@ def _fetch(location_id: str, scenario_at: datetime) -> Optional[Decision]:
     return _decision_from_json(payload)
 
 
-def _save(location_id: str, scenario_at: datetime, decision: Decision, *, title: Optional[str] = None) -> None:
+def _fetch(location_id: str, scenario_at: datetime) -> Optional[Decision]:
+    return _fetch_from(_key(scenario_at, location_id))
+
+
+def _save_to(key: str, decision: Decision, *, title: Optional[str] = None) -> None:
     body = json.dumps(_decision_to_json(decision, title=title), ensure_ascii=False).encode("utf-8")
     s3_common.client().put_object(
         Bucket=s3_common.internal_bucket(),
-        Key=_key(scenario_at, location_id),
+        Key=key,
         Body=body,
         ContentType="application/json; charset=utf-8",
     )
+
+
+def _save(location_id: str, scenario_at: datetime, decision: Decision, *, title: Optional[str] = None) -> None:
+    _save_to(_key(scenario_at, location_id), decision, title=title)
 
 
 # --- SOP §1: per-segment congestion tier (GET /api/city-state) -------------
@@ -127,17 +135,28 @@ def save_crowd_decision(
     _save(_crowd_location_id(station_id, decision_kind), scenario_at, decision)
 
 
-# --- SOP §2/§5: per-incident checks (POST /api/incidents/{id}/evaluate) ----
+# --- SOP §2/§3/§5: per-incident judgments (POST /api/incidents -> worker) --
+# Keyed under the incident's own folder, matching the incidents/{date}/{eventId}
+# and emergency-reports/{date}/{eventId}/ layout -- incident decisions never
+# live under decisions/ (which API invoked the worker decides which keyspace
+# gets written: decision-generator-worker/handler.py branches on `mode`).
 
 
-def fetch_cached_decision(event_id: str, scenario_at: datetime, alert_kind: str) -> Optional[Decision]:
-    return _fetch(_incident_location_id(event_id, alert_kind), scenario_at)
+def _incident_decision_key(event_id: str, date: str, scenario_at: datetime, alert_kind: str) -> str:
+    at = scenario_at.isoformat().replace(":", "-")
+    return f"incidents/{date}/{event_id}/decisions/{at}/{alert_kind}.json"
 
 
-def save_decision(
-    *, event_id: str, scenario_at: datetime, alert_kind: str, title: str, decision: Decision
+def fetch_cached_incident_decision(
+    event_id: str, date: str, scenario_at: datetime, alert_kind: str
+) -> Optional[Decision]:
+    return _fetch_from(_incident_decision_key(event_id, date, scenario_at, alert_kind))
+
+
+def save_incident_decision(
+    *, event_id: str, date: str, scenario_at: datetime, alert_kind: str, title: str, decision: Decision
 ) -> None:
-    _save(_incident_location_id(event_id, alert_kind), scenario_at, decision, title=title)
+    _save_to(_incident_decision_key(event_id, date, scenario_at, alert_kind), decision, title=title)
 
 
 # --- Router agent (2026-08-01): city-wide sweep + per-focus narrative ------

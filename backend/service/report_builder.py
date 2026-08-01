@@ -2,17 +2,17 @@
 required by the competition brief's 必做 "自動化指令產出" task, and writes it
 to S3 -- the exact key report/handler.py polls for (data/api.md §3).
 
-Only called for incident-tied triggers -- a decision_routing.Trigger with
-`event_id` set AND `sop_section_id` in {"2","3","5"} (the three articles
-live_incidents.json's event types actually map onto). Congestion (SOP §1)
-and the multilingual batch (SOP §6) never key a report under this endpoint
-per the doc anyway (congestion shows via the dashboard tier/color,
-multilingual via publication/handler.py's citizen notice instead). Called
-from decision_routing._maybe_write_report right after a triggered
-incident-tied decision is computed (Phase B of the 3-phase pipeline -- see
-decision_routing.py's module docstring), so a report exists by the time
-anyone polls for it -- report/handler.py itself stays read-only, per its
-own docstring.
+Called only from decision_routing.run_incident_flow -- the incident API
+entry (POST /api/incidents -> worker, `mode="incident"`), right after an
+injected event's SOP §2/§3/§5 judgment comes back triggered. The decision
+API's city sweep (run_worker_phases) never calls this -- decision-vs-incident
+is decided by which API invoked the worker (see decision_routing.py). The
+write happens so a report exists by the time the government polls
+GET /api/incidents/{eventId}/report -- report/handler.py itself stays
+read-only, per its own docstring. Congestion (SOP §1) and the multilingual
+batch (SOP §6) never key a report under this endpoint per the doc anyway
+(congestion shows via the dashboard tier/color, multilingual via
+publication/handler.py's citizen notice instead).
 
 Only ever writes the JSON format; report/handler.py's `format=pdf` stays
 perpetually "processing" (out of scope -- the brief allows any report format,

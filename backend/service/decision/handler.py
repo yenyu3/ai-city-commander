@@ -79,7 +79,10 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             },
         )
 
-    worker_invoke.invoke_async({"scenarioAt": scenario_at.isoformat(), "locationId": location_id})
+    # mode="decision" tells the shared worker this came from the decision API
+    # entry (it computes the general city sweep only) -- decision-vs-incident
+    # is decided by which API invoked it, see decision_routing.py.
+    worker_invoke.invoke_async({"mode": "decision", "scenarioAt": scenario_at.isoformat(), "locationId": location_id})
     return api_common.response(
         202,
         {

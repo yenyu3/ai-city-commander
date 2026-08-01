@@ -27,6 +27,12 @@
     `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的有沒有觸發
     （§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，Phase A 的
     「目前+前一筆」快照看不到，硬要它猜反而不準）。
+  - **只做一般決策**（2026-08-01）：Phase A/B 只產生 congestion（§1）、
+    mrt_diversion（§3）、dome（§4）、multilingual（§6）。router 或備援掃出的
+    accident（§2）／signal_failure（§5）事件回應會被濾掉——那是 **incident
+    API 入口**（見下面「Incident API 入口」）的職責。decision 跟 incident 的
+    界線由「打哪個 API 進來」決定（worker 收到的 `mode`），不是 SOP 種類，
+    也不是 event_id 有沒有值。
   - **Phase A 看到的是加工過的 facts，不是只有原始欄位**（2026-08-01 補強）：
     每個路段多帶一個 `is_city_trigger_segment` 布林值（是不是 SOP 第1條認定
     的觸發路段），每個 active incident 多帶一份 `candidate_alternative_routes`
@@ -42,13 +48,9 @@
   理由/民眾訊息出」）。**Phase B 自己算出的 `triggered` 才是最終依據**，
   不是 Phase A 的猜測——如果 Phase A 猜錯了、Phase B 認為其實沒觸發，就不會
   出現在最終結果裡（但還是會被快取，避免下次重算）。每一項照舊存進
-  `s3_cache.py` 既有的 key 格式，完全沒變。
-  - **建議書產生**（`report_builder.py`，沿用先前的邏輯）：只有
-    `sopSectionId` 屬於 {2, 3, 5}（三個事件類型對應的條款）**而且**這個
-    候選有對到一個 active incident 的 `event_id`、**而且**真的觸發了，才會
-    寫入 `emergency-reports/{date}/{eventId}/report-v1.json`。congestion
-    （§1）、dome_dispersal（§4，没有對應的 live_incidents.json 事件類型）、
-    multilingual（§6）都不會產生建議書。
+  `s3_cache.py` 既有的 key 格式，完全沒變。**這裡不產生建議書**——建議書是
+  incident API 入口的產物（見下面「Incident API 入口」），decision 入口只寫
+  `decisions/`。
 
 - **Phase C — 聚焦敘事**：`agent/router_agent.py::narrate_for_focus()`，
   拿 Phase B 所有「真的觸發」的項目（含各自的民眾版訊息），加上呼叫端這次
@@ -61,21 +63,44 @@
   ——每個不同的關注焦點各自快取一份，但都共用同一份 Phase A/B 結果，所以
   第二個問不同焦點的呼叫只需要付 Phase C 這一次輕量呼叫的成本。
 
+## Incident API 入口（`mode: "incident"`，`decision_routing.run_incident_flow`）
+
+`POST /api/incidents` 建立事件後，worker 以 `mode: "incident"` + 該事件的
+`eventId` 被呼叫——**只處理這一個事件**，不做城市 sweep：
+
+- 對這個事件評估它的 SOP 判斷：§2 accident（`decide_accident`）、§5
+  signal_failure（`decide_signal_failure`）都會跑（同一個事件可能兩條都觸發，
+  也可能都不觸發）；如果它的 affected_segment 是 crowd 資料裡的站點，§3
+  mrt_diversion 也會評估（例如 `TPE_2026_EVT_002` → `BS_MRT_BL17`）。
+- 每個「真的觸發」的判斷：
+  - 寫入 `incidents/{date}/{eventId}/decisions/{scenarioAt}/{kind}.json`
+    ——放在 incident 自己的資料夾（沿用 `incidents/{date}/{eventId}.json` 的
+    date-first 結構），**不碰 `decisions/` keyspace**。
+  - 產生**交控中心建議書**（`report_builder.py`）寫到
+    `emergency-reports/{date}/{eventId}/report-v1.json`——`GET
+    /api/incidents/{eventId}/report` 就是直接從 S3 讀這個 key（`date` 由
+    事件的 `occurred_at` 決定）。
+
+跟 decision 入口完全 disjoint：decision 入口只寫 `decisions/`、只回一般決策；
+incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收到的
+`mode`（哪個 API 打的）決定——不是 SOP 種類，也不是 event_id 有沒有值。
+
 ## 誰會觸發它、怎麼觸發
 
 - 一律透過 [`worker_invoke.invoke_async()`](../worker_invoke.py) 非同步呼叫，
   fire-and-forget，呼叫端不等結果（部署在 AWS 時是真的 `boto3` Lambda
   `Invoke(InvocationType="Event")`；本機開發時是背景 daemon thread）。
-- 兩個呼叫來源：
+- **由打進來的 API 決定 `mode`**，worker 依 `mode` 決定算什麼、寫到哪
+  （decision vs incident 的界線就在這裡，不是 SOP 種類）：
   1. **`GET /api/decisions` cache miss**（[`decision/handler.py`](../decision/handler.py)）——
-     `locationId` 現在是**選填**：帶了就代表「這次的聚焦敘事要針對這個地點」，
-     不帶就是要全域摘要。不管有沒有帶，觸發的都是同一個城市級 sweep。
+     送 `{"mode": "decision", "scenarioAt", "locationId"?}`。跑城市級 sweep
+     （Phase A/B/C），只算一般決策、只寫 `decisions/`。`locationId` 是**選填**：
+     帶了就代表「這次的聚焦敘事要針對這個地點」，不帶就是要全域摘要。
   2. **`POST /api/incidents` 建立事件後**（[`incident/handler.py`](../incident/handler.py)）——
-     best-effort 預熱，帶 `forceRefresh: true`（不是特定 `locationId`）。
-     原因：如果這個 `scenarioAt` 的 sweep 在這個事件建立**之前**就已經被
-     快取過，那份舊快取不會知道這個新事件的存在，之後查詢會一直看不到它，
-     所以用 `forceRefresh` 強制 Phase A 重新掃一次（Phase B/C 還是正常走
-     cache-aside，只有 Phase A 被強制刷新）。
+     送 `{"mode": "incident", "scenarioAt", "eventId"}`。只處理這一個事件：
+     算它的 SOP 判斷、寫 `incidents/{date}/{eventId}/decisions/...` 跟
+     `emergency-reports/`（見上面「Incident API 入口」）。best-effort 預熱，
+     失敗不影響正確性（report 查詢頂多還是 202 processing）。
 - `automation.tf` 的 `rate(5 minutes)` EventBridge 排程
   （`{"source": "eventbridge", "mode": "scheduled"}`）維持原本的 no-op，
   沒有因為這次改版而變動——這個 demo 全部跑在呼叫端帶入的模擬時鐘
@@ -101,27 +126,29 @@
   `city_traffic_flow.csv`/`signaling_crowd_density.csv` 的取樣間隔本身不
   均勻，21:00 前是整點/半小時一次，之後才變 15 分鐘）。
 
-## 收到 reactive 請求（`{scenarioAt, locationId?, forceRefresh?}`）後做什麼
+## 收到 reactive 請求（`{mode, scenarioAt, locationId? | eventId?}`）後做什麼
 
-進 `decision_routing.py::run_worker_phases()`：
+worker handler 先看 `mode` 決定走哪條路（預設 `decision`）：
 
-1. 解析 `scenarioAt`；缺這個欄位回 `400`。`locationId`/`forceRefresh`
-   都是選填。這支 worker 自己也會呼叫 `decision_snapshot_at()` 把收到的
-   `scenarioAt` 捨去到 15 分鐘時槽——不假設呼叫端已經捨去過（`incident/handler.py`
-   的 `forceRefresh` 呼叫就是直接傳原始 `context["scenarioAt"]`，沒有先捨去），
-   所以這裡自己再捨去一次，確保不管誰觸發、傳的是不是精確時間，最後寫進
-   S3 的 key 都是同一把。
+1. 解析 `scenarioAt`；缺這個欄位回 `400`。`mode: "incident"` 時 `eventId`
+   必填（缺了就回 `400`）。這支 worker 自己也會呼叫 `decision_snapshot_at()`
+   把收到的 `scenarioAt` 捨去到 15 分鐘時槽——不假設呼叫端已經捨去過，確保
+   不管誰觸發、傳的是不是精確時間，最後寫進 S3 的 key 都是同一把。
 2. `db.connect()` 接 RDS；連不上回 `503`。
-3. 一次性撈出全市資料（`_fetch_city_data`）：目前+前一筆的全部路段流量、
-   目前+前一筆的全部站點人流、目前所有 active incidents、完整路網拓撲
-   （`decide_accident` 需要）。Phase A/B/C 共用這一份，不重複查。
-4. Phase A（`_ensure_city_sweep`）→ Phase B（`_ensure_decisions`）→
-   Phase C（`_ensure_narrative`，只針對這次呼叫問的 `locationId`）。
+3. **`mode: "decision"`**（`run_worker_phases`）：一次性撈出全市資料
+   （`_fetch_city_data`：目前+前一筆的全部路段流量、目前+前一筆的全部站點
+   人流、目前所有 active incidents、完整路網拓撲），
+   Phase A（`_ensure_city_sweep`）→ Phase B（`_ensure_decisions`）→
+   Phase C（`_ensure_narrative`，只針對這次呼叫問的 `locationId`）。只寫
+   `decisions/`，不產生建議書。
+4. **`mode: "incident"`**（`run_incident_flow`）：只處理指定的 `eventId`，
+   算它的 §2/§3/§5 判斷、寫 `incidents/{date}/{eventId}/decisions/...` +
+   `emergency-reports/`（見「Incident API 入口」）。不做城市 sweep。
 5. `conn.commit()`、`conn.close()`。
-6. 回傳 `{"status": "ready", "locationId", "scenarioAt", "resolvedScenarioAt", "triggeredCount"}`
-   ——呼叫端本來就是 fire-and-forget，這個回傳值目前沒有人讀，純粹方便
-   本機測試直接呼叫這支 handler 時看結果。`scenarioAt` 是原始收到的字串，
-   `resolvedScenarioAt` 是捨去到 15 分鐘時槽之後、實際拿去查/存快取用的值。
+6. 回傳 `{"status": "ready", "mode", ...}`——呼叫端本來就是 fire-and-forget，
+   這個回傳值目前沒有人讀，純粹方便本機測試直接呼叫這支 handler 時看結果。
+   `scenarioAt` 是原始收到的字串，`resolvedScenarioAt` 是捨去到 15 分鐘時槽
+   之後、實際拿去查/存快取用的值。
 
 ## `GET /api/decisions` 的回應長什麼樣（`decision/handler.py`）
 
@@ -149,9 +176,12 @@ RDS/LLM）。命中時 `200`：
 
 未命中時 `202` + 觸發 worker，`retryAfterSeconds` 沿用舊行為。
 
-**`decisions[]` 不受 `locationId` 影響，永遠是全市目前所有真的觸發中的項目
-（Phase B 的完整結果），不管有沒有帶 `locationId`、帶了哪個，內容都一樣**
-——只有 `situationSummary` 才會因為 `locationId` 不同而變。這是刻意的設計
+**`decisions[]` 不受 `locationId` 影響，永遠是全市目前所有真的觸發中的**一般
+**決策**（Phase B 的完整結果），不管有沒有帶 `locationId`、帶了哪個，內容都一樣**
+——只有 `situationSummary` 才會因為 `locationId` 不同而變。這批是一般決策
+（congestion/mrt/dome/multilingual）而已：incident 的 §2/§5 事件回應**不會**
+出現在這裡（那是 incident 入口的產物，經 `GET /api/incidents/{eventId}/report`
+從 S3 拿）。這是刻意的設計
 選擇：`decisions[]` 給前端結構化的「全市當下發生了什麼」完整資料（例如
 在地圖上標出每個觸發點），`situationSummary` 給的是「幫你把這些濃縮成一段
 話、並聚焦在你關心的地方」的文字。代價是觸發項目一多，單次回應就會變大；

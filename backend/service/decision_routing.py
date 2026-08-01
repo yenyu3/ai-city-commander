@@ -28,8 +28,17 @@ ask "what's going on city-wide"). The new design:
 (`fetch_cached_view`) -- never touches RDS or an LLM directly, same
 cache-aside contract as before, just reshaped around a sweep instead of a
 single location. `decision-generator-worker/handler.py` is the only caller
-of `run_worker_phases`, which does the real (possibly RDS + multiple LLM
-calls) work.
+of both entries below, which do the real (possibly RDS + multiple LLM
+calls) work, chosen by the invoking API:
+
+  decision-generator-worker `mode: "decision"`  (from GET /api/decisions)
+    -> run_worker_phases() -- the general city sweep, writes decisions/ only.
+  decision-generator-worker `mode: "incident"`  (from POST /api/incidents)
+    -> run_incident_flow() -- one injected event's §2/§3/§5 judgment + report,
+       writes incidents/{date}/{eventId}/decisions/... and emergency-reports/.
+
+The decision-vs-incident split is decided by which API invoked the worker
+(`mode`), never by SOP kind or event_id presence -- see _INCIDENT_RESPONSE_KINDS.
 
 SOP §3 (`BS_MRT_BL17`) and §4 (`BS_TPE_DOME`) are deliberately *not* part of
 Phase A's LLM judgment -- there are only ever these two fixed stations, and
@@ -45,7 +54,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional
+from typing import Callable, Optional
 
 import db
 import report_builder
@@ -66,13 +75,15 @@ from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapsho
 
 _MULTILINGUAL_CACHE_KEY = "_ALL_STATIONS_"
 _GLOBAL_NARRATIVE_KEY = "_global"
-# The three live_incidents.json event types map 1:1 onto SOP §2/§3/§5 (per
-# data/(中華電信) 命題解說...md's data table) -- these are the only articles
-# that get a 交控中心建議書 written (report_builder.py), keyed by event_id.
-# §1/§4/§6 have no incident to key a report under and aren't reported this
-# way per the brief anyway (congestion -> dashboard tier, multilingual ->
-# publication's citizen notice).
-_INCIDENT_RESPONSE_SOP_SECTIONS = {"2", "3", "5"}
+# Decision-vs-incident is decided by which API invoked the worker, NOT by SOP
+# kind or event_id presence (decision-generator-worker/handler.py branches on
+# `mode`). The decision API's city sweep (`run_worker_phases`) only ever
+# produces general decisions -- congestion/mrt/dome/multilingual -- and never
+# the per-incident SOP §2/§5 responses. Those are produced only by the
+# incident API entry (`run_incident_flow`, fired by POST /api/incidents) and
+# written under incidents/{date}/{eventId}/... + emergency-reports/, never
+# under decisions/. This filter keeps the two API entry points disjoint.
+_INCIDENT_RESPONSE_KINDS = {"accident", "signal_failure"}
 
 
 @dataclass
@@ -239,6 +250,11 @@ def _ensure_city_sweep(conn, scenario_at: datetime, data: _CityData, *, force_re
         return _eager_trigger_scan(conn, data, scenario_at)
 
     triggers = route_triggers(snapshot, fallback=fallback) + _always_on_triggers(data)
+    # Decision API entry only: drop the per-incident §2/§5 responses (both the
+    # router's output and _eager_trigger_scan's fallback feed through here) --
+    # those are the incident entry's job (run_incident_flow), see the
+    # _INCIDENT_RESPONSE_KINDS note.
+    triggers = [t for t in triggers if t.kind not in _INCIDENT_RESPONSE_KINDS]
     triggers = _attach_event_ids(triggers, data)
     s3_cache.save_triggers(scenario_at=scenario_at, triggers=triggers)
     return triggers
@@ -260,12 +276,10 @@ def _multilingual_for_station(location_id: str, scenario_at: datetime) -> Option
 
 
 def _fetch_cached_decision_for_trigger(trig: Trigger, scenario_at: datetime) -> Optional[Decision]:
+    # Decision-API entry only -- no accident/signal_failure branch on purpose
+    # (those never appear in the city sweep, see _INCIDENT_RESPONSE_KINDS).
     if trig.kind == "congestion":
         return s3_cache.fetch_cached_congestion_decision(trig.location_id, scenario_at)
-    if trig.kind in ("accident", "signal_failure"):
-        if trig.event_id is None:
-            return None
-        return s3_cache.fetch_cached_decision(trig.event_id, scenario_at, trig.kind)
     if trig.kind in ("mrt_diversion", "dome_dispersal"):
         return s3_cache.fetch_cached_crowd_decision(trig.location_id, scenario_at, trig.kind)
     if trig.kind == "multilingual":
@@ -273,38 +287,19 @@ def _fetch_cached_decision_for_trigger(trig: Trigger, scenario_at: datetime) -> 
     return None
 
 
-def _maybe_write_report(scenario_at: datetime, data: _CityData, trig: Trigger, decision: Decision) -> None:
-    if trig.event_id is None or not decision.triggered or trig.sop_section_id not in _INCIDENT_RESPONSE_SOP_SECTIONS:
-        return
-    incident = data.incidents.get(trig.event_id)
-    if incident is None:
-        return
-    report_builder.build_and_save_report(incident=incident, decision=decision, scenario_at=scenario_at)
-
-
 def _compute_decision_for_trigger(
     conn, scenario_at: datetime, data: _CityData, trig: Trigger
 ) -> Optional[Decision]:
+    # Decision-API entry only (see _INCIDENT_RESPONSE_KINDS) -- no accident/
+    # signal_failure branches and no report writing here; the per-incident
+    # §2/§5/§3 judgments + 交控中心建議書 are produced by run_incident_flow
+    # (the incident API entry) instead.
     if trig.kind == "congestion":
         t = data.current_traffic.get(trig.location_id)
         if t is None:
             return None
         decision = decide_congestion(trig.location_id, t.road_name, t.saturation_score)
         s3_cache.save_congestion_decision(segment_id=trig.location_id, scenario_at=scenario_at, decision=decision)
-
-    elif trig.kind in ("accident", "signal_failure"):
-        incident = data.incidents.get(trig.event_id) if trig.event_id else None
-        if incident is None:
-            return None
-        if trig.kind == "accident":
-            saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
-            decision = decide_accident(incident, data.segments, saturation)
-        else:
-            decision = decide_signal_failure(incident)
-        s3_cache.save_decision(
-            event_id=trig.event_id, scenario_at=scenario_at, alert_kind=trig.kind,
-            title=incident.location, decision=decision,
-        )
 
     elif trig.kind == "mrt_diversion":
         c = data.current_crowd.get(trig.location_id)
@@ -337,7 +332,6 @@ def _compute_decision_for_trigger(
     else:
         return None
 
-    _maybe_write_report(scenario_at, data, trig, decision)
     return decision
 
 
@@ -388,12 +382,15 @@ def _ensure_narrative(
 def run_worker_phases(
     conn, scenario_at: datetime, location_id: Optional[str], *, force_refresh: bool = False
 ) -> tuple[list[tuple[Trigger, Decision]], str]:
-    """decision-generator-worker's full pipeline for one scenario_at --
-    ensures Phase A (sweep) and Phase B (every triggered item's decision)
-    exist, then generates Phase C's narrative for this invocation's specific
-    focus. Every invocation guarantees A+B are done before doing its own
-    (cheap) C, so a second caller asking about a different focus for the
-    same scenario_at reuses the cached sweep/decisions."""
+    """Decision API entry -- the city-wide sweep for GET /api/decisions
+    (triggered on a cache miss). Ensures Phase A (sweep) and Phase B (every
+    triggered *general* decision: congestion/mrt/dome/multilingual) exist,
+    then generates Phase C's narrative for this invocation's specific focus.
+    Never produces per-incident §2/§5 responses or reports -- that's the
+    incident API entry (run_incident_flow), per the API-entry-decides rule.
+    Every invocation guarantees A+B are done before doing its own (cheap) C,
+    so a second caller asking about a different focus for the same scenario_at
+    reuses the cached sweep/decisions."""
     data = _fetch_city_data(conn, scenario_at)
     triggers = _ensure_city_sweep(conn, scenario_at, data, force_refresh=force_refresh)
     pairs = _ensure_decisions(conn, scenario_at, data, triggers)
@@ -401,12 +398,66 @@ def run_worker_phases(
     return pairs, narrative
 
 
+def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[Trigger, Decision]]:
+    """Incident API entry -- fired by POST /api/incidents for ONE injected
+    event. Computes that incident's SOP judgments (a single incident may trip
+    several: §2 accident + §5 signal failure are always checked, §3 mrt
+    diversion only when its affected_segment is a station in the crowd data),
+    caches each triggered one under
+    incidents/{date}/{eventId}/decisions/{scenarioAt}/{kind}.json, and writes
+    the 交控中心建議書 to emergency-reports/ (report_builder.py) -- the exact
+    key GET /api/incidents/{eventId}/report polls.
+
+    This is deliberately disjoint from run_worker_phases (the decision API
+    entry): the decision-vs-incident split is decided by which API invoked
+    the worker, not by SOP kind or event_id presence. Returns the triggered
+    (trigger, decision) pairs so the worker's response can report a count."""
+    data = _fetch_city_data(conn, scenario_at)
+    incident = data.incidents.get(event_id)
+    if incident is None:
+        return []
+
+    date = incident.timestamp.split("T")[0].split(" ")[0]
+    saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
+
+    checks: list[tuple[str, Callable[[], Decision]]] = [
+        ("accident", lambda: decide_accident(incident, data.segments, saturation)),
+        ("signal_failure", lambda: decide_signal_failure(incident)),
+    ]
+    station = data.current_crowd.get(incident.affected_segment)
+    if station is not None:
+        checks.append(("mrt_diversion", lambda: decide_mrt_diversion(station)))
+
+    pairs: list[tuple[Trigger, Decision]] = []
+    for kind, run in checks:
+        decision = run()
+        if not decision.triggered:
+            continue
+        s3_cache.save_incident_decision(
+            event_id=event_id, date=date, scenario_at=scenario_at,
+            alert_kind=kind, title=incident.location, decision=decision,
+        )
+        report_builder.build_and_save_report(incident=incident, decision=decision, scenario_at=scenario_at)
+        pairs.append(
+            (
+                Trigger(
+                    sop_section_id=decision.sop_section_id or "2",
+                    location_id=incident.affected_segment,
+                    event_id=event_id,
+                ),
+                decision,
+            )
+        )
+    return pairs
+
+
 def fetch_cached_view(
     scenario_at: datetime, location_id: Optional[str]
 ) -> Optional[tuple[list[tuple[Trigger, Decision]], str]]:
     """Cache-only read for GET /api/decisions -- never touches RDS or an
-    LLM. None means "not ready yet" (caller should 202 + trigger the
-    worker)."""
+    LLM. Returns the general (decision-API) pairs only; per-incident §2/§5
+    responses never appear here. None means "not ready yet" (caller should
+    202 + trigger the worker)."""
     triggers = s3_cache.fetch_cached_triggers(scenario_at)
     if triggers is None:
         return None

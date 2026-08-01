@@ -95,9 +95,16 @@ class TestCrowdDecisionCache:
 
 
 class TestIncidentDecisionCache:
+    """2026-08-01: incident judgments live under the incident's own S3 folder
+    (incidents/{date}/{eventId}/decisions/{scenarioAt}/{kind}.json), not under
+    decisions/ -- which API invoked the worker decides the keyspace (see
+    decision_routing.py's run_incident_flow)."""
+
+    _DATE = "2026-05-20"
+
     def test_cache_miss_returns_none(self):
-        assert s3_cache.fetch_cached_decision(
-            "TPE_2026_ACC_001", taipei(2026, 5, 20, 22, 10), "accident"
+        assert s3_cache.fetch_cached_incident_decision(
+            "TPE_2026_ACC_001", self._DATE, taipei(2026, 5, 20, 22, 10), "accident"
         ) is None
 
     def test_save_then_fetch_round_trips(self):
@@ -108,35 +115,58 @@ class TestIncidentDecisionCache:
             reasoning="容量與上游條件皆符合，選定市民大道四段為主疏散路徑。",
             source="llm", public_message="光復南路南下封閉，請改道市民大道四段。",
         )
-        s3_cache.save_decision(
-            event_id="TPE_2026_ACC_001", scenario_at=scenario_at, alert_kind="accident",
-            title="光復南路封閉", decision=decision,
+        s3_cache.save_incident_decision(
+            event_id="TPE_2026_ACC_001", date=self._DATE, scenario_at=scenario_at,
+            alert_kind="accident", title="光復南路封閉", decision=decision,
         )
-        cached = s3_cache.fetch_cached_decision("TPE_2026_ACC_001", scenario_at, "accident")
+        cached = s3_cache.fetch_cached_incident_decision(
+            "TPE_2026_ACC_001", self._DATE, scenario_at, "accident"
+        )
         assert cached is not None
         assert cached.result["main_route"] == "RD_TPE_004"
         assert cached.reasoning == decision.reasoning
         assert cached.public_message == decision.public_message
+
+    def test_key_lives_under_the_incident_folder_not_decisions(self):
+        scenario_at = taipei(2026, 5, 20, 22, 10)
+        s3_cache.save_incident_decision(
+            event_id="TPE_2026_ACC_001", date=self._DATE, scenario_at=scenario_at,
+            alert_kind="accident", title="x",
+            decision=Decision(triggered=True, sop_section_id="2", source="llm"),
+        )
+        import boto3
+
+        keys = [o["Key"] for o in boto3.client("s3", region_name="us-east-1").list_objects_v2(
+            Bucket=_BUCKET, Prefix=""
+        ).get("Contents", [])]
+        assert any(k.startswith(f"incidents/{self._DATE}/TPE_2026_ACC_001/decisions/") for k in keys)
+        assert not any("__accident.json" in k for k in keys)
 
     def test_different_alert_kind_is_a_cache_miss(self):
         """Same incident + same scenario time, but a different SOP check --
         must not collide with the accident cache entry (this is exactly what
         lets one incident independently trigger multiple SOPs)."""
         scenario_at = taipei(2026, 5, 20, 22, 10)
-        s3_cache.save_decision(
-            event_id="TPE_2026_ACC_001", scenario_at=scenario_at, alert_kind="accident",
-            title="x", decision=Decision(triggered=True, sop_section_id="2", source="llm"),
+        s3_cache.save_incident_decision(
+            event_id="TPE_2026_ACC_001", date=self._DATE, scenario_at=scenario_at,
+            alert_kind="accident", title="x",
+            decision=Decision(triggered=True, sop_section_id="2", source="llm"),
         )
-        assert s3_cache.fetch_cached_decision("TPE_2026_ACC_001", scenario_at, "signal_failure") is None
+        assert s3_cache.fetch_cached_incident_decision(
+            "TPE_2026_ACC_001", self._DATE, scenario_at, "signal_failure"
+        ) is None
 
     def test_different_scenario_at_is_a_cache_miss(self):
         scenario_at = taipei(2026, 5, 20, 22, 10)
-        s3_cache.save_decision(
-            event_id="TPE_2026_ACC_001", scenario_at=scenario_at, alert_kind="accident",
-            title="x", decision=Decision(triggered=True, sop_section_id="2", source="llm"),
+        s3_cache.save_incident_decision(
+            event_id="TPE_2026_ACC_001", date=self._DATE, scenario_at=scenario_at,
+            alert_kind="accident", title="x",
+            decision=Decision(triggered=True, sop_section_id="2", source="llm"),
         )
         other_time = taipei(2026, 5, 20, 22, 20)
-        assert s3_cache.fetch_cached_decision("TPE_2026_ACC_001", other_time, "accident") is None
+        assert s3_cache.fetch_cached_incident_decision(
+            "TPE_2026_ACC_001", self._DATE, other_time, "accident"
+        ) is None
 
 
 class TestBucketNotConfigured:

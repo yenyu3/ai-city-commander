@@ -22,7 +22,7 @@ from city_state.handler import handler as city_state_handler  # noqa: E402
 from incident.handler import handler as incident_handler  # noqa: E402
 from decision.handler import handler as decision_handler  # noqa: E402
 from chat.handler import handler as chat_handler  # noqa: E402
-from decision_routing import Trigger, run_worker_phases  # noqa: E402
+from decision_routing import Trigger, run_incident_flow, run_worker_phases  # noqa: E402
 
 DATABASE_URL = os.environ.get(
     "DATABASE_URL", "postgresql://postgres:aicity@localhost:5432/aicity"
@@ -241,39 +241,54 @@ class TestDecisionCacheAside:
         assert cached is not None  # the background worker did eventually fill the sweep
         assert any(t.location_id == "RD_TPE_001" and t.sop_section_id == "1" for t in cached)
 
-    def test_incident_tied_triggers_carry_event_id_regardless_of_locationId_prefix(self):
-        """TPE_2026_ACC_001 (RD_ segment) and TPE_2026_EVT_002 (Crowd_Surge_
-        Injury, SOP §3, affected_segment=BS_MRT_BL17 -- a BS_ station, not an
-        RD_ segment) must both end up with their event_id attached, or the
-        BS_ one could never get a 交控中心建議書 (see decision_routing.py's
-        _attach_event_ids)."""
+    def test_event_id_attachment_works_for_both_api_entries(self):
+        """TPE_2026_EVT_002 (Crowd_Surge_Injury, SOP §3, affected_segment=
+        BS_MRT_BL17 -- a BS_ station, not an RD_ segment) must still get its
+        event_id attached in the decision API's city sweep, or the BS_ one
+        could never surface its coincident incident. And TPE_2026_ACC_001's
+        §2 accident judgment -- produced only by the incident API entry now
+        (run_incident_flow) -- must carry its own event_id. The two entries
+        are disjoint: which API invoked the worker decides decision vs
+        incident (see decision_routing.py)."""
         import api_common
 
         scenario_at = api_common.parse_scenario_at("2026-05-20T22:25:00+08:00")
         conn = db.connect()
         try:
+            # decision entry: the general city sweep (no §2/§5 accident items).
             pairs, _narrative = run_worker_phases(conn, scenario_at, None)
+            # incident entry: the one injected event's judgment.
+            incident_pairs = run_incident_flow(conn, scenario_at, "TPE_2026_ACC_001")
             conn.commit()
         finally:
             conn.close()
-        by_location = {trig.location_id: trig for trig, _decision in pairs}
-        assert by_location["RD_TPE_002"].event_id == "TPE_2026_ACC_001"
-        assert by_location["BS_MRT_BL17"].event_id == "TPE_2026_EVT_002"
+
+        sweep_by_location = {trig.location_id: trig for trig, _d in pairs}
+        assert sweep_by_location["BS_MRT_BL17"].event_id == "TPE_2026_EVT_002"
+        # the decision entry never produces the per-incident §2/§5 responses
+        assert all(t.kind not in ("accident", "signal_failure") for t, _d in pairs)
+
+        incident_by_section = {t.sop_section_id: t for t, _d in incident_pairs}
+        assert incident_by_section["2"].location_id == "RD_TPE_002"
+        assert incident_by_section["2"].event_id == "TPE_2026_ACC_001"
 
 
 class TestIncidentReportGeneration:
     def test_report_is_written_to_s3_once_an_incident_tied_decision_triggers(self):
+        """The 交控中心建議書 is produced by the incident API entry
+        (run_incident_flow, fired by POST /api/incidents) -- not by the
+        decision API's city sweep -- and lands at the exact key
+        report/handler.py polls for."""
         import api_common
 
         scenario_at = api_common.parse_scenario_at("2026-05-20T22:15:00+08:00")
         conn = db.connect()
         try:
-            pairs, _narrative = run_worker_phases(conn, scenario_at, None)
+            pairs = run_incident_flow(conn, scenario_at, "TPE_2026_ACC_001")
             conn.commit()
         finally:
             conn.close()
-        triggered_event_ids = {trig.event_id for trig, decision in pairs if decision.triggered}
-        assert "TPE_2026_ACC_001" in triggered_event_ids
+        assert any(decision.triggered for _trig, decision in pairs)
 
         import boto3
 
