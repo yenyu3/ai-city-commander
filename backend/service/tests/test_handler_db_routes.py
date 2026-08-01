@@ -175,12 +175,14 @@ class TestIncidentCreate:
 class TestDecisionCacheAside:
     """2026-08-01 redesign: locationId is optional (a focus hint on the
     narrative, not a filter on what gets computed), and the response is a
-    decisions[] array + situationSummary instead of one aiDecision -- see
+    decisions[] array + citizenText/governmentText (two independent strings,
+    not one audience-switched "summary") instead of one aiDecision -- see
     decision_routing.py's module docstring."""
 
-    def test_cache_hit_returns_200_with_decisions_and_summary(self):
+    def test_cache_hit_returns_200_with_decisions_and_both_texts(self):
         import api_common
         from agent.decision_agent import Decision
+        from agent.router_agent import Narrative
 
         parsed_scenario_at = api_common.parse_scenario_at("2026-05-20T21:00:00+08:00")
         s3_cache.save_congestion_decision(
@@ -195,7 +197,10 @@ class TestDecisionCacheAside:
             scenario_at=parsed_scenario_at,
             triggers=[Trigger(sop_section_id="1", location_id="RD_TPE_001")],
         )
-        s3_cache.save_narrative(scenario_at=parsed_scenario_at, location_key="RD_TPE_001", narrative="測試摘要")
+        s3_cache.save_narrative(
+            scenario_at=parsed_scenario_at, location_key="RD_TPE_001",
+            narrative=Narrative(citizen_text="測試市民版", government_text="測試政府版"),
+        )
 
         result = decision_handler(
             _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:01:00+08:00", "locationId": "RD_TPE_001"}),
@@ -207,7 +212,8 @@ class TestDecisionCacheAside:
         assert body["meta"]["resolvedScenarioAt"] == "2026-05-20T21:00:00+08:00"
         assert body["meta"]["ageMinutes"] == 1
         assert body["focus"] == {"locationId": "RD_TPE_001"}
-        assert body["situationSummary"] == "測試摘要"
+        assert body["citizenText"] == "測試市民版"
+        assert body["governmentText"] == "測試政府版"
         assert body["decisions"][0]["locationId"] == "RD_TPE_001"
         assert body["decisions"][0]["kind"] == "congestion"
         assert body["decisions"][0]["summary"]["sopRefs"] == ["SOP §1"]

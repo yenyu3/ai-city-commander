@@ -10,10 +10,43 @@ articles are triggered and where. Detailed reasoning/report content is
 *not* produced here -- that's Phase B (agent/facts.py's existing decide_*()
 functions, reused as-is, called only for whatever Phase A flagged worth
 generating). `narrate_for_focus()` then blends the resulting triggered
-items into one piece of text, optionally centered on a caller-supplied
-focus location -- this is what lets a response say "your station's fine,
-but avoid Station B, it's congested" instead of only ever answering about
-one isolated location.
+items into a `Narrative` (`.citizen` / `.government`, one caller-supplied
+focus location, possibly none) -- this is what lets a response say "your
+station's fine, but avoid Station B, it's congested" instead of only ever
+answering about one isolated location.
+
+2026-08-01, final design after three wrong intermediate versions (see git
+history if that reasoning is ever needed, but the ONLY correct contract is
+this one):
+
+  `Narrative.citizen` / `.government` are each a `NarrativeSummary` --
+  structured, not free text: `headline` (one line), `text` (a complete
+  integrated account -- every triggered item's SOP citation/reasoning
+  highlights, recommended actions, ETE, main/secondary reroute, signal/
+  cross-agency coordination summarized IN, not a "see decisions[] for
+  detail" pointer, since decisions[] is never rendered by the frontend at
+  all), plus CITY-WIDE ROLLUPS of every field decisions[] carries that
+  can be meaningfully aggregated (`sopRefs`, `recommendedActions`,
+  `estimatedRecovery` per item, `signalCoordination`, `crossSystemCoordination`,
+  `publicationEligibility`) and `prioritizedDecisionIds` (decisions[]'s
+  decisionId values, focus-first ordered). Only per-item detail that CANNOT
+  be meaningfully rolled up (reasoningSteps, segmentMetrics, reroute.excluded
+  detail) stays exclusively in decisions[] (see
+  decision_routing.decision_detail()). `government` gets every rollup;
+  `citizen` gets the citizen-safe subset (no sopRefs, no signal/cross-agency
+  detail -- SOP jargon and internal ops dispatch never reach a resident).
+
+Wrong things this replaced, for the record: (1) a single blended string,
+silently citizen-only -- government text never existed; (2) two blended
+strings, government compressed into a one-line-per-item digest under the
+wrong assumption "the real detail is already in decisions[]" -- decisions[]
+is never rendered, so that made the detail invisible; (3) free text at all
+for either side, even after adding structure -- the frontend needs
+structured, renderable data (matching decisions[]'s shape and rollup-able
+fields), not prose to dump in a paragraph; (4) treating `government`/
+`citizen` as arrays mirroring decisions[] one-for-one -- they're each ONE
+integrated summary object, not a parallel per-item list (decisions[] is
+already the per-item list).
 
 Same resilience contract as the rest of agent/: no LLM configured, or the
 call fails/returns unparseable JSON, falls back -- `route_triggers()` takes
@@ -22,17 +55,65 @@ fallback needs RDS-backed data (full road network graph, full crowd
 history) that this module deliberately doesn't fetch itself (agent/ stays a
 pure judgment layer, given data -- see decision_routing.py for the fetching
 side). `narrate_for_focus()`'s fallback needs no such data (it only
-rephrases already-generated public_message strings), so it's self-contained.
+recombines already-generated structured fields from decision_detail()
+output), so it's self-contained.
 """
 from __future__ import annotations
 
 import json
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 from .llm_client import LLMClient, get_configured_llm_client
 from .sop_sections import FULL_SOP_TEXT
+
+
+@dataclass
+class SignalTiming:
+    intersection_name: str
+    adjust_pct: int
+    goal: str
+
+
+@dataclass
+class InterAgencyAction:
+    agency: str
+    text: str
+    icon: str  # "train" | "bus" | "shield"
+
+
+@dataclass
+class NarrativeSummary:
+    """One audience's integrated view of the current sweep -- structured,
+    not free text. `text` is a complete account (every triggered item's
+    highlights woven in, not a pointer to decisions[]), plus city-wide
+    rollups of decisions[]'s aggregatable fields. See module docstring for
+    exactly which fields roll up here vs. stay decisions[]-only, and why
+    `citizen` omits sopRefs/signalCoordination/crossSystemCoordination."""
+
+    focus_location_id: Optional[str]
+    headline: str
+    text: str
+    recommended_actions: list[str] = field(default_factory=list)
+    estimated_recovery: list[dict[str, Any]] = field(default_factory=list)  # [{decisionId, locationId, ete}]
+    prioritized_decision_ids: list[str] = field(default_factory=list)
+    sop_refs: list[str] = field(default_factory=list)  # government only
+    signal_coordination: list[SignalTiming] = field(default_factory=list)  # government only
+    cross_system_coordination: list[InterAgencyAction] = field(default_factory=list)  # government only
+    publication_eligible_location_ids: list[str] = field(default_factory=list)  # government only
+
+
+@dataclass
+class Narrative:
+    """Two INDEPENDENT NarrativeSummary objects, not one summary with an
+    internal audience switch -- citizen is what a resident's screen renders,
+    government is what the command-center operator's screen renders. Never
+    derive one from the other."""
+
+    citizen: NarrativeSummary
+    government: NarrativeSummary
+
 
 _KIND_BY_SOP_SECTION = {
     "1": "congestion",
@@ -123,18 +204,58 @@ def route_triggers(
 
 
 _NARRATIVE_SYSTEM_PROMPT = (
-    "你是台北市交通應變指揮系統面向使用者的助理。你會收到目前全市所有已觸發"
-    "SOP 事項的清單（每項含地點與一句給使用者看的訊息），以及使用者目前關注的"
-    "地點（可能沒有）。請用繁體中文寫一段話回覆：\n"
-    "- 如果有給關注地點：先講這個地點本身的狀況（沒有觸發項目就說明狀況正常），"
-    "如果其他地方有觸發中的事項，可以順帶提醒使用者避開或留意，不用勉強牽拖"
-    "無關的地方，但也不要完全略過。\n"
-    "- 如果沒有給關注地點：對整體狀況做一段簡短總結，把目前所有觸發中的事項"
-    "講清楚。\n"
-    "- 完全沒有任何觸發時，用一句話說明目前一切正常即可。\n"
-    "- 不要出現 SOP 條號、門檻數字、規則名稱、警力/號誌等內部調度細節（這是"
-    "給一般使用者看的文字，跟政府內部版本的 reasoning 不同）。\n"
-    '只能輸出一個 JSON 物件，不要有其他文字：{"text": "..."}'
+    "你是台北市交通應變指揮系統的雙軌整合摘要產生器。你會收到目前全市所有"
+    "已觸發 SOP 事項的完整清單（每項含 decisionId、地點、kind、SOP 條號、"
+    "給指揮官看的完整判斷理由 aiText、建議行動 recommendedActions、預計"
+    "恢復時間 estimatedRecovery、改道路徑 reroute、給市民看的一句話"
+    "publicMessage），以及使用者目前關注的地點（可能沒有）。這份清單裡的"
+    "原始資料【不會被顯示在畫面上任何其他地方】——你產生的這兩份結構化"
+    "摘要就是使用者唯一看得到的整合內容，絕對不能只做粗略摘要、遺漏細節。"
+    "\n\n"
+    "只能輸出一個 JSON 物件，格式如下（citizen 與 government 都是同樣的"
+    "物件形狀，差別只在內容深度）：\n"
+    '{"citizen": {...}, "government": {...}}\n\n'
+    "每個物件都要包含：\n"
+    '- "headline"：一句話結論。\n'
+    '- "text"：完整整合敘述段落，把清單裡每一項的重點（觸發原因、建議'
+    "行動、預計恢復時間、主要改道路徑）都融入敘述中，不是只挑一兩項講、"
+    "也不是叫讀者自己去查其他地方——這段文字本身就要是完整的決策文件"
+    "（government）或完整的路況說明（citizen）。\n"
+    '- "recommendedActions"：陣列，把清單裡所有項目的建議行動彙整、去重'
+    "後列出。\n"
+    '- "estimatedRecovery"：陣列，每個有預計恢復時間的項目各一筆'
+    '{"decisionId", "locationId", "ete"}。\n'
+    '- "prioritizedDecisionIds"：陣列，清單裡每一項的 decisionId，依處置'
+    "優先順序排列——如果有關注地點，該地點自己的項目（如果有觸發）排最"
+    "前面。\n\n"
+    "government 額外包含：\n"
+    '- "sopRefs"：陣列，清單中出現過的所有 SOP 條號，去重。\n'
+    '- "signalCoordination"：陣列，依 SOP 條文中提及號誌配時調整的項目'
+    '（如第1條「長綠燈時制」、第2條主疏散路徑壅塞時），各生成'
+    '{"intersectionName", "adjustPct", "goal"}，intersectionName 用該'
+    "項目地點名稱或路口描述，adjustPct 依 SOP 條文（一般為 25），goal 簡述"
+    "調整目的。沒有相關項目就輸出空陣列。\n"
+    '- "crossSystemCoordination"：陣列，依 SOP 條文中提及跨機關協調的項目'
+    "（第1/2條的警力調度、第3/4條的北捷/公車處接駁、第5條的警力人工指揮），"
+    '各生成 {"agency", "text", "icon"}（icon 為 "train"/"bus"/"shield" 三選'
+    "一），同機關的多個請求可合併成一項。沒有相關項目就輸出空陣列。\n"
+    '- "publicationEligibleLocationIds"：陣列，清單中 kind 為'
+    '"multilingual" 且已觸發之項目的 locationId。沒有就輸出空陣列。\n\n'
+    "citizen 絕對不能出現 SOP 條號、門檻數字（飽和度/成長率等）、規則"
+    "名稱、警力或號誌調度等內部術語，不輸出 sopRefs/signalCoordination/"
+    "crossSystemCoordination/publicationEligibleLocationIds 這幾個欄位。"
+    "citizen 的 text 要用聊天口吻寫，像在跟朋友說「欸那邊塞車喔，走OO"
+    "比較快」，不是公文、不是新聞稿，不要出現「請」「敬請」「特此」「茲」"
+    "「本系統」「指揮官」這類公文詞，也不要用「請留意」「請避開」開頭"
+    "——直接講重點、講人話，但一樣要完整涵蓋每個觸發項目的狀況，不能為了"
+    "口語化而遺漏地點。\n\n"
+    "如果有給關注地點：headline/text 都要先講該地點本身狀況（沒有觸發就"
+    "說明狀況正常，但仍要考慮其他地方是否會影響到本地點，例如疏散路徑"
+    "引導人流過來），再帶到其他觸發中地點；prioritizedDecisionIds 該地點"
+    "自己的項目排最前面。\n"
+    "如果沒有關注地點：對全市所有觸發項目做完整整合。\n"
+    "完全沒有任何觸發時：citizen 用一句話說明目前一切正常，government"
+    "簡短回報「目前無需處置事項」，其餘欄位皆為空陣列。"
 )
 
 
@@ -144,7 +265,7 @@ def narrate_for_focus(
     focus_location_name: Optional[str],
     *,
     llm_client: Optional[LLMClient] = None,
-) -> str:
+) -> Narrative:
     client = llm_client if llm_client is not None else get_configured_llm_client()
     if client is None:
         return _fallback_narrative(triggered_items, focus_location_id, focus_location_name)
@@ -154,46 +275,153 @@ def narrate_for_focus(
         "focusLocationId": focus_location_id,
         "focusLocationName": focus_location_name,
     }
-    prompt = f"=== 目前全市觸發清單 ===\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n請依規則寫出回覆文字。"
+    prompt = f"=== 目前全市觸發清單 ===\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n請依規則輸出兩份結構化摘要。"
     try:
-        raw = client.complete(system=_NARRATIVE_SYSTEM_PROMPT, prompt=prompt, max_tokens=600)
+        # government's text must weave in every triggered item's SOP
+        # reasoning/actions/ETE/reroute in full (decisions[] is never
+        # rendered by the frontend -- see decision_routing.decision_detail()'s
+        # docstring), plus the rollup arrays (signalCoordination etc). A
+        # city-wide sweep can have well over a dozen simultaneous triggers
+        # (observed: 14 at one real scenario_at), so this easily exceeds a
+        # short-summary token budget. Sized generously to avoid the
+        # truncated-JSON failure mode caught live at 800 ("Unterminated
+        # string" from a real Bedrock call, silently falling back and
+        # losing all this content).
+        raw = client.complete(system=_NARRATIVE_SYSTEM_PROMPT, prompt=prompt, max_tokens=8000)
         parsed = _parse_json_response(raw)
-        return parsed["text"]
+        return Narrative(
+            citizen=_parse_summary(parsed["citizen"], focus_location_id, government=False),
+            government=_parse_summary(parsed["government"], focus_location_id, government=True),
+        )
     except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
         print(f"[agent.router_agent] narrate_for_focus LLM call failed, falling back: {exc}", file=sys.stderr)
         return _fallback_narrative(triggered_items, focus_location_id, focus_location_name)
+
+
+def _parse_summary(raw: dict[str, Any], focus_location_id: Optional[str], *, government: bool) -> NarrativeSummary:
+    summary = NarrativeSummary(
+        focus_location_id=focus_location_id,
+        headline=raw["headline"],
+        text=raw["text"],
+        recommended_actions=raw.get("recommendedActions") or [],
+        estimated_recovery=raw.get("estimatedRecovery") or [],
+        prioritized_decision_ids=raw.get("prioritizedDecisionIds") or [],
+    )
+    if government:
+        summary.sop_refs = raw.get("sopRefs") or []
+        summary.signal_coordination = [
+            SignalTiming(
+                intersection_name=t["intersectionName"], adjust_pct=int(t["adjustPct"]), goal=t["goal"]
+            )
+            for t in (raw.get("signalCoordination") or [])
+        ]
+        summary.cross_system_coordination = [
+            InterAgencyAction(agency=a["agency"], text=a["text"], icon=a["icon"])
+            for a in (raw.get("crossSystemCoordination") or [])
+        ]
+        summary.publication_eligible_location_ids = raw.get("publicationEligibleLocationIds") or []
+    return summary
 
 
 def _fallback_narrative(
     triggered_items: list[dict[str, Any]],
     focus_location_id: Optional[str],
     focus_location_name: Optional[str],
-) -> str:
-    """No LLM configured/failed -- just recombines the public_message strings
+) -> Narrative:
+    """No LLM configured/failed -- just recombines the structured fields
     Phase B already generated (or its own rules/ fallback wording), rather
     than inventing new prose. Same compute/generate split as the rest of
     agent/: this fallback narrates, it doesn't judge or compose from
-    scratch."""
+    scratch. Rollup fields (recommendedActions/estimatedRecovery/sopRefs/
+    signalCoordination/crossSystemCoordination/publicationEligibleLocationIds)
+    are recombined here too, same as the LLM path -- decisions[] is never
+    rendered by the frontend (see decision_routing.decision_detail()'s
+    docstring), so this is the only place that detail reaches a viewer,
+    LLM-configured or not."""
+    ordered = sorted(triggered_items, key=lambda i: i["locationId"] != focus_location_id)
+    decision_ids = [i["decisionId"] for i in ordered if i.get("decisionId")]
+
     if not triggered_items:
-        if focus_location_id is None:
-            return "目前一切正常，無異常事件。"
-        return f"{focus_location_name or focus_location_id}目前狀況正常。"
+        name = focus_location_name or focus_location_id
+        citizen_headline = "現在很順，免驚。" if focus_location_id is None else f"{name}現在很順。"
+        government_headline = "目前無需處置事項。"
+        return Narrative(
+            citizen=NarrativeSummary(focus_location_id, citizen_headline, citizen_headline),
+            government=NarrativeSummary(focus_location_id, government_headline, government_headline),
+        )
 
-    if focus_location_id is None:
-        return " ".join(i["publicMessage"] for i in triggered_items if i.get("publicMessage"))
+    def join(field_name: str, items: list[dict[str, Any]]) -> str:
+        return " ".join(i[field_name] for i in items if i.get(field_name))
 
-    own = [i for i in triggered_items if i["locationId"] == focus_location_id]
-    others = [i for i in triggered_items if i["locationId"] != focus_location_id]
-    parts = [
-        " ".join(i["publicMessage"] for i in own if i.get("publicMessage"))
-        if own
-        else f"{focus_location_name or focus_location_id}目前狀況正常。"
+    def government_block(item: dict[str, Any]) -> str:
+        parts = [f"【{item.get('locationId')}｜{'/'.join(item.get('sopRefs') or [])}】{item.get('aiText', '')}"]
+        actions = item.get("recommendedActions") or []
+        if actions:
+            parts.append("建議行動：" + "；".join(actions))
+        recovery = item.get("estimatedRecovery")
+        if recovery is not None:
+            parts.append(f"預計恢復時間：{recovery['ete']} 分鐘")
+        reroute = item.get("reroute")
+        if reroute:
+            main_route = reroute.get("mainRoute")
+            if main_route:
+                parts.append(f"主疏散路徑：{main_route}")
+            secondary = reroute.get("secondaryRoutes") or []
+            if secondary:
+                parts.append(f"次要疏散路徑：{'、'.join(secondary)}")
+        return "。".join(parts)
+
+    citizen_text = join("publicMessage", ordered)
+    government_text = " ".join(government_block(i) for i in ordered)
+
+    all_actions: list[str] = []
+    for i in ordered:
+        for a in i.get("recommendedActions") or []:
+            if a not in all_actions:
+                all_actions.append(a)
+
+    estimated_recovery = [
+        {"decisionId": i.get("decisionId"), "locationId": i["locationId"], "ete": i["estimatedRecovery"]["ete"]}
+        for i in ordered
+        if i.get("estimatedRecovery") is not None
     ]
-    if others:
-        other_text = " ".join(i["publicMessage"] for i in others if i.get("publicMessage"))
-        if other_text:
-            parts.append(f"其他地方請留意：{other_text}")
-    return " ".join(p for p in parts if p)
+
+    sop_refs: list[str] = []
+    for i in ordered:
+        for ref in i.get("sopRefs") or []:
+            if ref not in sop_refs:
+                sop_refs.append(ref)
+
+    publication_eligible = [i["locationId"] for i in ordered if i.get("kind") == "multilingual"]
+
+    citizen_headline = citizen_text.split("。")[0] + "。" if citizen_text else "目前狀況如下。"
+    government_headline = f"共 {len(ordered)} 項觸發中事項。"
+
+    return Narrative(
+        citizen=NarrativeSummary(
+            focus_location_id=focus_location_id,
+            headline=citizen_headline,
+            text=citizen_text,
+            recommended_actions=all_actions,
+            estimated_recovery=estimated_recovery,
+            prioritized_decision_ids=decision_ids,
+        ),
+        government=NarrativeSummary(
+            focus_location_id=focus_location_id,
+            headline=government_headline,
+            text=government_text,
+            recommended_actions=all_actions,
+            estimated_recovery=estimated_recovery,
+            prioritized_decision_ids=decision_ids,
+            sop_refs=sop_refs,
+            publication_eligible_location_ids=publication_eligible,
+            # signalCoordination/crossSystemCoordination need SOP-article-
+            # specific judgment (which article implies which intersection/
+            # agency action) -- the fallback path deliberately doesn't
+            # duplicate that judgment in Python; it stays empty here and is
+            # only ever populated by the real LLM call above.
+        ),
+    )
 
 
 def _normalize_sop_section_id(raw: Any) -> Optional[str]:
@@ -206,10 +434,23 @@ def _normalize_sop_section_id(raw: Any) -> Optional[str]:
 
 
 def _parse_json_response(raw: str) -> dict[str, Any]:
+    import re
+
     text = raw.strip()
     if text.startswith("```"):
         text = text.split("```")[1]
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
-    return json.loads(text)
+    try:
+        return json.loads(text)
+    except json.JSONDecodeError:
+        # narrate_for_focus's governmentText is long-form (up to 8000
+        # tokens, every triggered item spelled out in full) -- caught live
+        # against a real Bedrock call producing a trailing comma before a
+        # closing brace, a common long-JSON-output slip that isn't a real
+        # content problem, just strict json.loads() rejecting otherwise-valid
+        # content. One retry with trailing commas stripped before giving up
+        # and falling back (which would silently discard this whole
+        # response, per narrate_for_focus's docstring on why that's costly).
+        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text))

@@ -17,12 +17,14 @@ ask "what's going on city-wide"). The new design:
     functions, unchanged): for each Phase A candidate, generate the real
     reasoning/result/public_message. Phase B's own `triggered` is
     authoritative, not Phase A's guess (`_ensure_decisions`).
-  Phase C -- Focused narrative (agent/router_agent.py::narrate_for_focus):
-    blends every currently-triggered item into one piece of text, optionally
-    centered on a caller-supplied focus location -- "your station's fine,
-    but avoid Station B" (`_ensure_narrative`). `locationId` is now optional
-    on the public API: given, the text focuses there while staying aware of
-    everything else; omitted, it's a global summary.
+  Phase C -- Focused integration (agent/router_agent.py::narrate_for_focus):
+    blends every currently-triggered item into a `Narrative` (`.citizen`/
+    `.government`, each a structured `NarrativeSummary` -- headline/text/
+    rollup fields, not free text), optionally centered on a caller-supplied
+    focus location -- "your station's fine, but avoid Station B"
+    (`_ensure_narrative`). `locationId` is now optional on the public API:
+    given, the summary focuses there while staying aware of everything else;
+    omitted, it's a city-wide summary.
 
 `GET /api/decisions` (decision/handler.py) only ever does a cache-only read
 (`fetch_cached_view`) -- never touches RDS or an LLM directly, same
@@ -64,7 +66,7 @@ from __future__ import annotations
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Callable, Optional
+from typing import Any, Callable, Optional
 
 import db
 import report_builder
@@ -79,7 +81,7 @@ from agent.facts import (
     decide_multilingual,
     decide_signal_failure,
 )
-from agent.router_agent import Trigger, narrate_for_focus, route_triggers
+from agent.router_agent import Narrative, Trigger, narrate_for_focus, route_triggers
 from rules.congestion_tier import CITY_TRIGGER_SEGMENTS
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapshot
 
@@ -94,6 +96,57 @@ _GLOBAL_NARRATIVE_KEY = "_global"
 # written under incidents/{date}/{eventId}/... + emergency-reports/, never
 # under decisions/. This filter keeps the two API entry points disjoint.
 _INCIDENT_RESPONSE_KINDS = {"accident", "signal_failure"}
+
+# --- decision_detail()'s deterministic (non-LLM) fields ---------------------
+# Straight lookups/arithmetic, not judgment -- same rationale as SOP §7's ETE
+# formula (see agent/facts.py::decide_accident): computed identically
+# regardless of whether the triggering Decision came from the LLM or its
+# fallback, so no extra LLM call is spent generating them.
+
+_KIND_TITLE = {
+    "congestion": "壅塞分級",
+    "accident": "車禍/事件應變",
+    "mrt_diversion": "捷運分流",
+    "dome_dispersal": "大巨蛋散場",
+    "signal_failure": "號誌故障",
+    "multilingual": "多語通報",
+}
+
+# Mirrors frontend/src/services/opsCoordinationAdapter.ts's
+# TemplateOpsCoordinationAdapter -- the SOP text's own processing steps
+# (§1 city-trigger-segment green-light +25%/police clearance, §2 evacuation
+# route green-light extension, §3/§4 MRT skip-stop + shuttle bus, §5 manual
+# signal-failure dispatch), ported so it's a real backend field instead of a
+# frontend-only mock. Only kinds with an actual SOP-mandated signal/agency
+# action get an entry; others fall through to empty coordination.
+_KIND_INTERSECTION_NAME = {
+    "congestion": "主要路口（長綠燈時制）",
+    "accident": "事故周邊路口",
+    "mrt_diversion": "捷運站出入口周邊路口",
+    "dome_dispersal": "場館周邊路口",
+    "signal_failure": "號誌故障路口",
+}
+
+_KIND_AGENCIES: dict[str, list[dict[str, str]]] = {
+    "congestion": [
+        {"agency": "交通警察大隊", "text": "派遣員警至主要路口實施現場管制與淨空。", "icon": "shield"},
+        {"agency": "臺北市公車聯營管理處", "text": "通報行經替代道路之公車彈性改道。", "icon": "bus"},
+    ],
+    "accident": [
+        {"agency": "交通警察大隊", "text": "派遣員警至事故路口實施現場控管與淨空。", "icon": "shield"},
+        {"agency": "臺北市公車聯營管理處", "text": "通報行經事故路段之公車彈性改道。", "icon": "bus"},
+    ],
+    "mrt_diversion": [
+        {"agency": "臺北捷運公司 (TRTC)", "text": "加開列車班次疏導人潮，啟動月台管制。", "icon": "train"},
+    ],
+    "dome_dispersal": [
+        {"agency": "臺北捷運公司 (TRTC)", "text": "散場時段加開空車疏導人潮。", "icon": "train"},
+        {"agency": "臺北市公車聯營管理處", "text": "場館周邊加派接駁公車。", "icon": "bus"},
+    ],
+    "signal_failure": [
+        {"agency": "工務局號誌維護單位", "text": "派員搶修故障號誌，現場改以人工指揮通行。", "icon": "shield"},
+    ],
+}
 
 
 @dataclass
@@ -275,13 +328,19 @@ def _multilingual_for_station(location_id: str, scenario_at: datetime) -> Option
     if batch is None:
         return None
     triggered = location_id in (batch.result.get("stations") or [])
+    station_name = (batch.result.get("station_names") or {}).get(location_id, location_id)
     return Decision(
         triggered=triggered,
         sop_section_id="6" if triggered else None,
-        result=batch.result,
+        result={**batch.result, "location_name": station_name},
         reasoning=batch.reasoning,
         source=batch.source,
         public_message=batch.public_message if triggered else "",
+        # 2026-08-01: was missing -- this rebuilds a per-station Decision
+        # from the shared batch decision, and reasoning_steps defaulted to
+        # empty (dataclass default) instead of carrying the batch's actual
+        # LLM-produced steps over.
+        reasoning_steps=batch.reasoning_steps,
     )
 
 
@@ -310,11 +369,24 @@ def _compute_decision_for_trigger(
     across threads. `dome_history` is pre-fetched sequentially by the caller
     before parallelizing (dome_dispersal is the only branch that ever needs
     RDS beyond what `data` already carries)."""
+    # location_name/segment_metrics are merged into decision.result (not
+    # read back out of `data` by decision_detail()) so the cache-only
+    # GET /api/decisions read path -- which never touches RDS, see
+    # fetch_cached_view -- can still expose per-item title/segmentMetrics.
+    # Not a judgment, just already-known snapshot fields carried along with
+    # the cached Decision.
     if trig.kind == "congestion":
         t = data.current_traffic.get(trig.location_id)
         if t is None:
             return None
         decision = decide_congestion(trig.location_id, t.road_name, t.saturation_score)
+        decision.result = {
+            **decision.result,
+            "location_name": t.road_name,
+            "segment_metrics": {
+                "segment_name": t.road_name, "flow_pcuh": t.vehicle_count, "saturation": t.saturation_score,
+            },
+        }
         s3_cache.save_congestion_decision(segment_id=trig.location_id, scenario_at=scenario_at, decision=decision)
 
     elif trig.kind == "mrt_diversion":
@@ -322,6 +394,7 @@ def _compute_decision_for_trigger(
         if c is None:
             return None
         decision = decide_mrt_diversion(c)
+        decision.result = {**decision.result, "location_name": c.location_name}
         s3_cache.save_crowd_decision(
             station_id=trig.location_id, scenario_at=scenario_at, decision_kind="mrt_diversion", decision=decision,
         )
@@ -332,12 +405,21 @@ def _compute_decision_for_trigger(
             return None
         history = dome_history.get(trig.location_id, [])
         decision = decide_dome_dispersal(history, c)
+        decision.result = {**decision.result, "location_name": c.location_name}
         s3_cache.save_crowd_decision(
             station_id=trig.location_id, scenario_at=scenario_at, decision_kind="dome_dispersal", decision=decision,
         )
 
     elif trig.kind == "multilingual":
         decision = decide_multilingual(list(data.current_crowd.values()))
+        # station_names keyed by station_id -- stored on the BATCH decision
+        # (the one actually cached under _MULTILINGUAL_CACHE_KEY) so
+        # _multilingual_for_station() can resolve a title on every future
+        # cache-only read too, not just this first compute.
+        decision.result = {
+            **decision.result,
+            "station_names": {c.station_id: c.location_name for c in data.current_crowd.values()},
+        }
         s3_cache.save_crowd_decision(
             station_id=_MULTILINGUAL_CACHE_KEY, scenario_at=scenario_at, decision_kind="multilingual", decision=decision,
         )
@@ -417,18 +499,110 @@ def _location_name(data: _CityData, location_id: str) -> str:
     return location_id
 
 
+def decision_detail(trig: Trigger, decision: Decision) -> dict[str, Any]:
+    """The full structured shape of one triggered item -- everything
+    decisions[] (the per-item API shape) exposes, AND what Phase C's
+    narrate_for_focus rolls up into citizen/government summaries, because
+    decisions[] is never actually rendered by the frontend on its own --
+    every field a viewer sees has to also be reachable through the rollup
+    (2026-08-01: earlier versions of this only carried aiText/publicMessage,
+    so recommendedActions/ETE/reroute/reasoningSteps/segmentMetrics/signal
+    and cross-agency coordination were all invisible to any viewer).
+
+    Deliberately takes no `_CityData` -- this is called from the cache-only
+    GET /api/decisions read path too (fetch_cached_view), which never
+    touches RDS. Everything here comes from `trig`/`decision` alone;
+    location_name/segment_metrics are merged into `decision.result` at
+    compute time instead (see _compute_decision_for_trigger) specifically so
+    a later cache-only read can still resolve them.
+
+    reasoningSteps/estimatedRecovery/reroute/recommendedActions come straight
+    off the LLM-produced Decision (or its ETE-merged/rules-fallback
+    equivalent -- see agent/facts.py). title/signalCoordination/
+    crossSystemCoordination/publicationEligibility are deterministic lookups
+    (SOP-text-derived tables, not judgment -- same rationale as the ETE
+    formula: computed the same way regardless of whether the triggering
+    Decision itself came from the LLM or its fallback, so no extra LLM call
+    is spent producing them)."""
+    reroute: Optional[dict[str, Any]] = None
+    if trig.kind == "accident":
+        reroute = {
+            "mainRoute": decision.result.get("main_route"),
+            "secondaryRoutes": decision.result.get("secondary_routes", []),
+            "excluded": decision.result.get("excluded", []),
+        }
+
+    estimated_recovery: Optional[dict[str, Any]] = None
+    if trig.kind == "accident" and decision.result.get("ete") is not None:
+        estimated_recovery = {
+            "ete": decision.result.get("ete"),
+            "base": decision.result.get("ete_base"),
+            "penalty": decision.result.get("ete_penalty"),
+        }
+
+    raw_metrics = decision.result.get("segment_metrics")
+    segment_metrics: Optional[dict[str, Any]] = None
+    if raw_metrics is not None:
+        segment_metrics = {
+            "segmentName": raw_metrics["segment_name"],
+            "flowPcuh": raw_metrics["flow_pcuh"],
+            "saturation": raw_metrics["saturation"],
+        }
+
+    signal_coordination = None
+    intersection_name = _KIND_INTERSECTION_NAME.get(trig.kind)
+    if intersection_name is not None:
+        signal_coordination = {
+            "signalTimings": [
+                {"intersectionName": intersection_name, "adjustPct": 25, "goal": "加速疏散替代路徑車流消化"}
+            ]
+        }
+
+    agencies = _KIND_AGENCIES.get(trig.kind)
+    cross_system_coordination = {"interAgencyActions": agencies} if agencies else None
+
+    publication_eligibility = None
+    if trig.kind == "multilingual":
+        publication_eligibility = {"eligible": decision.triggered}
+
+    location_name = decision.result.get("location_name", trig.location_id)
+
+    return {
+        "decisionId": f"DEC_{trig.location_id}",
+        "sopSectionId": trig.sop_section_id,
+        "kind": trig.kind,
+        "locationId": trig.location_id,
+        "eventId": trig.event_id,
+        "title": f"{location_name} {_KIND_TITLE.get(trig.kind, trig.kind)}",
+        "aiText": decision.reasoning,
+        "sopRefs": [f"SOP §{trig.sop_section_id}"],
+        "reasoningSteps": [
+            {
+                "order": s.order, "status": s.status, "title": s.title,
+                "detail": s.detail, **({"sopRef": s.sop_ref} if s.sop_ref else {}),
+            }
+            for s in decision.reasoning_steps
+        ],
+        "recommendedActions": decision.result.get("actions", []) if trig.kind == "congestion" else [],
+        "estimatedRecovery": estimated_recovery,
+        "reroute": reroute,
+        "segmentMetrics": segment_metrics,
+        "signalCoordination": signal_coordination,
+        "crossSystemCoordination": cross_system_coordination,
+        "publicationEligibility": publication_eligibility,
+        "publicMessage": decision.public_message,
+    }
+
+
 def _ensure_narrative(
     scenario_at: datetime, data: _CityData, pairs: list[tuple[Trigger, Decision]], location_id: Optional[str]
-) -> str:
+) -> Narrative:
     location_key = location_id if location_id is not None else _GLOBAL_NARRATIVE_KEY
     cached = s3_cache.fetch_cached_narrative(scenario_at, location_key)
     if cached is not None:
         return cached
 
-    items = [
-        {"locationId": trig.location_id, "publicMessage": decision.public_message}
-        for trig, decision in pairs
-    ]
+    items = [decision_detail(trig, decision) for trig, decision in pairs]
     focus_name = _location_name(data, location_id) if location_id is not None else None
     narrative = narrate_for_focus(items, location_id, focus_name)
     s3_cache.save_narrative(scenario_at=scenario_at, location_key=location_key, narrative=narrative)
@@ -437,7 +611,7 @@ def _ensure_narrative(
 
 def run_worker_phases(
     conn, scenario_at: datetime, location_id: Optional[str], *, force_refresh: bool = False
-) -> tuple[list[tuple[Trigger, Decision]], str]:
+) -> tuple[list[tuple[Trigger, Decision]], Narrative]:
     """Decision API entry -- the city-wide sweep for GET /api/decisions
     (triggered on a cache miss). Ensures Phase A (sweep) and Phase B (every
     triggered *general* decision: congestion/mrt/dome/multilingual) exist,
@@ -520,7 +694,7 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
 
 def fetch_cached_view(
     scenario_at: datetime, location_id: Optional[str]
-) -> Optional[tuple[list[tuple[Trigger, Decision]], str]]:
+) -> Optional[tuple[list[tuple[Trigger, Decision]], Narrative]]:
     """Cache-only read for GET /api/decisions -- never touches RDS or an
     LLM. Returns the general (decision-API) pairs only; per-incident §2/§5
     responses never appear here. None means "not ready yet" (caller should

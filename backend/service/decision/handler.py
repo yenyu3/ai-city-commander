@@ -1,46 +1,74 @@
 """GET /api/decisions?scenarioAt={scenarioAt}&locationId={locationId}? --
 see data/api.md §4. ``locationId`` is optional: every decision is computed
-for the city-wide view and it only selects a focused narrative.
+for the city-wide view and it only selects a focused summary.
 
 The frontend may query any time, while AI results are stored at 15-minute
 slots. This handler rounds down to that slot, reads only its S3 cache, and
 starts decision-generator-worker asynchronously on a miss. It never queries
 RDS or invokes an LLM itself.
+
+2026-08-01, final response shape (after several wrong intermediate ones --
+see agent/router_agent.py's module docstring for the full history): response
+carries `government` and `citizen`, each a structured `NarrativeSummary`
+object (headline/text/rollup fields -- NOT free text, NOT a single
+audience-switched `situationSummary`), plus `decisions[]` -- the full
+per-item detail array, unchanged in spirit from the original design but now
+also carrying reasoningSteps/segmentMetrics/signalCoordination/
+crossSystemCoordination/publicationEligibility per item (see
+decision_routing.decision_detail()).
 """
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any
 
 import api_common
 import worker_invoke
-from agent.decision_agent import Decision
-from decision_routing import Trigger, fetch_cached_view
+from agent.router_agent import NarrativeSummary
+from decision_routing import decision_detail, fetch_cached_view
 
 
-def _decision_item(trig: Trigger, decision: Decision) -> dict[str, Any]:
-    reroute: Optional[dict[str, Any]] = None
-    if trig.kind == "accident":
-        reroute = {
-            "mainRoute": decision.result.get("main_route"),
-            "secondaryRoutes": decision.result.get("secondary_routes", []),
-            "excluded": decision.result.get("excluded", []),
-        }
-
+def _decision_item(trig, decision) -> dict[str, Any]:
+    detail = decision_detail(trig, decision)
     return {
-        "decisionId": f"DEC_{trig.location_id}",
-        "sopSectionId": trig.sop_section_id,
-        "kind": trig.kind,
-        "locationId": trig.location_id,
-        "eventId": trig.event_id,
-        "summary": {
-            "aiText": decision.reasoning,
-            "sopRefs": [f"SOP §{trig.sop_section_id}"],
-        },
-        "recommendedActions": decision.result.get("actions", []) if trig.kind == "congestion" else [],
-        "estimatedRecovery": decision.result.get("ete") if trig.kind == "accident" else None,
-        "reroute": reroute,
-        "publicMessage": decision.public_message,
+        "decisionId": detail["decisionId"],
+        "sopSectionId": detail["sopSectionId"],
+        "kind": detail["kind"],
+        "locationId": detail["locationId"],
+        "eventId": detail["eventId"],
+        "title": detail["title"],
+        "summary": {"aiText": detail["aiText"], "sopRefs": detail["sopRefs"]},
+        "reasoningSteps": detail["reasoningSteps"],
+        "recommendedActions": detail["recommendedActions"],
+        "estimatedRecovery": detail["estimatedRecovery"],
+        "reroute": detail["reroute"],
+        "segmentMetrics": detail["segmentMetrics"],
+        "signalCoordination": detail["signalCoordination"],
+        "crossSystemCoordination": detail["crossSystemCoordination"],
+        "publicationEligibility": detail["publicationEligibility"],
+        "publicMessage": detail["publicMessage"],
     }
+
+
+def _summary_item(summary: NarrativeSummary, *, government: bool) -> dict[str, Any]:
+    item: dict[str, Any] = {
+        "focusLocationId": summary.focus_location_id,
+        "headline": summary.headline,
+        "text": summary.text,
+        "recommendedActions": summary.recommended_actions,
+        "estimatedRecovery": summary.estimated_recovery,
+        "prioritizedDecisionIds": summary.prioritized_decision_ids,
+    }
+    if government:
+        item["sopRefs"] = summary.sop_refs
+        item["signalCoordination"] = [
+            {"intersectionName": t.intersection_name, "adjustPct": t.adjust_pct, "goal": t.goal}
+            for t in summary.signal_coordination
+        ]
+        item["crossSystemCoordination"] = [
+            {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
+        ]
+        item["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
+    return item
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -74,7 +102,8 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                     "cacheStatus": "hit" if age_minutes == 0 else "slot_hit",
                 },
                 "focus": focus,
-                "situationSummary": narrative,
+                "government": _summary_item(narrative.government, government=True),
+                "citizen": _summary_item(narrative.citizen, government=False),
                 "decisions": [_decision_item(trig, decision) for trig, decision in pairs],
             },
         )

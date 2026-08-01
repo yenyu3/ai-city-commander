@@ -53,12 +53,26 @@
   `decisions/`。
 
 - **Phase C — 聚焦敘事**：`agent/router_agent.py::narrate_for_focus()`，
-  拿 Phase B 所有「真的觸發」的項目（含各自的民眾版訊息），加上呼叫端這次
-  問的「關注地點」（可能沒有），生成**一段**融合文字：
-  - 有給關注地點：先講這個地點本身（沒觸發就講狀況正常），其他地方有觸發
-    的話會順帶提醒——這就是使用者要的「A 站順暢，但避免前往 B 站」。
-  - 沒給關注地點：對整體狀況做一段總結。
-  - 完全沒有任何觸發：一句話說明目前一切正常。
+  拿 Phase B 所有「真的觸發」的項目（含各自的政府版理由 `aiText` 跟民眾版
+  訊息 `publicMessage`），加上呼叫端這次問的「關注地點」（可能沒有），
+  同一次 LLM 呼叫產生**兩段完全獨立的文字**（`Narrative` dataclass：
+  `citizen_text`／`government_text`），不是一段文字換個語氣講兩次：
+  - `citizen_text`：口語化，寫給一般市民，不出現 SOP 條號/門檻數字/內部
+    調度細節。
+  - `government_text`：專業精簡，可引用 SOP 條號跟數據門檻，寫給交控中心
+    指揮官。
+  - 有給關注地點：兩段文字都先講這個地點本身（沒觸發就講狀況正常），其他
+    地方有觸發的話會順帶提醒——這就是使用者要的「A 站順暢，但避免前往
+    B 站」，政府/市民版都適用同一個聚焦邏輯。
+  - 沒給關注地點：對整體狀況各做一段總結。
+  - 完全沒有任何觸發：兩段都用一句話說明目前一切正常/無需處置。
+  - **2026-08-01 修正**：這裡原本只生成過市民版（`_NARRATIVE_SYSTEM_PROMPT`
+    寫死不能出現 SOP 條號），政府版的融合敘事從沒被寫出來過——`decisions[]`
+    陣列裡逐項的 `aiText`/`publicMessage` 兩版都有，但融合成一段話的敘事
+    只有市民版這一份，是使用者發現後才補上的落差，不是新加的功能。市民版
+    的用字風格也一併重寫：原本讀起來像拿掉 SOP 用語的公文，不是市民真的
+    會想看的口吻，prompt 現在明確要求口語、禁止「請」「敬請」「本系統」
+    這類公文詞。
   快取在 `decisions/{scenarioAt}/_summary/{locationId 或 "_global"}.json`
   ——每個不同的關注焦點各自快取一份，但都共用同一份 Phase A/B 結果，所以
   第二個問不同焦點的呼叫只需要付 Phase C 這一次輕量呼叫的成本。
@@ -206,7 +220,8 @@ RDS/LLM）。命中時 `200`：
     "...": "..."
   },
   "focus": {"locationId": "BS_MRT_BL18"} | null,
-  "situationSummary": "一段融合文字，聚焦 focus（如果有）但仍帶到其他地方",
+  "citizenText": "一段口語化融合文字，聚焦 focus（如果有）但仍帶到其他地方，給市民看",
+  "governmentText": "一段專業融合文字，聚焦 focus（如果有）但仍帶到其他地方，給指揮官看",
   "decisions": [
     {"decisionId", "sopSectionId", "kind", "locationId", "eventId",
      "summary": {"aiText", "sopRefs"}, "recommendedActions", "estimatedRecovery",
@@ -217,23 +232,29 @@ RDS/LLM）。命中時 `200`：
 
 未命中時 `202` + 觸發 worker，`retryAfterSeconds` 沿用舊行為。
 
+**`citizenText`／`governmentText` 是兩個完全獨立的頂層欄位，不是包在一個
+`summary`/`situationSummary` 物件裡、也不是同一段話換語氣**（2026-08-01
+修正——舊版只有單一 `situationSummary` 欄位，而且內容其實只有市民版，
+政府版的融合敘事從沒被生成過）。
+
 **`decisions[]` 不受 `locationId` 影響，永遠是全市目前所有真的觸發中的**一般
 **決策**（Phase B 的完整結果），不管有沒有帶 `locationId`、帶了哪個，內容都一樣**
-——只有 `situationSummary` 才會因為 `locationId` 不同而變。這批是一般決策
-（congestion/mrt/dome/multilingual）而已：incident 的 §2/§5 事件回應**不會**
-出現在這裡（那是 incident 入口的產物，經 `GET /api/incidents/{eventId}/report`
-從 S3 拿）。這是刻意的設計
-選擇：`decisions[]` 給前端結構化的「全市當下發生了什麼」完整資料（例如
-在地圖上標出每個觸發點），`situationSummary` 給的是「幫你把這些濃縮成一段
-話、並聚焦在你關心的地方」的文字。代價是觸發項目一多，單次回應就會變大；
-如果之後要改成 `decisions[]` 也跟著 `locationId` 過濾/裁切，這是
-`decision/handler.py::handler()` 裡組 response 的地方要改，`fetch_cached_view`
-本身已經回傳完整的 pairs，過不過濾是 handler 這層的決定，不用動
-`decision_routing.py`。
+——只有 `citizenText`/`governmentText` 才會因為 `locationId` 不同而變。這批是
+一般決策（congestion/mrt/dome/multilingual）而已：incident 的 §2/§5 事件回應
+**不會**出現在這裡（那是 incident 入口的產物，經
+`GET /api/incidents/{eventId}/report` 從 S3 拿）。這是刻意的設計選擇：
+`decisions[]` 給前端結構化的「全市當下發生了什麼」完整資料（例如在地圖上
+標出每個觸發點），`citizenText`/`governmentText` 給的是「幫你把這些濃縮成
+一段話、並聚焦在你關心的地方」的文字，各自對應一種讀者。代價是觸發項目
+一多，單次回應就會變大；如果之後要改成 `decisions[]` 也跟著 `locationId`
+過濾/裁切，這是 `decision/handler.py::handler()` 裡組 response 的地方要改，
+`fetch_cached_view` 本身已經回傳完整的 pairs，過不過濾是 handler 這層的
+決定，不用動 `decision_routing.py`。
 
 **這是對 `data/api.md` §4 目前文件內容的實質變更**（`locationId` 從必填變
-選填、回應從單一 `aiDecision` 變成 `decisions[]` 陣列 + `situationSummary`）
-——我沒有自己去改那份文件，會另外把確切要改的段落告訴使用者。
+選填、回應從單一 `aiDecision` 變成 `decisions[]` 陣列 + `citizenText` +
+`governmentText`）——我沒有自己去改那份文件，會另外把確切要改的段落告訴
+使用者。
 
 ## 目前不做的事（刻意，不是漏做）
 

@@ -10,7 +10,7 @@ import json
 import pytest
 
 from agent.llm_client import LLMClient
-from agent.router_agent import Trigger, narrate_for_focus, route_triggers
+from agent.router_agent import Narrative, Trigger, narrate_for_focus, route_triggers
 
 
 class FakeLLMClient(LLMClient):
@@ -76,40 +76,61 @@ class TestRouteTriggers:
 
 
 class TestNarrateForFocus:
+    """narrate_for_focus returns a Narrative -- TWO independent texts
+    (citizen_text/government_text), not one summary with an audience switch
+    (2026-08-01: government_text used to simply not exist)."""
+
     def test_no_client_no_triggers_global(self):
-        assert narrate_for_focus([], None, None, llm_client=None) == "目前一切正常，無異常事件。"
+        result = narrate_for_focus([], None, None, llm_client=None)
+        assert isinstance(result, Narrative)
+        assert result.citizen_text == "現在很順，免驚。"
+        assert result.government_text == "目前無需處置事項。"
 
     def test_no_client_no_triggers_with_focus(self):
-        text = narrate_for_focus([], "BS_MRT_BL18", "捷運市政府站", llm_client=None)
-        assert text == "捷運市政府站目前狀況正常。"
+        result = narrate_for_focus([], "BS_MRT_BL18", "捷運市政府站", llm_client=None)
+        assert result.citizen_text == "捷運市政府站現在很順。"
+        assert result.government_text == "捷運市政府站目前無需處置事項。"
 
     def test_no_client_focus_own_message_used(self):
-        items = [{"locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多"}]
-        text = narrate_for_focus(items, "BS_MRT_BL17", "捷運國父紀念館站", llm_client=None)
-        assert "國父紀念館站人潮較多" in text
+        items = [{
+            "locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多",
+            "aiText": "BS_MRT_BL17 Growth_Rate 超過 SOP §3 門檻",
+        }]
+        result = narrate_for_focus(items, "BS_MRT_BL17", "捷運國父紀念館站", llm_client=None)
+        assert "國父紀念館站人潮較多" in result.citizen_text
+        assert "SOP §3" in result.government_text
 
     def test_no_client_focus_mentions_other_locations_while_staying_fine_itself(self):
         """This is the exact behavior the user asked for: focused on a fine
-        location, but still told about trouble elsewhere."""
-        items = [{"locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多，建議改往鄰近站點"}]
-        text = narrate_for_focus(items, "BS_MRT_BL18", "捷運市政府站", llm_client=None)
-        assert "捷運市政府站目前狀況正常" in text
-        assert "國父紀念館站人潮較多" in text
+        location, but still told about trouble elsewhere -- in BOTH texts."""
+        items = [{
+            "locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多，建議改往鄰近站點",
+            "aiText": "BS_MRT_BL17 觸發 SOP §3",
+        }]
+        result = narrate_for_focus(items, "BS_MRT_BL18", "捷運市政府站", llm_client=None)
+        assert "捷運市政府站現在很順" in result.citizen_text
+        assert "國父紀念館站人潮較多" in result.citizen_text
+        assert "捷運市政府站目前無需處置事項" in result.government_text
+        assert "SOP §3" in result.government_text
 
-    def test_no_client_global_summary_joins_every_triggered_item(self):
+    def test_no_client_global_joins_every_triggered_item_in_both_texts(self):
         items = [
-            {"locationId": "RD_TPE_001", "publicMessage": "忠孝東路壅塞"},
-            {"locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多"},
+            {"locationId": "RD_TPE_001", "publicMessage": "忠孝東路壅塞", "aiText": "RD_TPE_001 達 SOP §1 A級"},
+            {"locationId": "BS_MRT_BL17", "publicMessage": "國父紀念館站人潮較多", "aiText": "BS_MRT_BL17 觸發 SOP §3"},
         ]
-        text = narrate_for_focus(items, None, None, llm_client=None)
-        assert "忠孝東路壅塞" in text
-        assert "國父紀念館站人潮較多" in text
+        result = narrate_for_focus(items, None, None, llm_client=None)
+        assert "忠孝東路壅塞" in result.citizen_text
+        assert "國父紀念館站人潮較多" in result.citizen_text
+        assert "SOP §1" in result.government_text
+        assert "SOP §3" in result.government_text
 
     def test_valid_json_response_is_parsed(self):
-        fake = FakeLLMClient(json.dumps({"text": "假的整合回覆"}))
+        fake = FakeLLMClient(json.dumps({"citizenText": "假的市民版", "governmentText": "假的政府版"}))
         result = narrate_for_focus([], None, None, llm_client=fake)
-        assert result == "假的整合回覆"
+        assert result.citizen_text == "假的市民版"
+        assert result.government_text == "假的政府版"
 
     def test_client_exception_falls_back(self):
-        text = narrate_for_focus([], None, None, llm_client=RaisingLLMClient())
-        assert text == "目前一切正常，無異常事件。"
+        result = narrate_for_focus([], None, None, llm_client=RaisingLLMClient())
+        assert result.citizen_text == "現在很順，免驚。"
+        assert result.government_text == "目前無需處置事項。"

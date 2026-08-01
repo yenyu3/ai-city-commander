@@ -10,7 +10,10 @@ key, matching data/api.md's internal-results bucket layout:
     decisions/{scenario_at}/{station_id}__{decision_kind}.json mrt/dome diversion (SOP §3/§4)
     decisions/{scenario_at}/all.json                            multilingual (SOP §6, batched across all stations)
     decisions/{scenario_at}/_triggers.json                      router agent's city-wide sweep (2026-08-01)
-    decisions/{scenario_at}/_summary/{locationId|_global}.json  focused narrative for one caller's view
+    decisions/{scenario_at}/_summary/{locationId|_global}.json  focused integration for one caller's view --
+                                                                 TWO independent structured NarrativeSummary objects
+                                                                 (citizen/government), not free text and not one
+                                                                 summary with an audience switch (2026-08-01)
     incidents/{date}/{eventId}/decisions/{scenario_at}/{kind}.json
                                                                  incident SOP checks (SOP §2/§5, 2026-08-01:
                                                                  keyed under the incident's own folder, NOT
@@ -33,8 +36,8 @@ from datetime import datetime
 from typing import Optional
 
 import s3_common
-from agent.decision_agent import Decision
-from agent.router_agent import Trigger
+from agent.decision_agent import Decision, ReasoningStep
+from agent.router_agent import InterAgencyAction, Narrative, NarrativeSummary, SignalTiming, Trigger
 
 # SOP §6's multilingual judgment runs once per poll across every visible
 # station, not per station -- "all" names that it's the one cross-cutting
@@ -61,6 +64,18 @@ def _decision_from_json(payload: dict) -> Decision:
         reasoning=payload.get("reasoning", ""),
         source=payload.get("source", "cache"),
         public_message=payload.get("publicMessage", ""),
+        # 2026-08-01: was missing entirely -- reasoning_steps got dropped on
+        # every cache round-trip (a cache HIT would silently strip a
+        # decision's reasoningSteps even though the original LLM call
+        # produced them fine; caught live comparing a fresh decide_congestion()
+        # call, which had 5 steps, against the cached response, which had 0).
+        reasoning_steps=[
+            ReasoningStep(
+                order=s["order"], status=s["status"], title=s["title"],
+                detail=s["detail"], sop_ref=s.get("sopRef"),
+            )
+            for s in (payload.get("reasoningSteps") or [])
+        ],
     )
 
 
@@ -72,6 +87,13 @@ def _decision_to_json(decision: Decision, *, title: Optional[str] = None) -> dic
         "reasoning": decision.reasoning,
         "publicMessage": decision.public_message,
         "source": decision.source,
+        "reasoningSteps": [
+            {
+                "order": s.order, "status": s.status, "title": s.title,
+                "detail": s.detail, **({"sopRef": s.sop_ref} if s.sop_ref else {}),
+            }
+            for s in decision.reasoning_steps
+        ],
     }
     if title is not None:
         payload["title"] = title
@@ -208,7 +230,52 @@ def _narrative_key(scenario_at: datetime, location_key: str) -> str:
     return f"decisions/{at}/_summary/{location_key}.json"
 
 
-def fetch_cached_narrative(scenario_at: datetime, location_key: str) -> Optional[str]:
+def _narrative_summary_to_json(summary: NarrativeSummary, *, government: bool) -> dict:
+    payload = {
+        "focusLocationId": summary.focus_location_id,
+        "headline": summary.headline,
+        "text": summary.text,
+        "recommendedActions": summary.recommended_actions,
+        "estimatedRecovery": summary.estimated_recovery,
+        "prioritizedDecisionIds": summary.prioritized_decision_ids,
+    }
+    if government:
+        payload["sopRefs"] = summary.sop_refs
+        payload["signalCoordination"] = [
+            {"intersectionName": t.intersection_name, "adjustPct": t.adjust_pct, "goal": t.goal}
+            for t in summary.signal_coordination
+        ]
+        payload["crossSystemCoordination"] = [
+            {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
+        ]
+        payload["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
+    return payload
+
+
+def _narrative_summary_from_json(payload: dict, *, government: bool) -> NarrativeSummary:
+    summary = NarrativeSummary(
+        focus_location_id=payload.get("focusLocationId"),
+        headline=payload["headline"],
+        text=payload["text"],
+        recommended_actions=payload.get("recommendedActions") or [],
+        estimated_recovery=payload.get("estimatedRecovery") or [],
+        prioritized_decision_ids=payload.get("prioritizedDecisionIds") or [],
+    )
+    if government:
+        summary.sop_refs = payload.get("sopRefs") or []
+        summary.signal_coordination = [
+            SignalTiming(intersection_name=t["intersectionName"], adjust_pct=t["adjustPct"], goal=t["goal"])
+            for t in (payload.get("signalCoordination") or [])
+        ]
+        summary.cross_system_coordination = [
+            InterAgencyAction(agency=a["agency"], text=a["text"], icon=a["icon"])
+            for a in (payload.get("crossSystemCoordination") or [])
+        ]
+        summary.publication_eligible_location_ids = payload.get("publicationEligibleLocationIds") or []
+    return summary
+
+
+def fetch_cached_narrative(scenario_at: datetime, location_key: str) -> Optional[Narrative]:
     from botocore.exceptions import ClientError
 
     try:
@@ -219,11 +286,21 @@ def fetch_cached_narrative(scenario_at: datetime, location_key: str) -> Optional
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return None
         raise
-    return json.loads(obj["Body"].read())["text"]
+    payload = json.loads(obj["Body"].read())
+    return Narrative(
+        citizen=_narrative_summary_from_json(payload["citizen"], government=False),
+        government=_narrative_summary_from_json(payload["government"], government=True),
+    )
 
 
-def save_narrative(*, scenario_at: datetime, location_key: str, narrative: str) -> None:
-    body = json.dumps({"text": narrative}, ensure_ascii=False).encode("utf-8")
+def save_narrative(*, scenario_at: datetime, location_key: str, narrative: Narrative) -> None:
+    body = json.dumps(
+        {
+            "citizen": _narrative_summary_to_json(narrative.citizen, government=False),
+            "government": _narrative_summary_to_json(narrative.government, government=True),
+        },
+        ensure_ascii=False,
+    ).encode("utf-8")
     s3_common.client().put_object(
         Bucket=s3_common.internal_bucket(),
         Key=_narrative_key(scenario_at, location_key),

@@ -30,6 +30,15 @@ from .sop_sections import FULL_SOP_TEXT
 
 
 @dataclass
+class ReasoningStep:
+    order: int
+    status: str  # "info" | "pass" | "fail" | "final"
+    title: str
+    detail: str
+    sop_ref: Optional[str] = None
+
+
+@dataclass
 class Decision:
     triggered: bool
     sop_section_id: Optional[str]
@@ -42,6 +51,13 @@ class Decision:
     # which is written for the government/internal audience and cites SOP
     # articles, thresholds and internal ops details the public must not see.
     public_message: str = ""
+    # 2026-08-01: structured step-by-step trace of the judgment above (same
+    # shape as agent/chat.py's ReasoningStep, so the frontend's existing
+    # ReasoningChain rendering works for both). `reasoning` stays the
+    # free-text government summary; this is the expandable step list. Empty
+    # on the fallback path -- there's no LLM judgment trace to show, only a
+    # single deterministic rule result (reasoning already says so).
+    reasoning_steps: list[ReasoningStep] = field(default_factory=list)
 
 
 _SYSTEM_PROMPT = (
@@ -51,12 +67,22 @@ _SYSTEM_PROMPT = (
     "規則：\n"
     "1. 所有判斷都必須明確引用 SOP 原文條款作為依據，不要臆測 SOP 沒有明文規定的規則。\n"
     "2. 不要重新計算你收到的原始數字（那些已經算好了，直接引用、不要質疑或修改）。\n"
-    "3. 只能輸出一個 JSON 物件，不要有任何 JSON 以外的文字或 markdown 標記，格式：\n"
+    "3. 除了 reasoning 這段完整敘述外，也要把判斷過程拆解成 reasoningSteps 陣列，"
+    "每一步是一個 {\"order\", \"status\", \"title\", \"detail\", \"sopRef\"} 物件："
+    "order 從 1 遞增；status 是 \"info\"（取得輸入資料）、\"pass\"（檢核通過）、"
+    "\"fail\"（候選被排除，僅路徑篩選類判斷需要）、\"final\"（最終結論）四選一；"
+    "title 是這一步的簡短標題；detail 是這一步具體的數據與判斷依據；"
+    "sopRef 是這一步引用的 SOP 條號字串（例如 \"SOP §2\"），沒有引用可省略。"
+    "步驟數量依實際判斷複雜度而定，至少要有一步取得輸入、一步最終結論；"
+    "若判斷牽涉多個候選（例如疏散路徑），每個候選各自的通過/排除都要有一步。\n"
+    "4. 只能輸出一個 JSON 物件，不要有任何 JSON 以外的文字或 markdown 標記，格式：\n"
     '   {"triggered": true 或 false, "sop_section_id": "純數字字串（例如 "2"）或 null，'
     '不要加「第」「條」「SOP」「§」等文字或符號", '
     '"result": {...依情境而定的決定欄位，見指示...}, '
     '"reasoning": "繁體中文說明你的判斷依據，給交通控制中心指揮官看，'
     '需引用 SOP 條號、門檻數字與內部處置細節", '
+    '"reasoningSteps": [{"order": 1, "status": "info/pass/fail/final", "title": "...", '
+    '"detail": "...", "sopRef": "SOP §N（可省略）"}, ...], '
     '"public_message": "給一般民眾看的一句話繁體中文提醒，只講對民眾有用的行動建議'
     '（例如改道、預留時間、避開哪一區），絕對不能出現 SOP 條號、門檻數字、規則名稱、'
     '警力／號誌等內部調度細節；若 triggered 為 false 則留空字串"}'
@@ -103,6 +129,7 @@ def decide(
             reasoning=parsed.get("reasoning", ""),
             source="llm",
             public_message=parsed.get("public_message", "") or "",
+            reasoning_steps=_parse_reasoning_steps(parsed.get("reasoningSteps")),
         )
     except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
         print(
@@ -110,6 +137,26 @@ def decide(
             file=sys.stderr,
         )
         return fallback()
+
+
+def _parse_reasoning_steps(raw: Any) -> list[ReasoningStep]:
+    if not raw:
+        return []
+    steps = []
+    for item in raw:
+        try:
+            steps.append(
+                ReasoningStep(
+                    order=int(item["order"]),
+                    status=item["status"],
+                    title=item["title"],
+                    detail=item["detail"],
+                    sop_ref=item.get("sopRef"),
+                )
+            )
+        except (KeyError, TypeError, ValueError):
+            continue  # a malformed step is dropped, not fatal to the whole decision
+    return steps
 
 
 def _normalize_sop_section_id(raw: Any) -> Optional[str]:
