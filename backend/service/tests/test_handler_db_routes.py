@@ -198,12 +198,14 @@ class TestDecisionCacheAside:
         s3_cache.save_narrative(scenario_at=parsed_scenario_at, location_key="RD_TPE_001", narrative="測試摘要")
 
         result = decision_handler(
-            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:00:00+08:00", "locationId": "RD_TPE_001"}),
+            _event("GET", "/api/decisions", query={"scenarioAt": "2026-05-20T21:01:00+08:00", "locationId": "RD_TPE_001"}),
             None,
         )
         assert result["statusCode"] == 200
         body = json.loads(result["body"])
-        assert body["meta"]["cacheStatus"] == "hit"
+        assert body["meta"]["cacheStatus"] == "slot_hit"
+        assert body["meta"]["resolvedScenarioAt"] == "2026-05-20T21:00:00+08:00"
+        assert body["meta"]["ageMinutes"] == 1
         assert body["focus"] == {"locationId": "RD_TPE_001"}
         assert body["situationSummary"] == "測試摘要"
         assert body["decisions"][0]["locationId"] == "RD_TPE_001"

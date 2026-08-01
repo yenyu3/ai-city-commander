@@ -35,7 +35,7 @@ import json
 from typing import Any
 
 import db
-from api_common import parse_scenario_at
+from api_common import decision_snapshot_at, parse_scenario_at
 from decision_routing import run_worker_phases
 
 
@@ -52,7 +52,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
     location_id = event.get("locationId")  # optional: None/omitted -> global view
     force_refresh = bool(event.get("forceRefresh"))
-    scenario_at = parse_scenario_at(scenario_at_raw)
+    scenario_at = decision_snapshot_at(parse_scenario_at(scenario_at_raw))
 
     try:
         conn = db.connect()
@@ -71,6 +71,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 "status": "ready",
                 "locationId": location_id,
                 "scenarioAt": scenario_at_raw,
+                "resolvedScenarioAt": scenario_at.isoformat(),
                 "triggeredCount": len(pairs),
             }
         ),

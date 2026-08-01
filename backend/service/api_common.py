@@ -27,5 +27,19 @@ def parse_scenario_at(raw: str) -> datetime:
     return dt
 
 
+def decision_snapshot_at(scenario_at: datetime) -> datetime:
+    """Return the 15-minute decision-cache slot containing ``scenario_at``.
+
+    The frontend may use any timestamp, but AI decisions are generated and
+    stored once for each quarter-hour slot. Keeping this calculation shared
+    ensures query Lambdas and the worker always use the same S3 key.
+    """
+    return scenario_at.replace(
+        minute=(scenario_at.minute // 15) * 15,
+        second=0,
+        microsecond=0,
+    )
+
+
 def now_iso() -> str:
     return datetime.now(timezone.utc).isoformat()

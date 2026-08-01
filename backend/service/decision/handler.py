@@ -1,18 +1,11 @@
 """GET /api/decisions?scenarioAt={scenarioAt}&locationId={locationId}? --
-see data/api.md §4. 2026-08-01 redesign: `locationId` is now OPTIONAL and
-the response shape changed from a single `aiDecision` to a `decisions[]`
-array + a `situationSummary` narrative -- see decision_routing.py's module
-docstring for why (the short version: the agent now sees the whole city at
-once every time; `locationId` only steers which focused narrative comes
-back, it no longer selects what gets computed). This is a real change to
-`data/api.md`'s documented contract -- I'm not editing that doc myself, see
-the diff description handed to the user separately.
+see data/api.md §4. ``locationId`` is optional: every decision is computed
+for the city-wide view and it only selects a focused narrative.
 
-Still a pure cache-aside read: `decision_routing.fetch_cached_view` never
-touches RDS or an LLM. `200` on a hit; on a miss, fires
-decision-generator-worker asynchronously (it does the real -- possibly RDS +
-multiple LLM calls -- work, see decision-generator-worker/handler.py) and
-returns `202`.
+The frontend may query any time, while AI results are stored at 15-minute
+slots. This handler rounds down to that slot, reads only its S3 cache, and
+starts decision-generator-worker asynchronously on a miss. It never queries
+RDS or invokes an LLM itself.
 """
 from __future__ import annotations
 
@@ -55,14 +48,16 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if "scenarioAt" not in query:
         return api_common.response(400, {"error": "missing query param: 'scenarioAt'"})
     try:
-        scenario_at = api_common.parse_scenario_at(query["scenarioAt"])
+        requested_scenario_at = api_common.parse_scenario_at(query["scenarioAt"])
     except ValueError:
         return api_common.response(400, {"error": f"invalid scenarioAt: {query['scenarioAt']!r}"})
-    location_id = query.get("locationId") or None
 
-    retrieved_at = api_common.now_iso()
+    scenario_at = api_common.decision_snapshot_at(requested_scenario_at)
+    location_id = query.get("locationId") or None
     focus = {"locationId": location_id} if location_id else None
+    retrieved_at = api_common.now_iso()
     cached = fetch_cached_view(scenario_at, location_id)
+    age_minutes = (requested_scenario_at - scenario_at).total_seconds() / 60
 
     if cached is not None:
         pairs, narrative = cached
@@ -71,10 +66,12 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             {
                 "meta": {
                     "scenarioAt": query["scenarioAt"],
+                    "resolvedScenarioAt": scenario_at.isoformat(),
+                    "ageMinutes": age_minutes,
                     "retrievedAt": retrieved_at,
                     "dataMode": "demo",
                     "source": "decision_snapshot",
-                    "cacheStatus": "hit",
+                    "cacheStatus": "hit" if age_minutes == 0 else "slot_hit",
                 },
                 "focus": focus,
                 "situationSummary": narrative,
@@ -82,22 +79,26 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
             },
         )
 
-    worker_invoke.invoke_async({"scenarioAt": query["scenarioAt"], "locationId": location_id})
+    worker_invoke.invoke_async({"scenarioAt": scenario_at.isoformat(), "locationId": location_id})
     return api_common.response(
         202,
         {
             "meta": {
-                "scenarioAt": query["scenarioAt"], "retrievedAt": retrieved_at,
-                "dataMode": "demo", "cacheStatus": "miss",
+                "scenarioAt": query["scenarioAt"],
+                "resolvedScenarioAt": scenario_at.isoformat(),
+                "ageMinutes": age_minutes,
+                "retrievedAt": retrieved_at,
+                "dataMode": "demo",
+                "cacheStatus": "miss",
             },
             "focus": focus,
             "processing": {
-                "jobId": f"DJOB_{query['scenarioAt']}",
+                "jobId": f"DJOB_{scenario_at.isoformat()}",
                 "status": "queued",
                 "processor": "decision-generator",
                 "queuedAt": retrieved_at,
                 "retryAfterSeconds": 10,
             },
-            "message": "此時間點的 AI 決策尚未產生，系統已開始處理，請稍後再查詢。",
+            "message": "此 15 分鐘時槽的 AI 決策尚未產生，系統已開始處理，請稍後再查詢。",
         },
     )
