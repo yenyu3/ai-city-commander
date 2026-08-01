@@ -441,10 +441,15 @@ def _compute_decision_for_trigger(
 
 # Bounded so a pathological sweep (many simultaneous triggers) doesn't open
 # an unbounded number of concurrent LLM/S3 calls -- these are I/O-bound
-# (network) calls, so threads (not processes) are the right tool, and 8 is
-# comfortably above the handful of triggers a real scenario_at produces
-# today while still capping worst-case fan-out.
-_MAX_PARALLEL_DECISIONS = 8
+# (network) calls, so threads (not processes) are the right tool. Was 8;
+# 2026-08-02 raised to 20 after decision_latency's real-data rerun showed
+# 09:00-13:30's quiet ticks had only a handful of triggers, but 14:15-15:15
+# regularly produced 9-14 simultaneous congestion triggers as the demo day's
+# traffic built up -- past 8, the extra candidates queued for a second
+# batch, roughly doubling that tick's wall-clock time instead of actually
+# running in parallel. 20 covers the observed worst case (14) with headroom
+# without needing a second batch for anything seen in the real dataset.
+_MAX_PARALLEL_DECISIONS = 20
 
 
 def _ensure_decisions(
