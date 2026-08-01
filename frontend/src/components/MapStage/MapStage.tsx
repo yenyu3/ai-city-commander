@@ -55,7 +55,7 @@ export default function MapStage() {
   }, [fieldInspectorPosition]);
 
   useEffect(() => {
-    setDisplayMode(viewerMode === "public" ? "risk" : "flow");
+    setDisplayMode("flow");
     setSelectedSegment(null);
   }, [viewerMode, setSelectedSegment]);
 

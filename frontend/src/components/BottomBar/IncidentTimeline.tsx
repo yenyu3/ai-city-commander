@@ -20,7 +20,6 @@ import styles from "./IncidentTimeline.module.css";
 const BASE_PLAYBACK_SPEED_MS = DEFAULT_PLAYBACK_SPEED_MS;
 const SPEED_OPTIONS = [
   { label: "1x", ms: BASE_PLAYBACK_SPEED_MS },
-  { label: "1.5x", ms: BASE_PLAYBACK_SPEED_MS / 1.5 },
   { label: "2x", ms: BASE_PLAYBACK_SPEED_MS / 2 },
 ];
 
