@@ -380,3 +380,91 @@ class TestChatWithDbContext:
         )
         answer = json.loads(result["body"])["answer"]
         assert answer["sopRefs"] == []
+
+
+class TestPhaseBParallelization:
+    """2026-08-01 perf: _ensure_decisions/run_incident_flow run their
+    cache-miss LLM calls in parallel (ThreadPoolExecutor), not sequentially
+    -- targeting the brief's 60-second replan requirement. Proven here with
+    an artificially slow FakeLLMClient: N triggers at `sleep_seconds` each
+    must finish in roughly one call's duration, not N times that."""
+
+    def test_incident_flow_checks_run_concurrently_not_sequentially(self, monkeypatch):
+        import json as _json
+
+        from agent.llm_client import LLMClient
+
+        sleep_seconds = 0.5
+
+        class _SlowFakeClient(LLMClient):
+            def complete(self, system, prompt, *, max_tokens=1024):
+                time.sleep(sleep_seconds)
+                # sopSectionId doesn't matter for this test -- only that all
+                # three checks (accident/signal_failure/mrt_diversion) fire.
+                return _json.dumps({
+                    "triggered": True, "sop_section_id": "2", "result": {},
+                    "reasoning": "x", "public_message": "x",
+                })
+
+        monkeypatch.setattr("agent.decision_agent.get_configured_llm_client", lambda: _SlowFakeClient())
+
+        import api_common
+
+        scenario_at = api_common.parse_scenario_at("2026-05-20T22:15:00+08:00")
+        conn = db.connect()
+        try:
+            started = time.monotonic()
+            pairs = run_incident_flow(conn, scenario_at, "TPE_2026_ACC_001")
+            elapsed = time.monotonic() - started
+            conn.commit()
+        finally:
+            conn.close()
+
+        # 3 checks (accident/signal_failure/mrt_diversion, since
+        # RD_TPE_002's affected_segment isn't a crowd station here it's only
+        # 2 -- either way, sequential would take >= len(checks)*sleep_seconds)
+        assert len(pairs) >= 2
+        assert elapsed < sleep_seconds * 2  # well under sequential's >= 2*0.5s floor for 2+ checks
+
+    def test_decision_sweep_computes_cache_misses_concurrently(self, monkeypatch):
+        import json as _json
+
+        from agent.llm_client import LLMClient
+
+        sleep_seconds = 0.5
+
+        class _SlowFakeClient(LLMClient):
+            def complete(self, system, prompt, *, max_tokens=1024):
+                time.sleep(sleep_seconds)
+                return _json.dumps({
+                    "triggered": True, "sop_section_id": "1", "result": {"tier": "A", "actions": []},
+                    "reasoning": "x", "public_message": "x",
+                })
+
+        monkeypatch.setattr("agent.decision_agent.get_configured_llm_client", lambda: _SlowFakeClient())
+
+        import api_common
+
+        scenario_at = api_common.parse_scenario_at("2026-05-20T21:00:00+08:00")
+        conn = db.connect()
+        try:
+            data = db.fetch_latest_traffic_snapshots(conn, scenario_at)
+            assert len(data) >= 3  # need multiple segments for this to prove anything
+            from decision_routing import Trigger as _Trigger
+            from decision_routing import _CityData, _ensure_decisions
+
+            city_data = _CityData(
+                current_traffic={t.segment_id: t for t in data},
+                previous_traffic={}, current_crowd={}, previous_crowd={}, incidents={}, segments={},
+            )
+            triggers = [_Trigger(sop_section_id="1", location_id=t.segment_id) for t in data[:3]]
+
+            started = time.monotonic()
+            pairs = _ensure_decisions(conn, scenario_at, city_data, triggers)
+            elapsed = time.monotonic() - started
+            conn.commit()
+        finally:
+            conn.close()
+
+        assert len(pairs) == 3
+        assert elapsed < sleep_seconds * 3  # sequential would be >= 3*0.5s = 1.5s

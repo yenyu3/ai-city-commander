@@ -107,6 +107,30 @@ incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收
   `scenarioAt` 上，不是真實時間，週期性排程沒有明確答案該去掃哪個
   `scenarioAt`，沒有硬猜一個語意出來。
 
+## 效能優化（2026-08-01，針對命題「60 秒內完成路網重規劃」門檻）
+
+- **Phase B / incident flow 內部並行化**（`decision_routing.py`）：
+  `_ensure_decisions`（decision 入口的 cache-miss 計算）跟
+  `run_incident_flow`（incident 入口最多 3 項 SOP 檢查）原本是逐項序列呼叫
+  LLM，改成用 `ThreadPoolExecutor` 並行送出——每一項本來就是獨立的 LLM
+  call，彼此沒有共享可變狀態，天生適合並行。效果：N 個同時觸發項的總耗時
+  從「N 次序列呼叫的總和」（例如 6 項各 5-20 秒可能逼近甚至超過 60 秒）
+  收斂到「約等於最慢那一項單次呼叫的時間」。
+  - **唯一的坑**：`psycopg` 連線不是 thread-safe，`decide_dome_dispersal`
+    需要的 `db.fetch_crowd_history()` 查詢一定要在丟進並行區塊**之前**先序列
+    查完（`_ensure_decisions` 裡的 `dome_history` 預先撈好、當參數傳進並行
+    函式，並行函式本身完全不碰 `conn`）。`run_incident_flow` 的三項檢查則
+    完全不需要 `conn`，可以直接並行。
+  - Phase A（router，本來就只有一次 LLM call）跟 Phase C（narrative，同理）
+    不受影響，沒有並行化的必要。
+
+（原本這裡還有一項「`GET /api/city-state` 輪詢時機會性預熱 decision
+cache」——2026-08-01 撤掉了：確認前端是同時、幾乎同一瞬間打
+city-state 跟 decision，不是先打 city-state、隔一段時間才切去 AI 決策分頁，
+所以「city-state 提早幫 decision 暖機」這個前提不成立，預熱永遠追不上
+幾乎同時到達的 decision 請求，純粹多一次無效的 worker 呼叫，已從
+`city_state/handler.py` 移除。）
+
 ## 15 分鐘快取時槽（`api_common.decision_snapshot_at`）——**只用於 decision mode**
 
 `decision/handler.py` 跟這支 worker 的 handler 在 **`mode: "decision"`** 時，

@@ -40,6 +40,15 @@ calls) work, chosen by the invoking API:
 The decision-vs-incident split is decided by which API invoked the worker
 (`mode`), never by SOP kind or event_id presence -- see _INCIDENT_RESPONSE_KINDS.
 
+2026-08-01 perf: Phase B's cache-miss computations (_ensure_decisions) and
+run_incident_flow's up-to-3 SOP checks are each independent LLM calls with no
+shared mutable state, so both now run their misses/checks in parallel via
+ThreadPoolExecutor instead of a sequential loop -- targeting the brief's
+60-second replan requirement (N sequential ~5-20s LLM calls collapsing to
+roughly one call's duration). psycopg connections aren't thread-safe, so any
+DB read a parallelized branch needs (only dome_dispersal's crowd history) is
+fetched sequentially before the parallel section starts, not from inside it.
+
 SOP §3 (`BS_MRT_BL17`) and §4 (`BS_TPE_DOME`) are deliberately *not* part of
 Phase A's LLM judgment -- there are only ever these two fixed stations, and
 §4's trigger condition needs full crowd history (historical peak >= 30000)
@@ -52,6 +61,7 @@ by an upfront per-location routing decision.
 """
 from __future__ import annotations
 
+from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable, Optional
@@ -288,12 +298,18 @@ def _fetch_cached_decision_for_trigger(trig: Trigger, scenario_at: datetime) -> 
 
 
 def _compute_decision_for_trigger(
-    conn, scenario_at: datetime, data: _CityData, trig: Trigger
+    scenario_at: datetime, data: _CityData, trig: Trigger, dome_history: dict[str, list[CrowdSnapshot]]
 ) -> Optional[Decision]:
-    # Decision-API entry only (see _INCIDENT_RESPONSE_KINDS) -- no accident/
-    # signal_failure branches and no report writing here; the per-incident
-    # §2/§5/§3 judgments + 交控中心建議書 are produced by run_incident_flow
-    # (the incident API entry) instead.
+    """Decision-API entry only (see _INCIDENT_RESPONSE_KINDS) -- no accident/
+    signal_failure branches and no report writing here; the per-incident
+    §2/§5/§3 judgments + 交控中心建議書 are produced by run_incident_flow
+    (the incident API entry) instead.
+
+    Deliberately takes no `conn` -- this runs inside a ThreadPoolExecutor
+    (see _ensure_decisions), and psycopg connections aren't safe to share
+    across threads. `dome_history` is pre-fetched sequentially by the caller
+    before parallelizing (dome_dispersal is the only branch that ever needs
+    RDS beyond what `data` already carries)."""
     if trig.kind == "congestion":
         t = data.current_traffic.get(trig.location_id)
         if t is None:
@@ -314,7 +330,7 @@ def _compute_decision_for_trigger(
         c = data.current_crowd.get(trig.location_id)
         if c is None:
             return None
-        history = db.fetch_crowd_history(conn, trig.location_id, scenario_at)
+        history = dome_history.get(trig.location_id, [])
         decision = decide_dome_dispersal(history, c)
         s3_cache.save_crowd_decision(
             station_id=trig.location_id, scenario_at=scenario_at, decision_kind="dome_dispersal", decision=decision,
@@ -335,6 +351,14 @@ def _compute_decision_for_trigger(
     return decision
 
 
+# Bounded so a pathological sweep (many simultaneous triggers) doesn't open
+# an unbounded number of concurrent LLM/S3 calls -- these are I/O-bound
+# (network) calls, so threads (not processes) are the right tool, and 8 is
+# comfortably above the handful of triggers a real scenario_at produces
+# today while still capping worst-case fan-out.
+_MAX_PARALLEL_DECISIONS = 8
+
+
 def _ensure_decisions(
     conn, scenario_at: datetime, data: _CityData, triggers: list[Trigger]
 ) -> list[tuple[Trigger, Decision]]:
@@ -342,12 +366,44 @@ def _ensure_decisions(
     actually came back `triggered=True` are returned (Phase B is
     authoritative, not Phase A's guess); non-triggered ones are still
     computed+cached so a repeat sweep doesn't redo the work, just excluded
-    from what callers see."""
-    pairs: list[tuple[Trigger, Decision]] = []
-    for trig in triggers:
+    from what callers see.
+
+    2026-08-01: cache misses are computed in parallel (ThreadPoolExecutor) --
+    each miss is an independent LLM call plus its own S3 write, so with N
+    simultaneous triggers this collapses from N sequential ~5-20s calls to
+    roughly the duration of the single slowest one, directly targeting the
+    brief's 60-second replan requirement. Cache hits are read sequentially
+    first (cheap, no reason to parallelize S3 GETs that usually all hit)."""
+    results: dict[int, Optional[Decision]] = {}
+    misses: list[tuple[int, Trigger]] = []
+    for i, trig in enumerate(triggers):
         decision = _fetch_cached_decision_for_trigger(trig, scenario_at)
-        if decision is None:
-            decision = _compute_decision_for_trigger(conn, scenario_at, data, trig)
+        if decision is not None:
+            results[i] = decision
+        else:
+            misses.append((i, trig))
+
+    # dome_dispersal's history query is the only place this function still
+    # needs `conn` -- fetched sequentially, before handing off to worker
+    # threads, since only one station (BS_TPE_DOME) can ever need it.
+    dome_history = {
+        trig.location_id: db.fetch_crowd_history(conn, trig.location_id, scenario_at)
+        for _i, trig in misses
+        if trig.kind == "dome_dispersal"
+    }
+
+    if misses:
+        with ThreadPoolExecutor(max_workers=min(_MAX_PARALLEL_DECISIONS, len(misses))) as pool:
+            futures = {
+                pool.submit(_compute_decision_for_trigger, scenario_at, data, trig, dome_history): i
+                for i, trig in misses
+            }
+            for future, i in futures.items():
+                results[i] = future.result()
+
+    pairs: list[tuple[Trigger, Decision]] = []
+    for i, trig in enumerate(triggers):
+        decision = results.get(i)
         if decision is not None and decision.triggered:
             pairs.append((trig, decision))
     return pairs
@@ -411,7 +467,15 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     This is deliberately disjoint from run_worker_phases (the decision API
     entry): the decision-vs-incident split is decided by which API invoked
     the worker, not by SOP kind or event_id presence. Returns the triggered
-    (trigger, decision) pairs so the worker's response can report a count."""
+    (trigger, decision) pairs so the worker's response can report a count.
+
+    2026-08-01: the up-to-3 SOP checks below are independent LLM calls (no
+    shared mutable state, `conn` isn't touched by any of them -- all their
+    inputs already live in `data`/`incident`) and are run in parallel via
+    ThreadPoolExecutor, same rationale as _ensure_decisions. S3 writes
+    (decision cache + report) happen sequentially afterward, per triggered
+    result -- those are fast relative to the LLM calls and keep the
+    S3-write-order simple to reason about."""
     data = _fetch_city_data(conn, scenario_at)
     incident = data.incidents.get(event_id)
     if incident is None:
@@ -428,9 +492,12 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     if station is not None:
         checks.append(("mrt_diversion", lambda: decide_mrt_diversion(station)))
 
+    with ThreadPoolExecutor(max_workers=len(checks)) as pool:
+        futures = {pool.submit(run): kind for kind, run in checks}
+        decisions = [(futures[future], future.result()) for future in futures]
+
     pairs: list[tuple[Trigger, Decision]] = []
-    for kind, run in checks:
-        decision = run()
+    for kind, decision in decisions:
         if not decision.triggered:
             continue
         s3_cache.save_incident_decision(
