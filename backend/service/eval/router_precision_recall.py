@@ -43,7 +43,6 @@ from dataclasses import dataclass
 import db
 from decision_routing import (
     _always_on_triggers,
-    _attach_event_ids,
     _CityData,
     _ensure_decisions,
     _fetch_city_data,
@@ -80,7 +79,6 @@ def _authoritative_sweep(conn, data: _CityData, scenario_at) -> set[tuple[str, s
         candidates.append(Trigger(sop_section_id="2", location_id=incident.affected_segment))
         candidates.append(Trigger(sop_section_id="5", location_id=incident.affected_segment))
     candidates = [t for t in candidates if t.kind not in _EXCLUDED_KINDS]
-    candidates = _attach_event_ids(candidates, data)
 
     pairs = _ensure_decisions(conn, scenario_at, data, candidates)
     return {(trig.kind, trig.location_id) for trig, _decision in pairs}

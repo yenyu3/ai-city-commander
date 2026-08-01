@@ -130,8 +130,12 @@ _KIND_BY_SOP_SECTION = {
 class Trigger:
     sop_section_id: str
     location_id: str
-    # Populated by decision_routing.py after route_triggers() returns (not
-    # by the LLM/fallback here) -- see decision_routing._attach_event_ids.
+    # Only ever set directly by run_incident_flow, for that incident's own
+    # §2/§5/§3 triggers (the incident API entry). The decision API's city
+    # sweep (_ensure_city_sweep) never sets this -- 2026-08-02: decision and
+    # incident are judged completely independently, so a decision-sweep
+    # trigger never gets cross-tagged with an unrelated incident's event_id
+    # just because it happens to share a location.
     event_id: Optional[str] = None
 
     @property

@@ -291,22 +291,6 @@ def _always_on_triggers(data: _CityData) -> list[Trigger]:
     return triggers
 
 
-def _attach_event_ids(triggers: list[Trigger], data: _CityData) -> list[Trigger]:
-    """Tags any trigger whose location_id is an active incident's
-    affected_segment with that incident's event_id -- regardless of SOP
-    article/kind. This is what lets e.g. TPE_2026_EVT_002 (Crowd_Surge_Injury,
-    SOP §3, affected_segment=BS_MRT_BL17) get its own report even though §3's
-    *decision* is computed the same way whether or not an incident is tied to
-    it (see report_builder integration in _compute_decision_for_trigger)."""
-    by_segment = {i.affected_segment: i.event_id for i in data.incidents.values()}
-    return [
-        Trigger(sop_section_id=t.sop_section_id, location_id=t.location_id, event_id=by_segment[t.location_id])
-        if t.location_id in by_segment
-        else t
-        for t in triggers
-    ]
-
-
 def _ensure_city_sweep(conn, scenario_at: datetime, data: _CityData, *, force_refresh: bool) -> list[Trigger]:
     if not force_refresh:
         cached = s3_cache.fetch_cached_triggers(scenario_at)
@@ -323,8 +307,19 @@ def _ensure_city_sweep(conn, scenario_at: datetime, data: _CityData, *, force_re
     # router's output and _eager_trigger_scan's fallback feed through here) --
     # those are the incident entry's job (run_incident_flow), see the
     # _INCIDENT_RESPONSE_KINDS note.
+    #
+    # 2026-08-02: used to also tag any remaining trigger (congestion/mrt/
+    # dome/multilingual) with an active incident's event_id whenever they
+    # shared a location (_attach_event_ids, now removed) -- the user's
+    # explicit direction is that decision and incident are judged
+    # completely independently, no cross-referencing either way, so a
+    # decision-sweep item's eventId is now always null regardless of
+    # whether an incident happens to exist at the same location. This had
+    # no functional dependency left to break: _compute_decision_for_trigger
+    # never wrote a report off of it (that's run_incident_flow's job alone,
+    # see its own docstring), it was purely a cosmetic field on the API
+    # response.
     triggers = [t for t in triggers if t.kind not in _INCIDENT_RESPONSE_KINDS]
-    triggers = _attach_event_ids(triggers, data)
     s3_cache.save_triggers(scenario_at=scenario_at, triggers=triggers)
     return triggers
 
