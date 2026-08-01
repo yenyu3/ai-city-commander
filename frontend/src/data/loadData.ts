@@ -75,7 +75,6 @@ async function loadCrowd(): Promise<CrowdSnapshot[]> {
  * demo 模式才從既有 CSV 衍生站名；api 模式不補 demo 站名，直接顯示後端 stationId。
  */
 async function loadStationNames(): Promise<Record<string, string>> {
-  if (DATA_SOURCE === "api") return {};
   const csv = await fetchText("/data/signaling_crowd_density.csv");
   const rows = parseCsv<Record<string, string>>(csv);
   const names: Record<string, string> = {};

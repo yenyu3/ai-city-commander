@@ -69,6 +69,8 @@ export interface LiveIncident {
   occurredAt: string;
   /** POST /api/incidents 202 回應帶回的非同步處理狀態，demo 模式不會有值。 */
   processing?: { jobId: string; status: string };
+  /** POST /api/incidents 202 回應 publication.publicManifestUrl（後端相對路徑），demo 模式不會有值。 */
+  publicManifestUrl?: string;
 }
 
 export type Tier = "Normal" | "B" | "A";
@@ -156,6 +158,8 @@ export interface AlertRecord {
   wasElevated?: boolean;
   /** 事件解決的時間戳記 */
   resolvedAt?: string;
+  /** 對應 LiveIncident.publicManifestUrl（後端相對路徑），供民眾模式「現場公告」連到官方公告用。 */
+  publicManifestUrl?: string;
 }
 
 export interface FieldInspectorPosition {

@@ -1,7 +1,8 @@
-import { ChevronDown, Clock3 } from "lucide-react";
-import { useMemo } from "react";
+import { ChevronDown, Clock3, ExternalLink } from "lucide-react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import type { Language } from "../../i18n";
 import { pick, useLanguage } from "../../i18n";
+import { resolvePublicNoticeUrl } from "../../services/publicNotices";
 import { useAppStore } from "../../store/appStore";
 import type { AlertRecord, Tier } from "../../types";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
@@ -161,6 +162,23 @@ export default function PublicAssistantPanel() {
 
   const advisories = alerts.slice(0, 3);
 
+  // 現場公告卡片的「查看官方公告」連結：incident 來源的 alert 會帶 publicManifestUrl
+  // （backend 相對路徑），但那只是當天 manifest.json，還要 fetch 並比對 alertId
+  // 才能拿到真正的公告內容網址（見 services/publicNotices.ts）。
+  const [noticeUrls, setNoticeUrls] = useState<Record<string, string | null>>({});
+  const pendingNoticeFetches = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    for (const alert of advisories) {
+      if (!alert.publicManifestUrl) continue;
+      if (alert.id in noticeUrls || pendingNoticeFetches.current.has(alert.id)) continue;
+      pendingNoticeFetches.current.add(alert.id);
+      resolvePublicNoticeUrl(alert.publicManifestUrl, alert.id)
+        .then((url) => setNoticeUrls((prev) => ({ ...prev, [alert.id]: url })))
+        .catch(() => setNoticeUrls((prev) => ({ ...prev, [alert.id]: null })))
+        .finally(() => pendingNoticeFetches.current.delete(alert.id));
+    }
+  }, [advisories, noticeUrls]);
+
   return (
     <div className={styles.wrap}>
       <div className={styles.heroCard}>
@@ -263,6 +281,17 @@ export default function PublicAssistantPanel() {
                       `Est. ${alert.ete} min until recovery`,
                     )}
                   </span>
+                )}
+                {noticeUrls[alert.id] && (
+                  <a
+                    className={styles.advisoryLink}
+                    href={noticeUrls[alert.id]!}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <ExternalLink size={11} aria-hidden="true" />
+                    {pick(language, "查看官方公告", "View official notice")}
+                  </a>
                 )}
               </div>
             ))}

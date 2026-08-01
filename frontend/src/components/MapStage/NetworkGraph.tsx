@@ -130,7 +130,7 @@ function tierColor(road: RoadPath): Color {
   if (road.isEvacuationSecondary) return [232, 197, 112, 235];
   if (road.tier === "A") return [232, 91, 108, 225];
   if (road.tier === "B") return [228, 169, 78, 225];
-  return [120, 170, 190, 205];
+  return [31, 143, 98, 215];
 }
 
 /** Evenly samples `count` points along an arbitrary-length real polyline. */

@@ -31,8 +31,6 @@ import { DATA_SOURCE } from "../config";
 import * as apiClient from "../services/apiClient";
 import {
   adaptChatAnswer,
-  adaptCityAlerts,
-  adaptCityIncidents,
   adaptCrowd,
   adaptDecisionToPartialAlert,
   adaptTraffic,
@@ -110,8 +108,30 @@ function getInitialViewerMode(): ViewerMode {
   return saved === "public" || saved === "government" ? saved : "government";
 }
 
-function getLiveScenarioAt(): string {
-  return new Date().toISOString();
+const API_SCENARIO_START = "2026-05-20 17:00";
+const API_SCENARIO_END = "2026-05-20 23:00";
+const API_SCENARIO_STEP_MINUTES = 15;
+
+function buildApiScenarioTicks(): string[] {
+  const [date, startTime] = API_SCENARIO_START.split(" ");
+  const [, endTime] = API_SCENARIO_END.split(" ");
+  const [startHour, startMinute] = startTime.split(":").map(Number);
+  const [endHour, endMinute] = endTime.split(":").map(Number);
+  const startTotal = startHour * 60 + startMinute;
+  const endTotal = endHour * 60 + endMinute;
+  const ticks: string[] = [];
+
+  for (let total = startTotal; total <= endTotal; total += API_SCENARIO_STEP_MINUTES) {
+    const hour = String(Math.floor(total / 60)).padStart(2, "0");
+    const minute = String(total % 60).padStart(2, "0");
+    ticks.push(`${date} ${hour}:${minute}`);
+  }
+
+  return ticks;
+}
+
+function getDefaultApiScenarioTime(): string {
+  return API_SCENARIO_START;
 }
 
 interface AppState {
@@ -324,6 +344,7 @@ function buildAccidentAlert(
     id: nextId("alert"),
     timestamp,
     sourceIncidentId: incident.eventId,
+    publicManifestUrl: incident.publicManifestUrl,
     kind: "accident",
     title: `${incidentSegName} ${incident.status === "Closed" ? "封閉" : incident.status}`,
     ruleSummary: `${incidentSegName}封閉，請改道${mainRouteName}，預計延誤 ${ete} 分鐘`,
@@ -462,16 +483,28 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
 
     const trafficRows = adaptTraffic(res.traffic, segmentDefs);
     const crowdRows = adaptCrowd(res.crowd, stationNames);
-    const activeIncidents = adaptCityIncidents(res.activeIncidents);
-    const alerts = adaptCityAlerts(res.alerts);
     const trafficBySegment = new Map(trafficRows.map((t) => [t.segmentId, t] as const));
 
     useAppStore.setState((s) => {
-      const segments: Record<string, SegmentRuntimeState> = {};
-      for (const [id, seg] of Object.entries(s.segments)) {
-        segments[id] = mergeApiSegmentData(seg, trafficBySegment.get(id));
+      const segments: Record<string, SegmentRuntimeState> = { ...s.segments };
+      for (const row of trafficRows) {
+        const def = segmentDefs.get(row.segmentId);
+        const base = segments[row.segmentId] ?? {
+          segmentId: row.segmentId,
+          name: def?.name ?? row.roadName,
+          saturation: 0,
+          avgSpeed: 0,
+          vehicleCount: 0,
+          laneStatus: "Normal",
+          tier: "Normal",
+          isCityTrigger: CITY_TRIGGER_SEGMENTS.includes(row.segmentId),
+          isEvacuationMain: false,
+          isEvacuationSecondary: false,
+          isIncidentSource: false,
+        };
+        segments[row.segmentId] = mergeApiSegmentData(base, trafficBySegment.get(row.segmentId));
       }
-      const stations: Record<string, StationRuntimeState> = {};
+      const stations: Record<string, StationRuntimeState> = { ...s.stations };
       for (const c of crowdRows) {
         stations[c.stationId] = {
           stationId: c.stationId,
@@ -487,15 +520,6 @@ async function refreshCityStateFromApi(timestamp: string): Promise<void> {
         crowd: crowdRows,
         segments,
         stations,
-        activeIncidents,
-        alerts,
-        displayedAlertIds: new Set(alerts.map((alert) => alert.id)),
-        incidentEte: Object.fromEntries(
-          alerts
-            .filter((alert) => alert.sourceIncidentId && alert.ete !== undefined)
-            .map((alert) => [alert.sourceIncidentId as string, alert.ete as number]),
-        ),
-        reasoningLog: alerts[0]?.reasoningSteps ?? [],
       };
     });
   } catch (err) {
@@ -600,7 +624,8 @@ export const useAppStore = create<AppState>((set, get) => ({
     try {
       const data = await loadAllData();
       if (DATA_SOURCE === "api") {
-        const requestedAt = getLiveScenarioAt();
+        const ticks = buildApiScenarioTicks();
+        const firstTime = ticks[0];
         set({
           isLoading: false,
           traffic: [],
@@ -608,13 +633,13 @@ export const useAppStore = create<AppState>((set, get) => ({
           segmentDefs: data.segments,
           allIncidents: [],
           stationNames: data.stationNames,
-          ticks: [requestedAt],
+          ticks,
           tickIndex: 0,
-          currentTime: requestedAt,
-          legDurationMs: 0,
+          currentTime: firstTime,
+          legDurationMs: computeLegDurationMs(ticks, 0, get().playbackSpeed),
           legStartedAt: Date.now(),
           timeOffsetMs: 0,
-          segments: computeSegmentState(data.segments, [], requestedAt),
+          segments: {},
           stations: {},
           roadPaths: data.roadPaths,
           stationCoords: data.stationCoords,
@@ -628,7 +653,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           reasoningLog: [],
           chatMessages: [],
         });
-        void refreshCityStateFromApi(requestedAt);
+        void refreshCityStateFromApi(firstTime);
         return;
       }
 
@@ -692,6 +717,26 @@ export const useAppStore = create<AppState>((set, get) => ({
     const { ticks, traffic, crowd, segmentDefs, playbackSpeed } = get();
     if (ticks.length === 0) return;
     const firstTime = ticks[0];
+    if (DATA_SOURCE === "api") {
+      set({
+        tickIndex: 0,
+        currentTime: firstTime,
+        activeIncidents: [],
+        injectedIncidentIds: new Set(),
+        incidentEte: {},
+        alerts: [],
+        activeAlertId: null,
+        firedAlertKeys: new Set(),
+        displayedAlertIds: new Set(),
+        reasoningLog: [],
+        isPlaying: true,
+        legDurationMs: computeLegDurationMs(ticks, 0, playbackSpeed),
+        legStartedAt: Date.now(),
+        frozenPlayheadPct: null,
+      });
+      void refreshCityStateFromApi(firstTime);
+      return;
+    }
     set({
       tickIndex: 0,
       currentTime: firstTime,
@@ -774,8 +819,6 @@ export const useAppStore = create<AppState>((set, get) => ({
       set({
         tickIndex: newIndex,
         currentTime: timestamp,
-        segments: newSegments,
-        stations: newStations,
         legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
         legStartedAt: Date.now(),
         frozenPlayheadPct: null,
@@ -1029,7 +1072,7 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   submitIncident(incident) {
     if (DATA_SOURCE === "api") {
-      const scenarioAt = toScenarioAt(get().currentTime || getLiveScenarioAt());
+      const scenarioAt = toScenarioAt(get().currentTime || getDefaultApiScenarioTime());
       apiClient
         .createIncident({
           context: { scenarioAt },
@@ -1048,6 +1091,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           const submittedIncident: LiveIncident = {
             ...incident,
             processing: res.processing,
+            publicManifestUrl: res.publication?.publicManifestUrl,
           };
           set((s) => ({
             allIncidents: [
@@ -1142,6 +1186,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         id: nextId("alert"),
         timestamp: get().currentTime,
         sourceIncidentId: incident.eventId,
+        publicManifestUrl: incident.publicManifestUrl,
         kind: "signal_failure",
         title: `${segToName(segmentDefs, incident.affectedSegmentId)} 號誌故障`,
         ruleSummary: `type=Power_Failure，severity=${incident.severity}（獨立於車禍規則判定）`,
@@ -1188,6 +1233,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         id: nextId("alert"),
         timestamp: get().currentTime,
         sourceIncidentId: incident.eventId,
+        publicManifestUrl: incident.publicManifestUrl,
         kind: "accident",
         title: `${incident.location}`,
         ruleSummary: `事件類型 ${incident.type}，不套用車禍疏散演算法（affected_segment 非 RD_ 開頭）`,

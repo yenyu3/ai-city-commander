@@ -3,7 +3,6 @@ import type {
   ChatMessage,
   CrowdSnapshot,
   LaneStatus,
-  LiveIncident,
   RerouteSnapshot,
   RoadSegment,
   Tier,
@@ -13,8 +12,6 @@ import type {
 import type {
   ApiAiDecision,
   ApiChatAnswer,
-  ApiCityAlert,
-  ApiCityIncident,
   ApiCrowdItem,
   ApiReroute,
   ApiTrafficItem,
@@ -25,7 +22,7 @@ function coerceTier(tier: string | undefined): Tier | undefined {
   return tier && (TIERS as string[]).includes(tier) ? (tier as Tier) : undefined;
 }
 
-/** GET /api/city-state 的 traffic[] -> 前端 TrafficSnapshot[]。roadName 為本地 join（見 types.ts 註記）。 */
+/** GET /api/city-state traffic[] -> frontend TrafficSnapshot[]. roadName is joined locally. */
 export function adaptTraffic(
   items: ApiTrafficItem[],
   segmentDefs: Map<string, RoadSegment>,
@@ -42,7 +39,7 @@ export function adaptTraffic(
   }));
 }
 
-/** GET /api/city-state 的 crowd[] -> 前端 CrowdSnapshot[]。locationName 為本地 join（見 types.ts 註記）。 */
+/** GET /api/city-state crowd[] -> frontend CrowdSnapshot[]. locationName is joined locally. */
 export function adaptCrowd(
   items: ApiCrowdItem[],
   stationNames: Record<string, string>,
@@ -58,45 +55,7 @@ export function adaptCrowd(
   }));
 }
 
-
-function getIncidentAffectedSegmentId(item: ApiCityIncident): string {
-  return (
-    item.affectedSegmentId ??
-    item.roadImpacts?.find((impact) => impact.segmentId)?.segmentId ??
-    item.stationImpacts?.find((impact) => impact.stationId)?.stationId ??
-    ""
-  );
-}
-
-export function adaptCityIncidents(items: ApiCityIncident[] = []): LiveIncident[] {
-  return items.map((item) => ({
-    eventId: item.eventId,
-    type: item.type,
-    location: item.location,
-    affectedSegmentId: getIncidentAffectedSegmentId(item),
-    affectedRoad: item.affectedRoad,
-    status: item.status,
-    severity: item.severity,
-    description: item.description,
-    occurredAt: item.occurredAt,
-  }));
-}
-
-export function adaptCityAlerts(items: ApiCityAlert[] = []): AlertRecord[] {
-  return items.map((item) => ({
-    id: item.alertId,
-    timestamp: item.createdAt,
-    sourceIncidentId: item.eventId,
-    kind: coerceAlertKind(item.kind),
-    title: item.title,
-    ruleSummary: item.summary,
-    actions: [],
-    llmText: item.summary,
-    ete: item.eteMinutes,
-  }));
-}
-
-/** POST /api/chat/messages 的 answer -> 前端 ChatMessage。id 由呼叫端（store）產生以維持既有 id 慣例。 */
+/** POST /api/chat/messages answer -> frontend ChatMessage. */
 export function adaptChatAnswer(id: string, answer: ApiChatAnswer, audience: ViewerMode): ChatMessage {
   return {
     id,
@@ -120,7 +79,7 @@ const KNOWN_ALERT_KINDS: AlertRecord["kind"][] = [
 
 function coerceAlertKind(kind: string): AlertRecord["kind"] {
   if ((KNOWN_ALERT_KINDS as string[]).includes(kind)) return kind as AlertRecord["kind"];
-  console.warn(`[apiAdapter] 未知的 decision kind "${kind}"，暫以 "accident" 顯示`);
+  console.warn(`[apiAdapter] Unknown decision kind "${kind}"; falling back to "accident"`);
   return "accident";
 }
 
@@ -142,12 +101,9 @@ function adaptReroute(reroute: ApiReroute | null): RerouteSnapshot | undefined {
 }
 
 /**
- * GET /api/decisions 的 aiDecision -> AlertRecord 的部分欄位，供呼叫端跟本地 rule engine
- * 已產生的 alert 做 `{ ...localAlert, ...adaptDecisionToPartialAlert(decision) }` 合併（後端為權威）。
- *
- * `metrics`/`estimatedRecovery`/`signalCoordination`/`crossSystemCoordination`/
- * `publicationEligibility` 後端範例目前皆為空物件、schema 未定案，故不在此映射，
- * 見 docs/frontend-backend-coordination-issues.md 第 9、11 項。
+ * GET /api/decisions aiDecision -> fields that can enrich an existing frontend alert.
+ * The alert source still comes from the frontend rule engine until the backend exposes
+ * an active-alert/location list API.
  */
 export function adaptDecisionToPartialAlert(decision: ApiAiDecision): Partial<AlertRecord> {
   const partial: Partial<AlertRecord> = {
