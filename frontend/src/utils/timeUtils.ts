@@ -2,6 +2,16 @@ export function parseTimestamp(ts: string): number {
   return new Date(ts.replace(" ", "T")).getTime();
 }
 
+/**
+ * 把 demo 資料集的 raw timestamp（"YYYY-MM-DD HH:MM"，代表台北時間）轉成後端 API
+ * 需要的 `scenarioAt` 格式（ISO 8601 + 時區，見 docs/backend-docs.md），例如
+ * "2026-05-20 21:00" -> "2026-05-20T21:00:00+08:00"。若輸入已經是 ISO 格式（含 "T"）則原樣回傳。
+ */
+export function toScenarioAt(rawTimestamp: string): string {
+  if (rawTimestamp.includes("T")) return rawTimestamp;
+  return `${rawTimestamp.replace(" ", "T")}:00+08:00`;
+}
+
 export function timePct(ts: string, start: string, end: string): number {
   const s = parseTimestamp(start);
   const e = parseTimestamp(end);

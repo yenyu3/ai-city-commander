@@ -9,6 +9,11 @@ export default function ExportReportButton() {
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
 
+  // 不接 GET /api/incidents/{eventId}/report：ready 狀態只回一個 downloadUrl
+  // （"/internal/emergency-reports/..."），但 internal-results bucket 有
+  // aws_s3_bucket_public_access_block（terraform/storage.tf），API Gateway 也沒有
+  // 對應的 "/internal/*" route（terraform/api.tf）——這個 downloadUrl 目前打不通，
+  // 前端沒有能拿到真正報告內容的方式。維持本地把 alerts 組成 JSON 下載。
   function exportJson() {
     const report = alerts
       .slice()

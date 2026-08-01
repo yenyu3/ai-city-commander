@@ -11,8 +11,6 @@ function splitSopRefs(sopRef: string): string[] {
 
 export default function ReasoningChain() {
   const reasoningLog = useAppStore((s) => s.reasoningLog);
-  const alerts = useAppStore((s) => s.alerts);
-  const activeAlertId = useAppStore((s) => s.activeAlertId);
   const { language } = useLanguage();
 
   const sorted = reasoningLog.slice().sort((a, b) => a.order - b.order);

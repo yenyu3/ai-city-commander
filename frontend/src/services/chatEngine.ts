@@ -42,13 +42,13 @@ export function runWhatIf(question: string): ChatAnswer {
       ? (parsePercentNumber(question) ?? 0)
       : 0;
     const snapshot: CrowdSnapshot = {
-      timestamp: "what-if",
+      observedAt: "what-if",
       stationId: "BS_MRT_BL17",
       locationName: "捷運國父紀念館站",
       userCount,
-      stayTimeAvg: 0,
+      stayTimeAvgMinutes: 0,
       growthRate,
-      roamingPct: 0,
+      roamingUserPct: 0,
     };
     const triggered = checkMrtDiversion(snapshot);
     return {
@@ -71,23 +71,23 @@ export function runWhatIf(question: string): ChatAnswer {
     const triggered = checkDomeDispersal(
       [
         {
-          timestamp: "history",
+          observedAt: "history",
           stationId: "BS_TPE_DOME",
           locationName: "大巨蛋場館內",
           userCount: peak,
-          stayTimeAvg: 0,
+          stayTimeAvgMinutes: 0,
           growthRate: 0,
-          roamingPct: 0,
+          roamingUserPct: 0,
         },
       ],
       {
-        timestamp: "what-if",
+        observedAt: "what-if",
         stationId: "BS_TPE_DOME",
         locationName: "大巨蛋場館內",
         userCount: peak,
-        stayTimeAvg: 0,
+        stayTimeAvgMinutes: 0,
         growthRate,
-        roamingPct: 0,
+        roamingUserPct: 0,
       },
     );
     return {
@@ -107,13 +107,13 @@ export function runWhatIf(question: string): ChatAnswer {
     const pct = parsePercentNumber(question) ?? 0;
     const result = checkMultilingualNeeded([
       {
-        timestamp: "what-if",
+        observedAt: "what-if",
         stationId: "BS_XY",
         locationName: "假設站點",
         userCount: 0,
-        stayTimeAvg: 0,
+        stayTimeAvgMinutes: 0,
         growthRate: 0,
-        roamingPct: pct,
+        roamingUserPct: pct,
       },
     ]);
     return {

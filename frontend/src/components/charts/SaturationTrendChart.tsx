@@ -47,9 +47,9 @@ export default function SaturationTrendChart({
     const byTime = new Map<string, Record<string, number | string>>();
     for (const row of traffic) {
       if (!segmentIds.includes(row.segmentId)) continue;
-      const entry = byTime.get(row.timestamp) ?? { timestamp: row.timestamp };
+      const entry = byTime.get(row.observedAt) ?? { timestamp: row.observedAt };
       entry[row.segmentId] = row.saturationScore;
-      byTime.set(row.timestamp, entry);
+      byTime.set(row.observedAt, entry);
     }
     const data = Array.from(byTime.values()).sort((a, b) =>
       String(a.timestamp).localeCompare(String(b.timestamp)),
@@ -60,11 +60,11 @@ export default function SaturationTrendChart({
   const markers = useMemo(
     () =>
       incidents
-        .filter((i) => segmentIds.includes(i.affectedSegment))
+        .filter((i) => segmentIds.includes(i.affectedSegmentId))
         .map((i) => ({
-          timestamp: i.timestamp,
-          segmentId: i.affectedSegment,
-          value: data.find((d) => d.timestamp === i.timestamp)?.[i.affectedSegment],
+          timestamp: i.occurredAt,
+          segmentId: i.affectedSegmentId,
+          value: data.find((d) => d.timestamp === i.occurredAt)?.[i.affectedSegmentId],
         }))
         .filter((m) => typeof m.value === "number"),
     [incidents, segmentIds, data],

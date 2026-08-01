@@ -2,18 +2,11 @@ import { useEffect, useRef, useState } from "react";
 import { Plus, UploadCloud } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
-import { reformatEmbeddedTimestamp } from "../../utils/timeUtils";
 import type { LiveIncident } from "../../types";
 import styles from "./InjectIncidentButton.module.css";
 
-const DEMO_INJECT_COUNT = 3;
-
 export default function InjectIncidentButton() {
-  const allIncidents = useAppStore((s) => s.allIncidents);
-  const injectedIncidentIds = useAppStore((s) => s.injectedIncidentIds);
-  const injectIncident = useAppStore((s) => s.injectIncident);
-  const addIncidents = useAppStore((s) => s.addIncidents);
-  const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const submitIncident = useAppStore((s) => s.submitIncident);
   const { language } = useLanguage();
   const [showMenu, setShowMenu] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
@@ -23,8 +16,8 @@ export default function InjectIncidentButton() {
 
   useEffect(() => {
     if (!uploadStatus) return;
-    const t = setTimeout(() => setUploadStatus(null), 4000);
-    return () => clearTimeout(t);
+    const timer = window.setTimeout(() => setUploadStatus(null), 4000);
+    return () => window.clearTimeout(timer);
   }, [uploadStatus]);
 
   function parseAndAdd(text: string) {
@@ -32,67 +25,111 @@ export default function InjectIncidentButton() {
     try {
       raw = JSON.parse(text);
     } catch {
-      setUploadStatus({ type: "error", message: pick(language, "JSON 格式錯誤，請確認檔案內容", "Invalid JSON — please check the file content") });
+      setUploadStatus({
+        type: "error",
+        message: pick(language, "JSON 格式無效，請檢查檔案內容", "Invalid JSON. Please check the file content."),
+      });
       return;
     }
-    const arr: unknown[] = Array.isArray(raw) ? raw : [raw];
+
+    const items: unknown[] = Array.isArray(raw) ? raw : [raw];
     const valid: LiveIncident[] = [];
     let skipped = 0;
-    for (const item of arr) {
-      if (typeof item !== "object" || item === null) { skipped++; continue; }
-      const i = item as Record<string, unknown>;
+
+    for (const item of items) {
+      if (typeof item !== "object" || item === null) {
+        skipped += 1;
+        continue;
+      }
+
+      const source = item as Record<string, unknown>;
       const incident: LiveIncident = {
-        eventId: String(i.event_id ?? i.eventId ?? ""),
-        type: String(i.type ?? ""),
-        location: String(i.location ?? ""),
-        affectedSegment: String(i.affected_segment ?? i.affectedSegment ?? ""),
-        affectedRoad: i.affected_road != null ? String(i.affected_road) : i.affectedRoad != null ? String(i.affectedRoad) : undefined,
-        status: String(i.status ?? ""),
-        severity: String(i.severity ?? ""),
-        description: String(i.description ?? ""),
-        timestamp: String(i.timestamp ?? ""),
+        eventId: String(source.event_id ?? source.eventId ?? ""),
+        type: String(source.type ?? ""),
+        location: String(source.location ?? ""),
+        affectedSegmentId: String(source.affectedSegmentId ?? source.affected_segment ?? source.affectedSegment ?? ""),
+        affectedRoad:
+          source.affected_road != null
+            ? String(source.affected_road)
+            : source.affectedRoad != null
+              ? String(source.affectedRoad)
+              : undefined,
+        status: String(source.status ?? ""),
+        severity: String(source.severity ?? ""),
+        description: String(source.description ?? ""),
+        occurredAt: String(source.occurredAt ?? source.timestamp ?? ""),
       };
-      if (incident.eventId && incident.type && incident.location && incident.affectedSegment && incident.status && incident.severity && incident.timestamp) {
+
+      if (
+        incident.eventId &&
+        incident.type &&
+        incident.location &&
+        incident.affectedSegmentId &&
+        incident.status &&
+        incident.severity &&
+        incident.occurredAt
+      ) {
         valid.push(incident);
       } else {
-        skipped++;
+        skipped += 1;
       }
     }
+
     if (valid.length === 0) {
-      setUploadStatus({ type: "error", message: pick(language, skipped > 0 ? `所有 ${skipped} 筆事件皆缺少必要欄位` : "檔案中未找到有效事件", skipped > 0 ? `All ${skipped} incident(s) missing required fields` : "No valid incidents found") });
+      setUploadStatus({
+        type: "error",
+        message:
+          skipped > 0
+            ? pick(language, `${skipped} 筆事件缺少必要欄位`, `All ${skipped} incident(s) are missing required fields`)
+            : pick(language, "找不到有效事件", "No valid incidents found"),
+      });
       return;
     }
-    addIncidents(valid);
-    setUploadStatus({ type: "ok", message: pick(language, skipped > 0 ? `已新增 ${valid.length} 筆，略過 ${skipped} 筆` : `已新增 ${valid.length} 筆事件`, skipped > 0 ? `Added ${valid.length}, skipped ${skipped}` : `Added ${valid.length} incident(s)`) });
+
+    valid.forEach(submitIncident);
+    setUploadStatus({
+      type: "ok",
+      message:
+        skipped > 0
+          ? pick(language, `已加入 ${valid.length} 筆，略過 ${skipped} 筆`, `Added ${valid.length}, skipped ${skipped}`)
+          : pick(language, `已加入 ${valid.length} 筆事件`, `Added ${valid.length} incident(s)`),
+    });
   }
 
   function readFile(file: File) {
     const reader = new FileReader();
-    reader.onload = (ev) => parseAndAdd(ev.target?.result as string);
-    reader.onerror = () => setUploadStatus({ type: "error", message: pick(language, "檔案讀取失敗", "Failed to read file") });
+    reader.onload = (event) => parseAndAdd(String(event.target?.result ?? ""));
+    reader.onerror = () => {
+      setUploadStatus({
+        type: "error",
+        message: pick(language, "讀取檔案失敗", "Failed to read file"),
+      });
+    };
     reader.readAsText(file);
   }
 
-  function handleFileInput(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
+  function handleFileInput(event: React.ChangeEvent<HTMLInputElement>) {
+    const file = event.target.files?.[0];
     if (file) readFile(file);
-    e.target.value = "";
+    event.target.value = "";
   }
 
-  function handleDrop(e: React.DragEvent) {
-    e.preventDefault();
+  function handleDrop(event: React.DragEvent) {
+    event.preventDefault();
     setIsDragOver(false);
-    const file = e.dataTransfer.files?.[0];
+    const file = event.dataTransfer.files?.[0];
     if (file) readFile(file);
   }
 
   useEffect(() => {
     if (!showMenu) return;
+
     function handlePointerDown(event: MouseEvent) {
       if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
         setShowMenu(false);
       }
     }
+
     window.addEventListener("mousedown", handlePointerDown);
     return () => window.removeEventListener("mousedown", handlePointerDown);
   }, [showMenu]);
@@ -102,9 +139,9 @@ export default function InjectIncidentButton() {
       <button
         type="button"
         className={styles.btn}
-        aria-label={pick(language, "注入示範事件", "Inject demo incident")}
-        title={pick(language, "注入示範事件", "Inject demo incident")}
-        onClick={() => setShowMenu((v) => !v)}
+        aria-label={pick(language, "注入緊急事件", "Inject incident")}
+        title={pick(language, "注入緊急事件", "Inject incident")}
+        onClick={() => setShowMenu((value) => !value)}
       >
         <Plus size={16} aria-hidden="true" />
       </button>
@@ -123,35 +160,25 @@ export default function InjectIncidentButton() {
             </div>
           )}
           <div className={styles.menuTitle}>
-            {pick(language, "選擇要注入的事件（Demo）", "Choose an incident to inject (Demo)")}
+            {pick(language, "上傳事件 JSON", "Upload incident JSON")}
           </div>
-          {allIncidents.slice(0, DEMO_INJECT_COUNT).map((incident) => {
-            const injected = injectedIncidentIds.has(incident.eventId);
-            return (
-              <button
-                key={incident.eventId}
-                className={`${styles.option} ${injected ? styles.optionDone : ""}`}
-                disabled={injected}
-                title={reformatEmbeddedTimestamp(incident.description, incident.timestamp, timeOffsetMs)}
-                onClick={() => {
-                  injectIncident(incident.eventId);
-                  setShowMenu(false);
-                }}
-              >
-                <span className={styles.optionIcon}>{injected ? "✓" : "⚠"}</span>
-                <span className={styles.optionText}>{incident.location}</span>
-              </button>
-            );
-          })}
           <div
             className={`${styles.dropzone} ${isDragOver ? styles.dropzoneOver : ""}`}
-            onDragOver={(e) => { e.preventDefault(); setIsDragOver(true); }}
+            onDragOver={(event) => {
+              event.preventDefault();
+              setIsDragOver(true);
+            }}
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
             onClick={() => fileInputRef.current?.click()}
             role="button"
             tabIndex={0}
-            onKeyDown={(e) => e.key === "Enter" && fileInputRef.current?.click()}
+            onKeyDown={(event) => {
+              if (event.key === "Enter" || event.key === " ") {
+                event.preventDefault();
+                fileInputRef.current?.click();
+              }
+            }}
             aria-label={pick(language, "上傳事件 JSON", "Upload incident JSON")}
           >
             <UploadCloud size={18} aria-hidden="true" />

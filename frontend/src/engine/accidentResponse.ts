@@ -2,7 +2,7 @@ import type { EvacuationRouteResult, LiveIncident, RoadSegment } from "../types"
 
 /**
  * 觸發條件（§4.2）：三者同時成立。
- * 刻意只看 affectedSegment 是否為 RD_ 開頭 —— affectedRoad 只是關聯欄位，
+ * 刻意只看 affectedSegmentId 是否為 RD_ 開頭 —— affectedRoad 只是關聯欄位，
  * 不可用來判斷是否進入車禍疏散規則（見驗證用例 B）。
  */
 export function isAccidentTrigger(incident: LiveIncident): boolean {
@@ -10,7 +10,7 @@ export function isAccidentTrigger(incident: LiveIncident): boolean {
     incident.status,
   );
   const severityOk = ["High", "Critical"].includes(incident.severity);
-  const isRoad = incident.affectedSegment.startsWith("RD_");
+  const isRoad = incident.affectedSegmentId.startsWith("RD_");
   return statusOk && severityOk && isRoad;
 }
 

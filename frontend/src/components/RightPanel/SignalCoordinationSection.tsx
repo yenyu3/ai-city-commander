@@ -55,6 +55,13 @@ export default function SignalCoordinationSection() {
 
   return (
     <div className={styles.wrap}>
+      <p className={styles.placeholderNote}>
+        {pick(
+          language,
+          "系統依事件類型產生的初步建議，實際號誌配時與跨機關調度待後端資料到位",
+          "System-generated preliminary suggestion by event type — actual signal timing and inter-agency dispatch pending backend data",
+        )}
+      </p>
       <div className={styles.subLabelRow}>
         <span className={styles.subLabel}>
           {pick(language, "號誌動態配時調整建議", "Signal timing adjustments")}

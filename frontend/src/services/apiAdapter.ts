@@ -1,0 +1,153 @@
+import type {
+  AlertRecord,
+  ChatMessage,
+  CrowdSnapshot,
+  LaneStatus,
+  RerouteSnapshot,
+  RoadSegment,
+  Tier,
+  TrafficSnapshot,
+  ViewerMode,
+} from "../types";
+import type {
+  ApiChatAnswer,
+  ApiCrowdItem,
+  ApiDecisionListItem,
+  ApiReroute,
+  ApiTrafficItem,
+} from "../types/api";
+
+const TIERS: Tier[] = ["Normal", "B", "A"];
+function coerceTier(tier: string | undefined): Tier | undefined {
+  return tier && (TIERS as string[]).includes(tier) ? (tier as Tier) : undefined;
+}
+
+/** GET /api/city-state traffic[] -> frontend TrafficSnapshot[]. roadName is joined locally. */
+export function adaptTraffic(
+  items: ApiTrafficItem[],
+  segmentDefs: Map<string, RoadSegment>,
+): TrafficSnapshot[] {
+  return items.map((item) => ({
+    observedAt: item.observedAt,
+    segmentId: item.segmentId,
+    roadName: segmentDefs.get(item.segmentId)?.name ?? item.segmentId,
+    avgSpeedKph: item.avgSpeedKph,
+    vehicleCount: item.vehicleCount,
+    saturationScore: item.saturationScore,
+    laneStatus: item.laneStatus as LaneStatus,
+    tier: coerceTier(item.tier),
+  }));
+}
+
+/** GET /api/city-state crowd[] -> frontend CrowdSnapshot[]. locationName is joined locally. */
+export function adaptCrowd(
+  items: ApiCrowdItem[],
+  stationNames: Record<string, string>,
+): CrowdSnapshot[] {
+  return items.map((item) => ({
+    observedAt: item.observedAt,
+    stationId: item.stationId,
+    locationName: stationNames[item.stationId] ?? item.stationId,
+    userCount: item.userCount,
+    stayTimeAvgMinutes: item.stayTimeAvgMinutes,
+    growthRate: item.growthRate,
+    roamingUserPct: item.roamingUserPct,
+  }));
+}
+
+/** POST /api/chat/messages answer -> frontend ChatMessage. */
+export function adaptChatAnswer(id: string, answer: ApiChatAnswer, audience: ViewerMode): ChatMessage {
+  return {
+    id,
+    role: "assistant",
+    text: answer.text,
+    audience,
+    sopRefs: answer.sopRefs,
+    ruleResult: answer.ruleResult,
+    reasoningSteps: answer.reasoningSteps,
+    createdAt: Date.parse(answer.createdAt) || Date.now(),
+  };
+}
+
+const KNOWN_ALERT_KINDS: AlertRecord["kind"][] = [
+  "city_response",
+  "accident",
+  "mrt_diversion",
+  "dome_dispersal",
+  "signal_failure",
+  "multilingual",
+];
+
+function coerceAlertKind(kind: string): AlertRecord["kind"] {
+  if (kind === "congestion") return "city_response";
+  if ((KNOWN_ALERT_KINDS as string[]).includes(kind)) return kind as AlertRecord["kind"];
+  console.warn(`[apiAdapter] Unknown decision kind "${kind}"; falling back to "accident"`);
+  return "accident";
+}
+
+/** decision/handler.py's reroute.mainRoute/secondaryRoutes/excluded are bare segmentId
+ *  strings (see types/api.ts's ApiReroute doc comment) — names have to be resolved locally
+ *  from segmentDefs, same as every other segmentId the API hands back. */
+function adaptReroute(
+  reroute: ApiReroute | null,
+  segmentDefs: Map<string, RoadSegment>,
+): RerouteSnapshot | undefined {
+  if (!reroute) return undefined;
+  const nameOf = (segmentId: string) => segmentDefs.get(segmentId)?.name ?? segmentId;
+  return {
+    primaryRouteName: reroute.mainRoute ? nameOf(reroute.mainRoute) : null,
+    secondaryRouteNames: reroute.secondaryRoutes.map(nameOf),
+    excluded: reroute.excluded.map((e) => ({
+      segmentName: nameOf(e.segment_id),
+      reason: e.reason,
+    })),
+    // 後端 decide_accident 有算出 congestion_warning，但 decision/handler.py 沒把它塞進
+    // reroute 物件回傳，這支 API 目前沒有這個資料可用（見 coordination doc）。
+    congestionWarning: false,
+  };
+}
+
+export function adaptDecisionListItemToPartialAlert(
+  decision: ApiDecisionListItem,
+  locationName: string,
+  segmentDefs: Map<string, RoadSegment>,
+): Partial<AlertRecord> {
+  const partial: Partial<AlertRecord> = {
+    kind: coerceAlertKind(decision.kind),
+    title: locationName,
+    llmText: decision.summary.aiText,
+    publicMessage: decision.publicMessage,
+  };
+
+  if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
+    partial.sopRef = decision.summary.sopRefs.join(" / ");
+  }
+  // GET /api/decisions 沒有像 POST /api/chat/messages 一樣附逐步推理鏈（ApiDecisionListItem
+  // 沒有 reasoningSteps 欄位），純 API 決策若不補一個結論步驟，ReasoningChain 會誤判成
+  // 「尚無事件觸發」而整個留白，即使 aiText/actions 都已經有內容。這裡用後端真實回傳的
+  // aiText/sopRefs 組一則「結論」步驟，不是憑空生出推理過程。
+  if (decision.summary.aiText) {
+    partial.reasoningSteps = [
+      {
+        order: 1,
+        status: "final",
+        title: "AI 決策結論",
+        detail: decision.summary.aiText,
+        sopRef: partial.sopRef,
+      },
+    ];
+  }
+  if (decision.recommendedActions.length > 0) {
+    partial.actions = decision.recommendedActions;
+  }
+  if (decision.estimatedRecovery !== null) {
+    partial.ete = decision.estimatedRecovery;
+  }
+  if (decision.eventId) {
+    partial.sourceIncidentId = decision.eventId;
+  }
+  const reroute = adaptReroute(decision.reroute, segmentDefs);
+  if (reroute) partial.reroute = reroute;
+
+  return partial;
+}
