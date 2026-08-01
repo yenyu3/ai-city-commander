@@ -192,6 +192,13 @@ resource "aws_iam_role_policy" "lambda" {
           "${aws_s3_bucket.public_results.arn}/*",
         ]
         }, {
+        # S3 intentionally returns AccessDenied instead of NoSuchKey for a
+        # missing private object unless ListBucket is also allowed. decision/
+        # needs the real miss result to queue its 15-minute-slot worker.
+        Effect   = "Allow"
+        Action   = ["s3:ListBucket"]
+        Resource = aws_s3_bucket.internal_results.arn
+        }, {
         Effect   = "Allow"
         Action   = ["sns:Publish"]
         Resource = aws_sns_topic.emergency.arn
