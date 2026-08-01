@@ -13,6 +13,7 @@ import styles from "./PublicAssistantPanel.module.css";
 type Tone = "ok" | "warn" | "crit";
 
 const TIER_RANK: Record<Tier, number> = { A: 0, B: 1, Normal: 2 };
+const TONE_RANK: Record<Tone, number> = { crit: 0, warn: 1, ok: 2 };
 
 const TILE_RAIL_CLASS: Record<Tone, string> = {
   ok: "tileRailOk",
@@ -118,9 +119,13 @@ export default function PublicAssistantPanel() {
   const topStations = useMemo(
     () =>
       Object.values(stations)
-        .sort((a, b) => b.userCount - a.userCount)
+        .sort((a, b) => {
+          const toneA = crowdMeta(a.roamingPct, a.growthRate, language).tone;
+          const toneB = crowdMeta(b.roamingPct, b.growthRate, language).tone;
+          return TONE_RANK[toneA] - TONE_RANK[toneB] || b.userCount - a.userCount;
+        })
         .slice(0, 3),
-    [stations],
+    [stations, language],
   );
 
   const mostAffectedRoad =
