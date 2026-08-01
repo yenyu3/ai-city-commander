@@ -16,19 +16,6 @@ from typing import Any
 import api_common
 import s3_common
 
-
-def _manifest_key(date: str) -> str:
-    return f"public/{date}/manifest.json"
-
-
-def _load_manifest(bucket: str, date: str) -> dict[str, Any]:
-    try:
-        obj = s3_common.client().get_object(Bucket=bucket, Key=_manifest_key(date))
-        return json.loads(obj["Body"].read())
-    except Exception:  # noqa: BLE001 - no manifest yet is the common case, not an error
-        return {"date": date, "notices": []}
-
-
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     try:
         payload = json.loads(event.get("body") or "{}")
@@ -50,9 +37,6 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
 
     publication_id = f"PUB_{uuid.uuid4().hex[:8]}"
     notice_id = f"{publication_id}_v1"
-    bucket = s3_common.public_bucket()
-    client = s3_common.client()
-
     notice = {
         "noticeId": notice_id,
         "alertId": alert_id,
@@ -60,22 +44,11 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         "languages": languages,
         "messages": messages,
     }
-    client.put_object(
-        Bucket=bucket,
-        Key=f"public/notices/{notice_id}.json",
-        Body=json.dumps(notice, ensure_ascii=False).encode("utf-8"),
-        ContentType="application/json; charset=utf-8",
-        CacheControl="public, max-age=31536000, immutable",
-    )
-
-    manifest = _load_manifest(bucket, date)
-    manifest.setdefault("notices", []).append({"noticeId": notice_id, "alertId": alert_id})
-    client.put_object(
-        Bucket=bucket,
-        Key=_manifest_key(date),
-        Body=json.dumps(manifest, ensure_ascii=False).encode("utf-8"),
-        ContentType="application/json; charset=utf-8",
-        CacheControl="no-store",
+    s3_common.publish_public_notice(
+        date=date,
+        notice_id=notice_id,
+        alert_id=alert_id,
+        notice=notice,
     )
 
     return api_common.response(
