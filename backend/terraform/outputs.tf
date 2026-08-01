@@ -19,8 +19,18 @@ output "database_secret_arn" {
 }
 
 output "database_endpoint" {
-  value       = aws_db_instance.postgres.address
-  description = "Private RDS endpoint; it is reachable only from the Lambda security group."
+  value       = aws_rds_cluster.aurora_postgres.endpoint
+  description = "Private Aurora writer endpoint; it is reachable only from Lambda security groups and the Data API."
+}
+
+output "database_reader_endpoint" {
+  value       = aws_rds_cluster.aurora_postgres.reader_endpoint
+  description = "Private Aurora reader endpoint."
+}
+
+output "aurora_cluster_arn" {
+  value       = aws_rds_cluster.aurora_postgres.arn
+  description = "Aurora cluster ARN for Data API and Query Editor access."
 }
 
 output "database_seed_lambda_name" {

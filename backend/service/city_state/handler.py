@@ -16,11 +16,15 @@ paper over this -- flagging it here so it's visible next time this is read.
 """
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import api_common
 import db
 from rules.congestion_tier import get_tier
+
+
+logger = logging.getLogger(__name__)
 
 
 def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
@@ -40,8 +44,18 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     try:
         traffic = db.fetch_latest_traffic_snapshots(conn, scenario_at)
         crowd = db.fetch_latest_crowd_snapshots(conn, scenario_at)
+    except Exception:  # noqa: BLE001 - do not leak database details to API callers
+        logger.exception("city_state database query failed")
+        return api_common.response(503, {"error": "city-state data is temporarily unavailable"})
     finally:
         conn.close()
+
+    logger.info(
+        "city_state served scenario_at=%s traffic_count=%d crowd_count=%d",
+        query["scenarioAt"],
+        len(traffic),
+        len(crowd),
+    )
 
     return api_common.response(
         200,

@@ -1,12 +1,11 @@
 """PostgreSQL access layer for operational source-of-truth data (road/station
 reference data, traffic/crowd snapshots, incidents).
 
-Connects to the RDS instance provisioned by backend/terraform/ (or a local
+Connects to Aurora PostgreSQL provisioned by backend/terraform/ (or a local
 Postgres for dev/test -- see backend/README.md's "本機 DB 測試" section).
-Reads `DATABASE_URL` (postgresql://user:pass@host:port/dbname); in the real
-Lambda deployment this would instead be assembled from
-`DATABASE_SECRET_ARN` via Secrets Manager (not implemented here yet -- see
-backend/terraform/compute.tf for the env var already wired in).
+Local development supplies `DATABASE_URL`. In Lambda, `DATABASE_SECRET_ARN`
+is resolved through Secrets Manager once per warm execution environment; the
+secret itself is never logged.
 
 Decision *results* (the LLM/rules judgment cache) are not stored here --
 see s3_cache.py, which caches Decision objects in S3 instead (2026-08-01:
@@ -20,6 +19,7 @@ from __future__ import annotations
 
 import json
 import os
+from functools import lru_cache
 from datetime import datetime
 from typing import Any, Optional
 
@@ -31,13 +31,64 @@ from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapsho
 
 
 def connect() -> psycopg.Connection:
+    """Open a PostgreSQL connection using local or deployed configuration.
+
+    `DATABASE_URL` takes precedence so local tests do not require AWS
+    credentials. The deployed Lambda receives only a secret ARN, avoiding a
+    database password in Lambda environment variables.
+    """
     database_url = os.environ.get("DATABASE_URL")
-    if not database_url:
+    if database_url:
+        return psycopg.connect(database_url, row_factory=dict_row)
+
+    secret_arn = os.environ.get("DATABASE_SECRET_ARN")
+    if not secret_arn:
         raise RuntimeError(
-            "DATABASE_URL is not set. For local dev: "
+            "Neither DATABASE_URL nor DATABASE_SECRET_ARN is set. For local dev: "
             "postgresql://postgres:aicity@localhost:5432/aicity"
         )
-    return psycopg.connect(database_url, row_factory=dict_row)
+
+    settings = _get_database_secret(secret_arn)
+    return psycopg.connect(
+        host=settings["host"],
+        port=settings["port"],
+        dbname=settings["database"],
+        user=settings["username"],
+        password=settings["password"],
+        connect_timeout=10,
+        row_factory=dict_row,
+    )
+
+
+@lru_cache(maxsize=1)
+def _get_database_secret(secret_arn: str) -> dict[str, Any]:
+    """Read and validate the Terraform-managed database secret.
+
+    Cache by ARN because Lambda execution environments are reused. This
+    reduces Secrets Manager calls without putting credential values in logs.
+    A cold start naturally refreshes the value after a secret rotation.
+    """
+    try:
+        import boto3
+
+        response = boto3.client("secretsmanager").get_secret_value(SecretId=secret_arn)
+        secret = json.loads(response["SecretString"])
+    except Exception as exc:  # noqa: BLE001 - normalize AWS/JSON failures for callers
+        raise RuntimeError("Unable to read the database connection secret.") from exc
+
+    required_fields = ("host", "port", "database", "username", "password")
+    missing = [field for field in required_fields if not secret.get(field)]
+    if missing:
+        raise RuntimeError(
+            "The database connection secret is missing required connection fields."
+        )
+
+    try:
+        secret["port"] = int(secret["port"])
+    except (TypeError, ValueError) as exc:
+        raise RuntimeError("The database connection secret contains an invalid port.") from exc
+
+    return secret
 
 
 def fetch_latest_traffic_snapshots(
@@ -291,4 +342,3 @@ def insert_incident(
             "source_payload": json.dumps(source_payload, ensure_ascii=False),
         },
     )
-

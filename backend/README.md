@@ -1,7 +1,7 @@
 # Backend：全新環境部署
 
-以下流程適用於尚未建立 Terraform state、RDS、S3、CloudFront、API Gateway 或
-Lambda 的 AWS 帳號／區域。會建立完整基礎設施並將 Demo 資料寫入新的 RDS；不要用於
+以下流程適用於尚未建立 Terraform state、Aurora、S3、CloudFront、API Gateway 或
+Lambda 的 AWS 帳號／區域。會建立完整基礎設施並將 Demo 資料寫入新的 Aurora；不要用於
 已有舊版 schema 的資料庫。
 
 ## 前置條件
@@ -25,7 +25,7 @@ backend/
 ├── service/
 │   ├── city_state/, incident/, decision/, chat/, publication/,
 │   │   report/, decision-generator-worker/   # per-endpoint Lambda containers
-│   ├── db.py                         # RDS access (operational source-of-truth data)
+│   ├── db.py                         # Aurora PostgreSQL access (operational source-of-truth data)
 │   ├── s3_cache.py                   # S3-backed decision cache (see below)
 │   ├── rules/                        # SOP 規則引擎（確定性計算，非 LLM，判斷備援）
 │   └── agent/                        # 判斷層（decision_agent.py/facts.py）+ 敘事層（narrator.py）
@@ -60,7 +60,7 @@ terraform output -raw terraform_state_bucket
 ## 2. 設定部署變數
 
 回到 Terraform 目錄，確認 [`terraform/terraform.tfvars`](terraform/terraform.tfvars)。所有
-環境設定都集中在此檔案：`aws_region`、`project_name`、RDS 規格、選填的 Bedrock 設定、
+環境設定都集中在此檔案：`aws_region`、`project_name`、Aurora Serverless 容量、選填的 Bedrock 設定、
 兩個結果 bucket 名稱與 CORS origin。
 
 S3 bucket 名稱為全 AWS 共用；若預填名稱已被占用，請直接修改
@@ -77,18 +77,18 @@ s3://<state-bucket>/ai-city-commander/dev/terraform.tfstate.tflock
 
 ## 資料庫載入流程
 
-主 Terraform 的 `database_seed.tf` 建立一個私有 `database-seed` Lambda。
+主 Terraform 的 `database.tf` 建立一個私有 `database-seed` Lambda。
 它不經 API Gateway 對外公開，僅由 Terraform 的 `aws_lambda_invocation` 呼叫。
 
 ```text
 terraform apply
-  → 建立 RDS 與 Secrets Manager secret
+  → 建立 Aurora PostgreSQL Serverless v2、Data API 與 Secrets Manager secret
   → 建立 database-seed Lambda（私有子網）
   → Terraform 呼叫 Lambda 一次
-  → Lambda 讀取 Secret 取得 RDS 連線資訊
+  → Lambda 讀取 Secret 取得 Aurora 連線資訊
   → 執行 database/schema.sql
   → 執行 load_demo_data.py
-  → 將 CSV / JSON Demo 資料 upsert 至 RDS
+  → 將 CSV / JSON Demo 資料 upsert 至 Aurora
 ```
 
 載入資料包含道路、站點、道路拓撲、車流快照、人流快照與事故——**不含** SOP
@@ -179,7 +179,7 @@ terraform plan
 terraform apply
 ```
 
-部署會建立：VPC、RDS、Secrets Manager、S3、CloudFront、API Gateway、ECR、各 Lambda、
+部署會建立：VPC、Aurora PostgreSQL Serverless v2、Data API、Secrets Manager、S3、CloudFront、API Gateway、ECR、各 Lambda、
 EventBridge 五分鐘排程與 SNS。
 
 ## 判斷 vs. 計算 vs. 敘事：三層架構
