@@ -1,13 +1,10 @@
 import { useState } from "react";
 import { Clock3 } from "lucide-react";
 import IncidentTimeline from "./IncidentTimeline";
-import IncidentPriorityList from "./IncidentPriorityList";
 import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
 import PanelHeader from "../common/PanelHeader";
 import styles from "./BottomBar.module.css";
-
-const COLLAPSED_PRIORITY_PREVIEW = 2;
 
 export default function BottomBar() {
   const mapExpanded = useAppStore((s) => s.mapExpanded);
@@ -28,7 +25,6 @@ export default function BottomBar() {
       />
       <div className={styles.wrap}>
         <IncidentTimeline />
-        <IncidentPriorityList limit={expanded ? undefined : COLLAPSED_PRIORITY_PREVIEW} />
       </div>
     </div>
   );

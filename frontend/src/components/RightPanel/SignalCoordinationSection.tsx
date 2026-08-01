@@ -12,8 +12,9 @@ const AGENCY_ICON = { train: Train, bus: Bus, shield: ShieldAlert };
 
 export default function SignalCoordinationSection() {
   const alerts = useAppStore((s) => s.alerts);
+  const activeAlertId = useAppStore((s) => s.activeAlertId);
   const { language } = useLanguage();
-  const latest = alerts[0];
+  const latest = alerts.find((a) => a.id === activeAlertId) ?? alerts[0];
   const [plan, setPlan] = useState<OpsCoordinationPlan | null>(null);
 
   useEffect(() => {

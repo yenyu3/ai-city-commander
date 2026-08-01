@@ -5,8 +5,9 @@ import styles from "./RerouteSection.module.css";
 
 export default function RerouteSection() {
   const alerts = useAppStore((s) => s.alerts);
+  const activeAlertId = useAppStore((s) => s.activeAlertId);
   const { language } = useLanguage();
-  const latest = alerts[0];
+  const latest = alerts.find((a) => a.id === activeAlertId) ?? alerts[0];
 
   if (!latest) return null;
 

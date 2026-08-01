@@ -11,6 +11,7 @@ import StationList from "./StationList";
 import InfoPopover from "../common/InfoPopover";
 import CollapsibleSection from "../common/CollapsibleSection";
 import AlertLogList from "../RightPanel/AlertLogList";
+import IncidentPriorityList from "../BottomBar/IncidentPriorityList";
 import styles from "./LeftPanel.module.css";
 
 const TIER_RANK: Record<string, number> = { A: 0, B: 1, Normal: 2 };
@@ -68,6 +69,7 @@ export default function SituationTab() {
 
   return (
     <div className={styles.wrap}>
+      <IncidentPriorityList />
       <div className={styles.riskCard}>
         <span className={styles.riskLabel}>{riskSource.label}</span>
         <span className={styles.riskValue}>{riskSource.value}</span>

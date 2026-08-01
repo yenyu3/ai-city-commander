@@ -13,7 +13,7 @@ export const ALERT_KIND_COLOR: Record<AlertRecord["kind"], string> = {
   city_response: "var(--warn)",
   accident: "var(--crit)",
   signal_failure: "var(--crit)",
-  mrt_diversion: "var(--cyan)",
-  dome_dispersal: "var(--cyan)",
+  mrt_diversion: "var(--warn)",
+  dome_dispersal: "var(--warn)",
   multilingual: "var(--chart-2)",
 };

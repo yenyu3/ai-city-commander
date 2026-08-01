@@ -139,6 +139,14 @@ export interface AlertRecord {
   reasoningSteps?: ReasoningStep[];
   segmentMetrics?: SegmentMetricsSnapshot;
   reroute?: RerouteSnapshot;
+  /** 事件來源："incident" 表示由 injectIncident 注入，其餘為規則觸發 */
+  origin?: "incident";
+  /** 追蹤解決狀態用的路段 ID */
+  trackedSegmentId?: string;
+  /** 是否曾觀察到路段惡化（解決判定的前置條件） */
+  wasElevated?: boolean;
+  /** 事件解決的時間戳記 */
+  resolvedAt?: string;
 }
 
 export interface FieldInspectorPosition {

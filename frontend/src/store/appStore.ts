@@ -142,6 +142,9 @@ interface AppState {
   injectedIncidentIds: Set<string>;
   incidentEte: Record<string, number>;
   alerts: AlertRecord[];
+  /** The alert id that the right panel should display — tracks the most recent alert whose
+   *  timestamp is <= currentTime, so the decision panel stays in sync with the timeline. */
+  activeAlertId: string | null;
   /** `${kind}:${entityId}:${timestamp}` fingerprints of rule-based alerts already fired, so
    *  scrubbing backward past a trigger point and playing forward again doesn't re-fire the
    *  same historical crossing as a duplicate alert. */
@@ -162,7 +165,7 @@ interface AppState {
   setPlaybackSpeed(ms: number): void;
   advanceTime(): void;
   seekTime(timestamp: string): void;
-  injectIncident(incidentId: string): void;
+  injectIncident(incidentId: string, suppressToast?: boolean): void;
   addIncidents(incidents: LiveIncident[]): void;
   sendChatMessage(question: string, audience?: ViewerMode, locationContext?: FieldInspectorPosition | null): void;
   setViewerMode(mode: ViewerMode): void;
@@ -381,15 +384,14 @@ function resolveNearbyRoad(
   return segment ? { name: segment.name, tier: segment.tier } : null;
 }
 
-function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[]) {
-  // The playhead now animates one tick ahead of the committed tickIndex (see
-  // IncidentTimeline), landing on a tick's pixel position at exactly the real time that
-  // tick is committed here — so revealing the marker/toast immediately is already in step
-  // with the animation; no artificial delay needed.
+function pushAlert(alert: AlertRecord, reasoningSteps?: ReasoningStep[], suppressToast = false) {
   useAppStore.setState((s) => ({
     alerts: [alert, ...s.alerts],
+    activeAlertId: alert.id,
     reasoningLog: reasoningSteps ?? s.reasoningLog,
-    displayedAlertIds: s.displayedAlertIds.has(alert.id) ? s.displayedAlertIds : new Set(s.displayedAlertIds).add(alert.id),
+    displayedAlertIds: suppressToast || s.displayedAlertIds.has(alert.id)
+      ? s.displayedAlertIds
+      : new Set(s.displayedAlertIds).add(alert.id),
   }));
 }
 
@@ -438,6 +440,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   injectedIncidentIds: new Set(),
   incidentEte: {},
   alerts: [],
+  activeAlertId: null,
   firedAlertKeys: new Set(),
   displayedAlertIds: new Set(),
   reasoningLog: [],
@@ -516,6 +519,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       injectedIncidentIds: new Set(),
       incidentEte: {},
       alerts: [],
+      activeAlertId: null,
       firedAlertKeys: new Set(),
       displayedAlertIds: new Set(),
       reasoningLog: [],
@@ -548,8 +552,38 @@ export const useAppStore = create<AppState>((set, get) => ({
 
   seekTime(timestamp) {
     const { ticks, traffic, crowd, segmentDefs, segments: prevSegments, stations: prevStations, allIncidents, injectedIncidentIds } = get();
+    const isMovingForward = parseTimestamp(timestamp) >= parseTimestamp(get().currentTime);
+    const currentIdx = get().tickIndex;
+    const targetIdx = ticks.indexOf(timestamp);
+    const isManualSeek = targetIdx !== currentIdx + 1;
     const idx = ticks.indexOf(timestamp);
     const newIndex = idx === -1 ? get().tickIndex : idx;
+
+    // When scrubbing backward, strip alerts/injected incidents whose timestamp is in the
+    // future relative to the seek target so the timeline, right panel, and map overlay
+    // only reflect events that have actually happened at that point in time.
+    if (!isMovingForward) {
+      const futureAlerts = get().alerts.filter((a) => a.timestamp > timestamp);
+      if (futureAlerts.length > 0) {
+        const futureAlertIds = new Set(futureAlerts.map((a) => a.id));
+        const futureIncidentIds = new Set(
+          allIncidents.filter((i) => i.timestamp > timestamp).map((i) => i.eventId),
+        );
+        const newInjected = new Set([...injectedIncidentIds].filter((id) => !futureIncidentIds.has(id)));
+        const newFiredKeys = new Set(
+          [...get().firedAlertKeys].filter((key) => key.split(":").slice(2).join(":") <= timestamp),
+        );
+        set((s) => ({
+          alerts: s.alerts
+            .filter((a) => !futureAlertIds.has(a.id))
+            .map((a) => (a.resolvedAt && a.resolvedAt > timestamp ? { ...a, resolvedAt: undefined, wasElevated: undefined } : a)),
+          activeIncidents: s.activeIncidents.filter((i) => i.timestamp <= timestamp),
+          injectedIncidentIds: newInjected,
+          firedAlertKeys: newFiredKeys,
+          displayedAlertIds: new Set([...s.displayedAlertIds].filter((id) => !futureAlertIds.has(id))),
+        }));
+      }
+    }
 
     const newSegments = computeSegmentState(segmentDefs, traffic, timestamp);
     const newStations = computeStationState(crowd, timestamp);
@@ -576,7 +610,7 @@ export const useAppStore = create<AppState>((set, get) => ({
               saturation: newSegments[id].saturation,
             },
           };
-          pushAlert(alert);
+          pushAlert(alert, undefined, isManualSeek);
           llmAdapter
             .summarize({
               kind: "city_response",
@@ -628,7 +662,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         ],
         sopRef: "SOP §3",
       };
-      pushAlert(alert);
+      pushAlert(alert, undefined, isManualSeek);
       llmAdapter
         .summarize({
           kind: "mrt_diversion",
@@ -680,7 +714,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ],
           sopRef: "SOP §4",
         };
-        pushAlert(alert);
+        pushAlert(alert, undefined, isManualSeek);
         llmAdapter
           .summarize({
             kind: "dome_dispersal",
@@ -729,7 +763,7 @@ export const useAppStore = create<AppState>((set, get) => ({
           ],
           sopRef: "SOP §6",
         };
-        pushAlert(alert);
+        pushAlert(alert, undefined, isManualSeek);
         llmAdapter
           .summarize({
             kind: "multilingual",
@@ -743,6 +777,25 @@ export const useAppStore = create<AppState>((set, get) => ({
       }
     }
 
+    // 事件解決偵測
+    if (isMovingForward) {
+      set((s) => ({
+        alerts: s.alerts.map((a) => {
+          if (a.origin !== "incident" || !a.trackedSegmentId || a.resolvedAt) return a;
+          const { elevated, recovered } = checkIncidentResolution(a.trackedSegmentId, timestamp, newSegments, newStations);
+          if (!a.wasElevated) {
+            return elevated ? { ...a, wasElevated: true } : a;
+          }
+          return recovered ? { ...a, resolvedAt: timestamp } : a;
+        }),
+      }));
+    }
+
+    const alertsAtTime = get().alerts.filter((a) => a.timestamp <= timestamp);
+    const activeAlertId = alertsAtTime.length > 0
+      ? alertsAtTime.reduce((best, a) => a.timestamp >= best.timestamp ? a : best).id
+      : null;
+
     set({
       tickIndex: newIndex,
       currentTime: timestamp,
@@ -751,12 +804,13 @@ export const useAppStore = create<AppState>((set, get) => ({
       legDurationMs: computeLegDurationMs(ticks, newIndex, get().playbackSpeed),
       legStartedAt: Date.now(),
       frozenPlayheadPct: null,
+      activeAlertId,
     });
 
     // 事件自動注入：時鐘走到事件時間點時自動注入（同時仍保留手動按鈕注入能力）
     for (const incident of allIncidents) {
       if (incident.timestamp <= timestamp && !injectedIncidentIds.has(incident.eventId)) {
-        get().injectIncident(incident.eventId);
+        get().injectIncident(incident.eventId, isManualSeek);
       }
     }
   },
@@ -770,7 +824,7 @@ export const useAppStore = create<AppState>((set, get) => ({
     }));
   },
 
-  injectIncident(incidentId) {
+  injectIncident(incidentId, suppressToast = false) {
     const { allIncidents, injectedIncidentIds, segmentDefs, segments } = get();
     if (injectedIncidentIds.has(incidentId)) return;
     const incident = allIncidents.find((i) => i.eventId === incidentId);
@@ -782,6 +836,7 @@ export const useAppStore = create<AppState>((set, get) => ({
       injectedIncidentIds: newInjected,
       activeIncidents: [...s.activeIncidents, incident],
     }));
+    // activeAlertId will be updated after pushAlert adds the new alert
 
     const saturationMap = new Map(
       Object.values(segments).map((s) => [s.segmentId, s.saturation] as const),
@@ -796,7 +851,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().timeOffsetMs,
         segments,
       );
-      pushAlert(alert, alert.reasoningSteps);
+      pushAlert(alert, alert.reasoningSteps, suppressToast);
       set((s) => ({
         incidentEte: { ...s.incidentEte, [incident.eventId]: alert.ete ?? 0 },
         segments: {
@@ -846,7 +901,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sopRef: "SOP §5",
         reasoningSteps: steps,
       };
-      pushAlert(alert, steps);
+      pushAlert(alert, steps, suppressToast);
       llmAdapter
         .summarize({
           kind: "signal_failure",
@@ -887,7 +942,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         sopRef: "SOP §3",
         reasoningSteps: steps,
       };
-      pushAlert(alert, steps);
+      pushAlert(alert, steps, suppressToast);
     }
   },
 

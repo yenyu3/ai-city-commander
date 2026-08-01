@@ -1,13 +1,18 @@
-import { useAppStore } from "../../store/appStore";
 import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import styles from "./ReasoningChain.module.css";
 
 function splitSopRefs(sopRef: string): string[] {
-  return sopRef.split(/[/·／]/).map((ref) => ref.trim()).filter(Boolean);
+  return sopRef
+    .split(/[/·／]/)
+    .map((ref) => ref.trim())
+    .filter(Boolean);
 }
 
 export default function ReasoningChain() {
   const reasoningLog = useAppStore((s) => s.reasoningLog);
+  const alerts = useAppStore((s) => s.alerts);
+  const activeAlertId = useAppStore((s) => s.activeAlertId);
   const { language } = useLanguage();
 
   const sorted = reasoningLog.slice().sort((a, b) => a.order - b.order);
@@ -23,8 +28,12 @@ export default function ReasoningChain() {
   return (
     <div className={styles.wrap}>
       <div className={styles.header}>
-        <div className={styles.title}>{pick(language, "推理步驟", "Reasoning Steps")}</div>
-        {otherSteps.length > 0 && <span className={styles.count}>{otherSteps.length}</span>}
+        <div className={styles.title}>
+          {pick(language, "推理步驟", "Reasoning Steps")}
+        </div>
+        {otherSteps.length > 0 && (
+          <span className={styles.count}>{otherSteps.length}</span>
+        )}
       </div>
       {sorted.length === 0 ? (
         <div className={styles.empty}>
@@ -38,7 +47,9 @@ export default function ReasoningChain() {
         <>
           {finalStep && (
             <div className={styles.conclusion}>
-              <span className={styles.conclusionLabel}>{pick(language, "決策結論", "Decision")}</span>
+              <span className={styles.conclusionLabel}>
+                {pick(language, "決策結論", "Decision")}
+              </span>
               <div className={styles.body}>
                 <div className={styles.stepTitle}>{finalStep.title}</div>
                 <div className={styles.stepDetail}>{finalStep.detail}</div>
@@ -50,13 +61,17 @@ export default function ReasoningChain() {
             <ol className={styles.steps}>
               {otherSteps.map((step, index) => (
                 <li key={step.order} className={styles.step}>
-                  <span className={`${styles.number} ${styles[`number_${step.status}`]}`}>
+                  <span
+                    className={`${styles.number} ${styles[`number_${step.status}`]}`}
+                  >
                     {index + 1}
                   </span>
                   <div className={styles.body}>
                     <div className={styles.stepHead}>
                       <div className={styles.stepTitle}>{step.title}</div>
-                      <span className={`${styles.status} ${styles[`status_${step.status}`]}`}>
+                      <span
+                        className={`${styles.status} ${styles[`status_${step.status}`]}`}
+                      >
                         {statusLabel(step.status)}
                       </span>
                     </div>
@@ -64,7 +79,9 @@ export default function ReasoningChain() {
                     {step.sopRef && (
                       <div className={styles.sopRefs}>
                         {splitSopRefs(step.sopRef).map((ref) => (
-                          <span key={ref} className={styles.sopRef}>{ref}</span>
+                          <span key={ref} className={styles.sopRef}>
+                            {ref}
+                          </span>
                         ))}
                       </div>
                     )}

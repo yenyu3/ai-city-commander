@@ -5,6 +5,16 @@ import { pick, useLanguage } from "../../i18n";
 import { ALERT_KIND_COLOR, ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayShortTime, formatDisplayTimestamp, parseTimestamp, timePct } from "../../utils/timeUtils";
 import type { AlertRecord } from "../../types";
+
+const CLUSTER_PCT_THRESHOLD = 1.5;
+
+interface TimelineMarker {
+  key: string;
+  timestamp: string;
+  color: string;
+  alert: AlertRecord;
+  isResolution: boolean;
+}
 import styles from "./IncidentTimeline.module.css";
 
 const BASE_PLAYBACK_SPEED_MS = 1500;
@@ -18,7 +28,6 @@ export default function IncidentTimeline() {
   const ticks = useAppStore((s) => s.ticks);
   const tickIndex = useAppStore((s) => s.tickIndex);
   const alerts = useAppStore((s) => s.alerts);
-  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
   const seekTime = useAppStore((s) => s.seekTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const isPlaying = useAppStore((s) => s.isPlaying);
@@ -42,23 +51,36 @@ export default function IncidentTimeline() {
     return marks;
   }, [ticks, end]);
 
-  // Alerts that land on the same timestamp render at the same left% and would
-  // otherwise stack exactly on top of each other, leaving only the topmost one
-  // clickable. Fan same-timestamp alerts out vertically so every marker stays
-  // independently clickable/hoverable.
-  const verticalOffsets = useMemo(() => {
-    const groups = new Map<string, AlertRecord[]>();
+  const markers = useMemo<TimelineMarker[]>(() => {
+    const result: TimelineMarker[] = [];
     for (const a of alerts) {
-      const group = groups.get(a.timestamp);
-      if (group) group.push(a);
-      else groups.set(a.timestamp, [a]);
+      result.push({ key: `${a.id}:trigger`, timestamp: a.timestamp, color: ALERT_KIND_COLOR[a.kind], alert: a, isResolution: false });
+      if (a.resolvedAt) {
+        result.push({ key: `${a.id}:resolved`, timestamp: a.resolvedAt, color: "var(--ok)", alert: a, isResolution: true });
+      }
+    }
+    return result;
+  }, [alerts]);
+
+  const markerOffsets = useMemo(() => {
+    const sorted = [...markers].sort((a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
+    const groups: TimelineMarker[][] = [];
+    for (const m of sorted) {
+      const pct = timePct(m.timestamp, start, end);
+      const lastGroup = groups[groups.length - 1];
+      const lastPct = lastGroup ? timePct(lastGroup[lastGroup.length - 1].timestamp, start, end) : null;
+      if (lastGroup && lastPct !== null && pct - lastPct <= CLUSTER_PCT_THRESHOLD) {
+        lastGroup.push(m);
+      } else {
+        groups.push([m]);
+      }
     }
     const offsets = new Map<string, number>();
-    for (const group of groups.values()) {
-      group.forEach((a, i) => offsets.set(a.id, (i - (group.length - 1) / 2) * 14));
+    for (const group of groups) {
+      group.forEach((m, i) => offsets.set(m.key, (i - (group.length - 1) / 2) * 14));
     }
     return offsets;
-  }, [alerts]);
+  }, [markers, start, end]);
 
   if (ticks.length === 0) return null;
 
@@ -80,7 +102,8 @@ export default function IncidentTimeline() {
   const playheadPct = hasNext
     ? timePct(ticks[tickIndex + 1], start, end)
     : (frozenPlayheadPct ?? timePct(ticks[tickIndex], start, end));
-  const visibleAlerts = alerts.filter((a) => displayedAlertIds.has(a.id));
+  const displayedAlertIds = useAppStore((s) => s.displayedAlertIds);
+  const visibleMarkers = markers.filter((m) => displayedAlertIds.has(m.alert.id));
 
   function handleTrackClick(e: React.MouseEvent<HTMLDivElement>) {
     const el = trackRef.current;
@@ -117,23 +140,23 @@ export default function IncidentTimeline() {
           }}
         />
 
-        {visibleAlerts.map((a) => (
+        {visibleMarkers.map((m) => (
           <button
-            key={a.id}
+            key={m.key}
             type="button"
             className={styles.node}
             style={{
-              left: `${timePct(a.timestamp, start, end)}%`,
-              top: `calc(50% + ${verticalOffsets.get(a.id) ?? 0}px)`,
-              background: ALERT_KIND_COLOR[a.kind],
+              left: `${timePct(m.timestamp, start, end)}%`,
+              top: `calc(50% + ${markerOffsets.get(m.key) ?? 0}px)`,
+              background: m.color,
             }}
             onClick={(e) => {
               e.stopPropagation();
-              seekTime(a.timestamp);
+              seekTime(m.timestamp);
             }}
-            onMouseEnter={() => setHovered(a)}
-            onMouseLeave={() => setHovered((h) => (h?.id === a.id ? null : h))}
-            aria-label={a.title}
+            onMouseEnter={() => setHovered(m.alert)}
+            onMouseLeave={() => setHovered((h) => (h?.id === m.alert.id ? null : h))}
+            aria-label={m.alert.title}
           />
         ))}
       </div>

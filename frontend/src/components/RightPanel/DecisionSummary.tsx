@@ -72,11 +72,12 @@ function getPrimaryMetric(
 
 export default function DecisionSummary() {
   const alerts = useAppStore((s) => s.alerts);
+  const activeAlertId = useAppStore((s) => s.activeAlertId);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const stations = useAppStore((s) => s.stations);
   const currentTime = useAppStore((s) => s.currentTime);
   const { language } = useLanguage();
-  const latest = alerts[0];
+  const latest = alerts.find((a) => a.id === activeAlertId) ?? alerts[0];
   const [modalOpen, setModalOpen] = useState(false);
 
   const multilingualTriggered = checkMultilingualNeeded(
