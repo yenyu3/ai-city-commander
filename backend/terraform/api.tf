@@ -9,6 +9,14 @@ resource "aws_apigatewayv2_api" "http" {
   }
 }
 
+# The $default stage serves routes directly at the API endpoint, e.g.
+# https://<api-id>.execute-api.<region>.amazonaws.com/api/city-state.
+resource "aws_apigatewayv2_stage" "default" {
+  api_id      = aws_apigatewayv2_api.http.id
+  name        = "$default"
+  auto_deploy = true
+}
+
 resource "aws_apigatewayv2_integration" "lambda" {
   for_each               = local.api_handlers
   api_id                 = aws_apigatewayv2_api.http.id

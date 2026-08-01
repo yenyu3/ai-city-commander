@@ -1,4 +1,8 @@
 locals {
+  # Lambda accepts a single linux/amd64 image manifest. Buildx provenance/SBOM
+  # attestations can make ECR publish an OCI index that Lambda rejects.
+  image_build_revision = "buildx-linux-amd64-no-attestations-v1"
+
   api_handlers = {
     city_state  = "handler.handler"
     incident    = "handler.handler"
@@ -17,6 +21,7 @@ locals {
   api_images = {
     for name, handler in local.lambda_handlers : name => {
       tag = "sha-${substr(sha256(join("", [
+        local.image_build_revision,
         filesha256("${path.module}/../service/${name}/Dockerfile"),
         filesha256("${path.module}/../service/${name}/handler.py"),
       ])), 0, 16)}"
@@ -37,8 +42,8 @@ resource "aws_lambda_function" "api" {
   environment {
     variables = {
       DATABASE_SECRET_ARN           = aws_secretsmanager_secret.database.arn
-      BEDROCK_AGENTCORE_RUNTIME_ARN = coalesce(var.bedrock_agentcore_runtime_arn, "")
-      BEDROCK_MODEL_ID              = coalesce(var.bedrock_model_id, "")
+      BEDROCK_AGENTCORE_RUNTIME_ARN = var.bedrock_agentcore_runtime_arn == null ? "" : var.bedrock_agentcore_runtime_arn
+      BEDROCK_MODEL_ID              = var.bedrock_model_id == null ? "" : var.bedrock_model_id
       INTERNAL_RESULTS_BUCKET       = aws_s3_bucket.internal_results.bucket
       PUBLIC_RESULTS_BUCKET         = aws_s3_bucket.public_results.bucket
       EMERGENCY_TOPIC_ARN           = aws_sns_topic.emergency.arn
@@ -65,8 +70,8 @@ resource "aws_ecr_repository" "api" {
 }
 
 resource "aws_ecr_lifecycle_policy" "api" {
-  for_each   = aws_ecr_repository.api
-  repository = each.value.name
+  for_each   = local.lambda_handlers
+  repository = aws_ecr_repository.api[each.key].name
 
   policy = jsonencode({
     rules = [{
@@ -90,14 +95,15 @@ resource "terraform_data" "api_image" {
   triggers_replace = {
     repository_url = aws_ecr_repository.api[each.key].repository_url
     image_tag      = each.value.tag
+    build_revision = local.image_build_revision
   }
 
   provisioner "local-exec" {
     interpreter = ["/bin/sh", "-c"]
     command     = <<-EOT
+      set -eu
       aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${split("/", aws_ecr_repository.api[each.key].repository_url)[0]}
-      docker build --platform linux/amd64 --tag ${aws_ecr_repository.api[each.key].repository_url}:${each.value.tag} ${path.module}/../service/${each.key}
-      docker push ${aws_ecr_repository.api[each.key].repository_url}:${each.value.tag}
+      docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push --tag ${aws_ecr_repository.api[each.key].repository_url}:${each.value.tag} ${path.module}/../service/${each.key}
     EOT
   }
 }

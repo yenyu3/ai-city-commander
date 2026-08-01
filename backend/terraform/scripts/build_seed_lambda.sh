@@ -12,11 +12,16 @@ mkdir -p "$PACKAGE_DIR"
 # Install Linux/x86_64 dependencies even when the build runs on macOS.
 python3 -m pip install --upgrade \
   --target "$PACKAGE_DIR" \
+  --ignore-installed \
   --platform manylinux2014_x86_64 \
   --implementation cp \
   --python-version 3.12 \
   --only-binary=:all: \
   -r "$SCRIPT_DIR/requirements.txt"
+
+# `psycopg` imports typing_extensions at runtime. --ignore-installed ensures
+# this dependency is copied even when it already exists on the macOS host.
+test -f "$PACKAGE_DIR/typing_extensions.py"
 
 mkdir -p "$PACKAGE_DIR/backend/terraform/scripts" \
   "$PACKAGE_DIR/backend/terraform/database" \
@@ -26,5 +31,8 @@ cp "$SCRIPT_DIR/seed_handler.py" "$PACKAGE_DIR/"
 cp "$SCRIPT_DIR/load_demo_data.py" "$PACKAGE_DIR/backend/terraform/scripts/"
 cp "$TERRAFORM_DIR/database/schema.sql" "$PACKAGE_DIR/backend/terraform/database/"
 cp "$REPO_ROOT/frontend/public/data/"{city_traffic_flow.csv,signaling_crowd_density.csv,road_network_geometry.json,road_paths.json,station_coords.json,live_incidents.json} "$PACKAGE_DIR/frontend/public/data/"
+
+test -f "$PACKAGE_DIR/seed_handler.py"
+test -f "$PACKAGE_DIR/backend/terraform/scripts/load_demo_data.py"
 
 echo "Created Lambda package source at $PACKAGE_DIR"

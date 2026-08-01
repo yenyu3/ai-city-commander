@@ -25,8 +25,8 @@ try:
     import psycopg
 except ImportError as error:
     raise SystemExit(
-        "Missing dependency: install it with `python3 -m pip install -r "
-        "backend/terraform/scripts/requirements.txt`."
+        "Unable to import psycopg from the deployment package: "
+        f"{error!r}"
     ) from error
 
 

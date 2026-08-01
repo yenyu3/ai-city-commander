@@ -22,6 +22,16 @@ variable "db_instance_class" {
   default     = "db.t4g.micro"
 }
 
+variable "availability_zones" {
+  description = "At least two availability zones in aws_region for public/private subnets."
+  type        = list(string)
+
+  validation {
+    condition     = length(var.availability_zones) >= 2
+    error_message = "availability_zones must contain at least two zones."
+  }
+}
+
 variable "bedrock_agentcore_runtime_arn" {
   description = "Existing AgentCore Runtime ARN. Leave null until the agent container/runtime is deployed."
   type        = string
@@ -55,6 +65,11 @@ variable "public_results_bucket_name" {
   description = "Globally unique private S3 bucket name served to the public through CloudFront."
   type        = string
   default     = "ai-city-commander-public-results"
+}
+
+variable "frontend_bucket_name" {
+  description = "Globally unique private S3 bucket name used as the CloudFront frontend origin."
+  type        = string
 }
 
 variable "cors_allowed_origins" {
