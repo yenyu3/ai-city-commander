@@ -37,6 +37,9 @@ locals {
     decision    = "GET /api/decisions"
     chat        = "POST /api/chat/messages"
     publication = "POST /api/publication"
+    # Experiment-only comparison route. It proxies the same public S3
+    # manifest/notice objects that citizens normally read through CloudFront.
+    notice_proxy = "GET /api/experiments/public-notices"
   }
 }
 

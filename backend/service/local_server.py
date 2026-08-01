@@ -52,6 +52,7 @@ _ROUTES: list[tuple[str, re.Pattern, str]] = [
     ("GET", re.compile(r"^/api/decisions$"), "decision"),
     ("POST", re.compile(r"^/api/chat/messages$"), "chat"),
     ("POST", re.compile(r"^/api/publication$"), "publication"),
+    ("GET", re.compile(r"^/api/experiments/public-notices$"), "notice_proxy"),
 ]
 
 

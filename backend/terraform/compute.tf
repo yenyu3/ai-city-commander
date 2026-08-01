@@ -4,12 +4,13 @@ locals {
   image_build_revision = "buildx-linux-amd64-no-attestations-v1"
 
   api_handlers = {
-    city_state  = "handler.handler"
-    incident    = "handler.handler"
-    report      = "handler.handler"
-    decision    = "handler.handler"
-    chat        = "handler.handler"
-    publication = "handler.handler"
+    city_state   = "handler.handler"
+    incident     = "handler.handler"
+    report       = "handler.handler"
+    decision     = "handler.handler"
+    chat         = "handler.handler"
+    publication  = "handler.handler"
+    notice_proxy = "handler.handler"
   }
 
   scheduled_handlers = {
