@@ -27,6 +27,15 @@
     `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的有沒有觸發
     （§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，Phase A 的
     「目前+前一筆」快照看不到，硬要它猜反而不準）。
+  - **Phase A 看到的是加工過的 facts，不是只有原始欄位**（2026-08-01 補強）：
+    每個路段多帶一個 `is_city_trigger_segment` 布林值（是不是 SOP 第1條認定
+    的觸發路段），每個 active incident 多帶一份 `candidate_alternative_routes`
+    （`agent/facts.py::build_accident_candidates()`，跟 `decide_accident()`
+    自己用的是同一份，只是抽出來共用）。這些欄位本來就是 Phase B 會用到、
+    已經在 `_CityData` 裡撈好的資料重新整理成 JSON，不是額外的 DB/LLM 呼叫，
+    所以幾乎零成本——讓 Phase A 判斷時直接用真實結構化資料，不用自己從 SOP
+    文字反推「這個路段算不算觸發路段」，或憑空猜「這個候選路線容量夠不夠、
+    在不在上游」。
 
 - **Phase B — 聚焦生成**：對 Phase A 找出的每個候選，呼叫既有的
   `agent/facts.py::decide_*()`（完全沒改，一樣是「facts 進、LLM 判斷+生成
@@ -73,12 +82,35 @@
   `scenarioAt` 上，不是真實時間，週期性排程沒有明確答案該去掃哪個
   `scenarioAt`，沒有硬猜一個語意出來。
 
+## 15 分鐘快取時槽（`api_common.decision_snapshot_at`）
+
+`decision/handler.py` 跟這支 worker 的 handler 現在都會先把收到的 `scenarioAt`
+用 `api_common.decision_snapshot_at()` 無條件捨去到 15 分鐘整（例如
+`22:07` 會被捨去成 `22:00`），才拿去查/存快取。這跟前面「Phase A 找『前一筆
+快照時間』」是兩件不同的事，不要搞混：
+
+- **這裡（快取時槽）**：決定「這次查詢/計算要用哪一把 S3 快取 key」，目的是
+  讓同一個 15 分鐘視窗內、時間戳不完全一樣的多次查詢（例如前端每幾秒 poll
+  一次）都能共用同一份已經算好的結果，不用每次都重新觸發整套三階段流程。
+  `decision/handler.py` 的回應會多帶 `resolvedScenarioAt`（實際用的時槽）跟
+  `ageMinutes`（原始查詢時間跟這個時槽差多少分鐘），讓呼叫端知道自己拿到的
+  結果是不是完全對得上自己問的那個確切時間點。
+- **Phase A 的「前一筆快照」**：決定 router 拿到的趨勢比較基準是哪個時間點
+  的路段/站點資料，跟快取 key 完全無關，用的是 `db.fetch_previous_traffic_timestamp`
+  查資料庫裡實際存在的前一筆取樣時間（不是固定往前推 15 分鐘，因為
+  `city_traffic_flow.csv`/`signaling_crowd_density.csv` 的取樣間隔本身不
+  均勻，21:00 前是整點/半小時一次，之後才變 15 分鐘）。
+
 ## 收到 reactive 請求（`{scenarioAt, locationId?, forceRefresh?}`）後做什麼
 
 進 `decision_routing.py::run_worker_phases()`：
 
 1. 解析 `scenarioAt`；缺這個欄位回 `400`。`locationId`/`forceRefresh`
-   都是選填。
+   都是選填。這支 worker 自己也會呼叫 `decision_snapshot_at()` 把收到的
+   `scenarioAt` 捨去到 15 分鐘時槽——不假設呼叫端已經捨去過（`incident/handler.py`
+   的 `forceRefresh` 呼叫就是直接傳原始 `context["scenarioAt"]`，沒有先捨去），
+   所以這裡自己再捨去一次，確保不管誰觸發、傳的是不是精確時間，最後寫進
+   S3 的 key 都是同一把。
 2. `db.connect()` 接 RDS；連不上回 `503`。
 3. 一次性撈出全市資料（`_fetch_city_data`）：目前+前一筆的全部路段流量、
    目前+前一筆的全部站點人流、目前所有 active incidents、完整路網拓撲
@@ -86,9 +118,10 @@
 4. Phase A（`_ensure_city_sweep`）→ Phase B（`_ensure_decisions`）→
    Phase C（`_ensure_narrative`，只針對這次呼叫問的 `locationId`）。
 5. `conn.commit()`、`conn.close()`。
-6. 回傳 `{"status": "ready", "locationId", "scenarioAt", "triggeredCount"}`
+6. 回傳 `{"status": "ready", "locationId", "scenarioAt", "resolvedScenarioAt", "triggeredCount"}`
    ——呼叫端本來就是 fire-and-forget，這個回傳值目前沒有人讀，純粹方便
-   本機測試直接呼叫這支 handler 時看結果。
+   本機測試直接呼叫這支 handler 時看結果。`scenarioAt` 是原始收到的字串，
+   `resolvedScenarioAt` 是捨去到 15 分鐘時槽之後、實際拿去查/存快取用的值。
 
 ## `GET /api/decisions` 的回應長什麼樣（`decision/handler.py`）
 
@@ -97,7 +130,13 @@ RDS/LLM）。命中時 `200`：
 
 ```json
 {
-  "meta": {"...": "...", "cacheStatus": "hit"},
+  "meta": {
+    "scenarioAt": "呼叫端原始傳入的時間",
+    "resolvedScenarioAt": "捨去到15分鐘時槽後的時間",
+    "ageMinutes": "原始時間跟這個時槽差幾分鐘",
+    "cacheStatus": "hit（剛好整槽） 或 slot_hit（同一時槽但非整點查詢）",
+    "...": "..."
+  },
   "focus": {"locationId": "BS_MRT_BL18"} | null,
   "situationSummary": "一段融合文字，聚焦 focus（如果有）但仍帶到其他地方",
   "decisions": [

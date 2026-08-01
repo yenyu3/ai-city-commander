@@ -69,6 +69,42 @@ def decide_congestion(
     )
 
 
+def build_accident_candidates(
+    incident: LiveIncident, segments: dict[str, RoadSegment], saturation: dict[str, float]
+) -> list[dict[str, Any]]:
+    """The structural facts about an incident's candidate alternative routes
+    (capacity/direct-intersection/upstream/current saturation) -- shared by
+    decide_accident()'s own prompt and, since building this costs nothing
+    beyond data already on hand (no extra LLM/DB call), by
+    decision_routing.py's Phase A router snapshot too, so the router can
+    reason about accident candidates with real structural facts instead of
+    just an incident's bare fields."""
+    incident_seg = segments.get(incident.affected_segment)
+    if incident_seg is None:
+        return []
+    candidates: list[dict[str, Any]] = []
+    for alt_id in incident_seg.alternatives:
+        alt = segments.get(alt_id)
+        if alt is None:
+            continue
+        is_direct = alt_id in incident_seg.intersection_ids
+        candidates.append(
+            {
+                "segment_id": alt_id,
+                "name": alt.name,
+                "capacity_vph": alt.capacity_vph,
+                "is_direct_intersection": is_direct,
+                "is_upstream": (
+                    _rules_accident.is_upstream(alt_id, incident_seg, incident.location)
+                    if is_direct
+                    else None
+                ),
+                "current_saturation": saturation.get(alt_id),
+            }
+        )
+    return candidates
+
+
 def decide_accident(
     incident: LiveIncident,
     segments: dict[str, RoadSegment],
@@ -76,28 +112,8 @@ def decide_accident(
     *,
     llm_client: Optional[LLMClient] = None,
 ) -> Decision:
+    candidates = build_accident_candidates(incident, segments, saturation)
     incident_seg = segments.get(incident.affected_segment)
-    candidates: list[dict[str, Any]] = []
-    if incident_seg is not None:
-        for alt_id in incident_seg.alternatives:
-            alt = segments.get(alt_id)
-            if alt is None:
-                continue
-            is_direct = alt_id in incident_seg.intersection_ids
-            candidates.append(
-                {
-                    "segment_id": alt_id,
-                    "name": alt.name,
-                    "capacity_vph": alt.capacity_vph,
-                    "is_direct_intersection": is_direct,
-                    "is_upstream": (
-                        _rules_accident.is_upstream(alt_id, incident_seg, incident.location)
-                        if is_direct
-                        else None
-                    ),
-                    "current_saturation": saturation.get(alt_id),
-                }
-            )
 
     facts = {
         "incident": {

@@ -52,6 +52,7 @@ import report_builder
 import s3_cache
 from agent.decision_agent import Decision
 from agent.facts import (
+    build_accident_candidates,
     decide_accident,
     decide_congestion,
     decide_dome_dispersal,
@@ -60,6 +61,7 @@ from agent.facts import (
     decide_signal_failure,
 )
 from agent.router_agent import Trigger, narrate_for_focus, route_triggers
+from rules.congestion_tier import CITY_TRIGGER_SEGMENTS
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapshot
 
 _MULTILINGUAL_CACHE_KEY = "_ALL_STATIONS_"
@@ -123,11 +125,19 @@ def _crowd_point(c: CrowdSnapshot) -> dict:
 
 
 def _snapshot_json(data: _CityData) -> dict:
+    # Both of these are already-fetched data reshaped, not new DB/LLM calls
+    # -- cheap to hand Phase A the same structural facts Phase B's decide_*()
+    # functions use, instead of making it re-derive them (e.g. from reading
+    # the SOP text) or guess blind. See agent/router_agent.py's system
+    # prompt for how these are used.
+    saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
+
     return {
         "segments": [
             {
                 "segment_id": t.segment_id,
                 "segment_name": t.road_name,
+                "is_city_trigger_segment": t.segment_id in CITY_TRIGGER_SEGMENTS,
                 "current": _traffic_point(t),
                 "previous": _traffic_point(data.previous_traffic[t.segment_id])
                 if t.segment_id in data.previous_traffic
@@ -155,6 +165,7 @@ def _snapshot_json(data: _CityData) -> dict:
                 "status": i.status,
                 "severity": i.severity,
                 "description": i.description,
+                "candidate_alternative_routes": build_accident_candidates(i, data.segments, saturation),
             }
             for i in data.incidents.values()
         ],
