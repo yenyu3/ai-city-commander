@@ -9,6 +9,8 @@ import type {
   ApiErrorResponse,
   ApiPublicationRequest,
   ApiPublicationResponse,
+  ApiPublicManifestResponse,
+  ApiPublicNoticeResponse,
   ApiReportResponse,
 } from "../types/api";
 
@@ -126,4 +128,31 @@ export function publishAlert(payload: ApiPublicationRequest): Promise<ApiPublica
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** 7. GET /api/experiments/public-notices?date=YYYY-MM-DD (manifest) */
+export async function getPublicManifest(
+  date: string,
+): Promise<ApiPublicManifestResponse | null> {
+  try {
+    return await apiFetch<ApiPublicManifestResponse>(
+      `/experiments/public-notices?date=${encodeURIComponent(date)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** 7. GET /api/experiments/public-notices?date=YYYY-MM-DD&noticeId=... */
+export async function getPublicNotice(
+  date: string,
+  noticeId: string,
+): Promise<ApiPublicNoticeResponse | null> {
+  try {
+    return await apiFetch<ApiPublicNoticeResponse>(
+      `/experiments/public-notices?date=${encodeURIComponent(date)}&noticeId=${encodeURIComponent(noticeId)}`,
+    );
+  } catch {
+    return null;
+  }
 }

@@ -1,36 +1,15 @@
 import { Bus, ShieldAlert, Train } from "lucide-react";
-import { useEffect, useState } from "react";
 import { pick, useLanguage } from "../../i18n";
-import {
-  opsCoordinationAdapter,
-  type OpsCoordinationPlan,
-} from "../../services/opsCoordinationAdapter";
 import { useAppStore } from "../../store/appStore";
 import styles from "./SignalCoordinationSection.module.css";
 
-const AGENCY_ICON = { train: Train, bus: Bus, shield: ShieldAlert };
+const AGENCY_ICON: Record<string, typeof Train> = { train: Train, bus: Bus, shield: ShieldAlert };
 
 export default function SignalCoordinationSection() {
   const alerts = useAppStore((s) => s.alerts);
   const activeAlertId = useAppStore((s) => s.activeAlertId);
   const { language } = useLanguage();
   const latest = alerts.find((a) => a.id === activeAlertId) ?? alerts[0];
-  const [plan, setPlan] = useState<OpsCoordinationPlan | null>(null);
-
-  useEffect(() => {
-    if (!latest) {
-      setPlan(null);
-      return;
-    }
-    let cancelled = false;
-    setPlan(null);
-    opsCoordinationAdapter.getCoordinationPlan(latest).then((result) => {
-      if (!cancelled) setPlan(result);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [latest]);
 
   if (!latest) {
     return (
@@ -44,63 +23,65 @@ export default function SignalCoordinationSection() {
     );
   }
 
-  if (!plan) {
+  const signalTimings = latest.signalCoordination?.signalTimings ?? [];
+  const interAgencyActions = latest.crossSystemCoordination?.interAgencyActions ?? [];
+
+  if (signalTimings.length === 0 && interAgencyActions.length === 0) {
     return (
-      <p className={styles.loading}>
-        <span className={styles.spinner} aria-hidden="true" />
-        {pick(language, "協調方案生成中…", "Generating coordination plan…")}
-      </p>
+      <div className={styles.empty}>
+        {pick(language, "此事件無號誌與跨機關資料", "No signal or inter-agency data for this event")}
+      </div>
     );
   }
 
   return (
     <div className={styles.wrap}>
-      <p className={styles.placeholderNote}>
-        {pick(
-          language,
-          "系統依事件類型產生的初步建議，實際號誌配時與跨機關調度待後端資料到位",
-          "System-generated preliminary suggestion by event type — actual signal timing and inter-agency dispatch pending backend data",
-        )}
-      </p>
-      <div className={styles.subLabelRow}>
-        <span className={styles.subLabel}>
-          {pick(language, "號誌動態配時調整建議", "Signal timing adjustments")}
-        </span>
-        <strong className={styles.periodValue}>調整時間：{plan.period}</strong>
-      </div>
-      <ul className={styles.timingList}>
-        {plan.signalTimings.map((row) => (
-          <li key={row.intersectionName} className={styles.timingRow}>
-            <div className={styles.timingHead}>
-              <span>{row.intersectionName}</span>
-              <span className={styles.timingValues}>
-                {pick(language, "綠燈延長", "Green light")} <strong>+{row.adjustPct}%</strong>
-              </span>
-            </div>
-            <p className={styles.timingGoal}>{row.goal}</p>
-          </li>
-        ))}
-      </ul>
+      {signalTimings.length > 0 && (
+        <>
+          <div className={styles.subLabelRow}>
+            <span className={styles.subLabel}>
+              {pick(language, "號誌動態配時調整建議", "Signal timing adjustments")}
+            </span>
+          </div>
+          <ul className={styles.timingList}>
+            {signalTimings.map((row) => (
+              <li key={row.intersectionName} className={styles.timingRow}>
+                <div className={styles.timingHead}>
+                  <span>{row.intersectionName}</span>
+                  <span className={styles.timingValues}>
+                    {pick(language, "綠燈延長", "Green light")} <strong>+{row.adjustPct}%</strong>
+                  </span>
+                </div>
+                <p className={styles.timingGoal}>{row.goal}</p>
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
 
-      <div className={styles.subLabel}>
-        {pick(language, "跨系統聯動請求", "Inter-agency actions")}
-      </div>
-      <ul className={styles.agencyList}>
-        {plan.interAgencyActions.map((action) => {
-          const Icon = AGENCY_ICON[action.icon];
-          return (
-            <li key={action.agency} className={styles.agencyItem}>
-              <div className={styles.iconWrap}>
-                <Icon size={20} aria-hidden="true" />
-              </div>
-              <div>
-                <div className={styles.agencyHead}>{action.agency}</div>
-                <p>{action.text}</p>
-              </div>
-            </li>
-          );
-        })}
-      </ul>
+      {interAgencyActions.length > 0 && (
+        <>
+          <div className={styles.subLabel}>
+            {pick(language, "跨系統聯動請求", "Inter-agency actions")}
+          </div>
+          <ul className={styles.agencyList}>
+            {interAgencyActions.map((action) => {
+              const Icon = AGENCY_ICON[action.icon] ?? ShieldAlert;
+              return (
+                <li key={action.agency} className={styles.agencyItem}>
+                  <div className={styles.iconWrap}>
+                    <Icon size={20} aria-hidden="true" />
+                  </div>
+                  <div>
+                    <div className={styles.agencyHead}>{action.agency}</div>
+                    <p>{action.text}</p>
+                  </div>
+                </li>
+              );
+            })}
+          </ul>
+        </>
+      )}
     </div>
   );
 }

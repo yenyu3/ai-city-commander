@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CrowdSnapshot,
   LaneStatus,
+  NarrativeSummary,
   RerouteSnapshot,
   RoadSegment,
   Tier,
@@ -13,6 +14,8 @@ import type {
   ApiChatAnswer,
   ApiCrowdItem,
   ApiDecisionListItem,
+  ApiGovernmentSummary,
+  ApiNarrativeSummary,
   ApiReroute,
   ApiTrafficItem,
 } from "../types/api";
@@ -114,7 +117,7 @@ export function adaptDecisionListItemToPartialAlert(
 ): Partial<AlertRecord> {
   const partial: Partial<AlertRecord> = {
     kind: coerceAlertKind(decision.kind),
-    title: locationName,
+    title: decision.title ?? locationName,
     llmText: decision.summary.aiText,
     publicMessage: decision.publicMessage,
   };
@@ -122,32 +125,67 @@ export function adaptDecisionListItemToPartialAlert(
   if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
     partial.sopRef = decision.summary.sopRefs.join(" / ");
   }
-  // GET /api/decisions 沒有像 POST /api/chat/messages 一樣附逐步推理鏈（ApiDecisionListItem
-  // 沒有 reasoningSteps 欄位），純 API 決策若不補一個結論步驟，ReasoningChain 會誤判成
-  // 「尚無事件觸發」而整個留白，即使 aiText/actions 都已經有內容。這裡用後端真實回傳的
-  // aiText/sopRefs 組一則「結論」步驟，不是憑空生出推理過程。
-  if (decision.summary.aiText) {
-    partial.reasoningSteps = [
-      {
-        order: 1,
-        status: "final",
-        title: "AI 決策結論",
-        detail: decision.summary.aiText,
-        sopRef: partial.sopRef,
-      },
-    ];
+
+  if (decision.reasoningSteps.length > 0) {
+    partial.reasoningSteps = decision.reasoningSteps;
+  } else if (decision.summary.aiText) {
+    // fallback：後端沒有 reasoningSteps 時補一個結論步驟，避免 ReasoningChain 留白
+    partial.reasoningSteps = [{
+      order: 1,
+      status: "final",
+      title: "AI 決策結論",
+      detail: decision.summary.aiText,
+      sopRef: partial.sopRef,
+    }];
   }
+
   if (decision.recommendedActions.length > 0) {
     partial.actions = decision.recommendedActions;
   }
+
   if (decision.estimatedRecovery !== null) {
-    partial.ete = decision.estimatedRecovery;
+    partial.ete = decision.estimatedRecovery.ete;
+    partial.eteBase = decision.estimatedRecovery.base;
+    partial.etePenalty = decision.estimatedRecovery.penalty;
   }
+
+  if (decision.segmentMetrics) {
+    partial.segmentMetrics = decision.segmentMetrics;
+  }
+
+  if (decision.signalCoordination) {
+    partial.signalCoordination = decision.signalCoordination;
+  }
+
+  if (decision.crossSystemCoordination) {
+    partial.crossSystemCoordination = decision.crossSystemCoordination;
+  }
+
   if (decision.eventId) {
     partial.sourceIncidentId = decision.eventId;
   }
+
   const reroute = adaptReroute(decision.reroute, segmentDefs);
   if (reroute) partial.reroute = reroute;
 
   return partial;
+}
+
+/** GET /api/decisions government/citizen -> frontend NarrativeSummary. */
+export function adaptNarrativeSummary(
+  summary: ApiNarrativeSummary | ApiGovernmentSummary,
+): NarrativeSummary {
+  const gov = summary as ApiGovernmentSummary;
+  return {
+    focusLocationId: summary.focusLocationId,
+    headline: summary.headline,
+    text: summary.text,
+    recommendedActions: summary.recommendedActions,
+    estimatedRecovery: summary.estimatedRecovery,
+    prioritizedDecisionIds: summary.prioritizedDecisionIds,
+    sopRefs: gov.sopRefs,
+    signalCoordination: gov.signalCoordination,
+    crossSystemCoordination: gov.crossSystemCoordination,
+    publicationEligibleLocationIds: gov.publicationEligibleLocationIds,
+  };
 }

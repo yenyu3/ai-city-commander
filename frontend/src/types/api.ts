@@ -116,20 +116,12 @@ export interface ApiReportResponse {
   report: ApiReport;
 }
 
-/** `ApiReportReady.downloadUrl`（例如 "/internal/emergency-reports/{date}/{eventId}/
- *  report-v1.json"）指向的檔案內容本身——對照 backend/service/report_builder.py 的
- *  build_and_save_report() 寫入格式。
- *
- *  目前無法從前端直接 fetch：downloadUrl 指到 internal-results bucket，該 bucket 在
- *  terraform/storage.tf 設了 aws_s3_bucket_public_access_block（完全封鎖公開存取），
- *  且 terraform/api.tf 的 API Gateway route table 也沒有任何 "/internal/*" 對應路由——
- *  這條路徑目前是後端回應裡一個寫好但打不通的欄位，不是前端可以修的問題（report/
- *  handler.py 本身已經有 S3 client，只是用 head_object 探測是否存在，並未把內容讀出來
- *  塞進回應）。留著這個型別只是記錄「檔案內容長什麼樣」，供之後後端把內容直接回傳、
- *  或前端拿到可用下載機制時對照使用。 */
+/** `ApiReportReady.downloadUrl` 指向的 internal bucket 目前前端打不通（bucket 封鎖公開
+ *  存取，API Gateway 也沒有 /internal/* 路由）。改用
+ *  GET /api/experiments/public-notices?date=...&noticeId=PUB_{eventId}_v1 讀取相同內容。
+ *  此型別保留作為 report_builder.build_and_save_report() 寫入格式的文件用途。 */
 export interface ApiIncidentReportContent {
   eventId: string;
-  sopSectionId?: string;
   generatedAt: string;
   incident: {
     type: string;
@@ -139,11 +131,10 @@ export interface ApiIncidentReportContent {
     severity: string;
     description: string;
   };
-  classification?: Record<string, unknown>;
-  /** AI/規則產生的完整研判說明；`source: "fallback"` 時代表當下沒有可用 LLM，改用 SOP 規則生成。 */
-  reasoning: string;
-  publicMessage?: string;
-  source: string;
+  focus: { locationId: string };
+  government: ApiGovernmentSummary;
+  citizen: ApiNarrativeSummary;
+  decisions: ApiDecisionListItem[];
 }
 
 // 4. GET /api/decisions
@@ -163,14 +154,27 @@ export interface ApiRerouteExcluded {
 }
 
 /** decision/handler.py `_decision_item`: `mainRoute`/`secondaryRoutes` are bare segmentId
- *  strings, not `{segmentId, segmentName}` objects — the backend never resolves names.
- *  `congestionWarning`/`recommend_public_transit` are computed in `decide_accident`'s
- *  `decision.result` but never copied into this object by the handler, so they don't exist
- *  on the wire at all (see docs/frontend-backend-coordination-issues.md). */
+ *  strings, not `{segmentId, segmentName}` objects — the backend never resolves names. */
 export interface ApiReroute {
   mainRoute: string | null;
   secondaryRoutes: string[];
   excluded: ApiRerouteExcluded[];
+}
+
+/** decision_routing.decision_detail() — `estimatedRecovery` is now an object carrying
+ *  ete/base/penalty, not a plain minute count. Only non-null for `kind === "accident"`. */
+export interface ApiEstimatedRecovery {
+  ete: number;
+  base?: number;
+  penalty?: number;
+}
+
+export interface ApiSignalCoordination {
+  signalTimings: { intersectionName: string; adjustPct: number; goal: string }[];
+}
+
+export interface ApiCrossSystemCoordination {
+  interAgencyActions: { agency: string; text: string; icon: string }[];
 }
 
 export interface ApiDecisionListItem {
@@ -179,23 +183,74 @@ export interface ApiDecisionListItem {
   kind: string;
   locationId: string;
   eventId: string | null;
+  /** decision_routing.decision_detail(): "{locationName} {kindTitle}" */
+  title: string;
   summary: {
     aiText: string;
     sopRefs?: string[];
   };
+  reasoningSteps: ApiReasoningStep[];
   recommendedActions: string[];
-  /** Only non-null for `kind === "accident"` (decision/handler.py:40); a plain minute count,
-   *  not an object — the base/penalty breakdown (`agent/facts.py`'s `ete_base`/`ete_penalty`)
-   *  is computed backend-side but never surfaced on this endpoint. */
-  estimatedRecovery: number | null;
+  /** Non-null only for `kind === "accident"`. */
+  estimatedRecovery: ApiEstimatedRecovery | null;
   reroute: ApiReroute | null;
+  segmentMetrics: { segmentName: string; flowPcuh: number; saturation: number } | null;
+  signalCoordination: ApiSignalCoordination | null;
+  crossSystemCoordination: ApiCrossSystemCoordination | null;
+  publicationEligibility: { eligible: boolean } | null;
   publicMessage?: string;
 }
 
+/** decision_routing.summary_json() — citizen omits sopRefs/signalCoordination/
+ *  crossSystemCoordination/publicationEligibleLocationIds. */
+export interface ApiNarrativeSummary {
+  focusLocationId: string | null;
+  headline: string;
+  text: string;
+  recommendedActions: string[];
+  /** [{decisionId, locationId, ete}] */
+  estimatedRecovery: { decisionId: string; locationId: string; ete: number }[];
+  prioritizedDecisionIds: string[];
+}
+
+export interface ApiGovernmentSummary extends ApiNarrativeSummary {
+  sopRefs: string[];
+  signalCoordination: { intersectionName: string; adjustPct: number; goal: string }[];
+  crossSystemCoordination: { agency: string; text: string; icon: string }[];
+  publicationEligibleLocationIds: string[];
+}
+
+/** decision/handler.py 200 response — `situationSummary` (old free-text field) is gone;
+ *  replaced by structured `government`/`citizen` NarrativeSummary objects. */
 export interface ApiDecisionListResponse {
   meta: ApiMeta;
   focus?: { locationId: string };
-  situationSummary?: string;
+  government: ApiGovernmentSummary;
+  citizen: ApiNarrativeSummary;
+  decisions: ApiDecisionListItem[];
+}
+
+export interface ApiPublicManifestEntry {
+  noticeId: string;
+  alertId: string;
+  noticeKey: string;
+  publishedAt: string | null;
+}
+
+export interface ApiPublicManifestResponse {
+  date: string;
+  notices: ApiPublicManifestEntry[];
+}
+
+/** GET /api/experiments/public-notices?date=YYYY-MM-DD&noticeId=PUB_{eventId}_v1
+ *  notice_proxy/handler.py — same shape as ApiDecisionListResponse but scoped to one
+ *  incident (decision_routing._write_incident_report_and_notice). */
+export interface ApiPublicNoticeResponse {
+  eventId: string;
+  generatedAt: string;
+  focus: { locationId: string };
+  government: ApiGovernmentSummary;
+  citizen: ApiNarrativeSummary;
   decisions: ApiDecisionListItem[];
 }
 

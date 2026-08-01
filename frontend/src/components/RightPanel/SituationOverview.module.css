@@ -12,6 +12,12 @@
   composes: sectionLabel from "../common/shared.module.css";
 }
 
+.headline {
+  font-size: var(--text-base);
+  font-weight: 600;
+  color: var(--text);
+}
+
 .text {
   font-size: var(--text-base);
   line-height: 1.6;

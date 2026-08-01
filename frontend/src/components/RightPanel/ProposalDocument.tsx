@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { createPortal } from "react-dom";
 import { useAppStore } from "../../store/appStore";
 import { opsCoordinationAdapter, type OpsCoordinationPlan } from "../../services/opsCoordinationAdapter";
+import type { AlertRecord } from "../../types";
 import { ALERT_KIND_LABEL } from "../../utils/alertLabels";
 import { formatDisplayTimestamp } from "../../utils/timeUtils";
 import { pick, useLanguage } from "../../i18n";
@@ -25,21 +26,32 @@ export default function ProposalDocument() {
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const { language } = useLanguage();
   const latest = alerts[0];
-  const [plan, setPlan] = useState<OpsCoordinationPlan | null>(null);
+  const [fallbackPlan, setFallbackPlan] = useState<OpsCoordinationPlan | null>(null);
 
+  // api 模式下後端已提供真實資料；只有兩者都缺少時才 fallback 到模板。
+  const needsFallback = !latest?.signalCoordination && !latest?.crossSystemCoordination;
   useEffect(() => {
-    if (!latest) {
-      setPlan(null);
+    if (!latest || !needsFallback) {
+      setFallbackPlan(null);
       return;
     }
     let cancelled = false;
     opsCoordinationAdapter.getCoordinationPlan(latest).then((result) => {
-      if (!cancelled) setPlan(result);
+      if (!cancelled) setFallbackPlan(result);
     });
-    return () => {
-      cancelled = true;
-    };
-  }, [latest]);
+    return () => { cancelled = true; };
+  }, [latest, needsFallback]);
+
+  function resolveSignalTimings(alert: AlertRecord): OpsCoordinationPlan["signalTimings"] {
+    if (alert.signalCoordination?.signalTimings?.length) return alert.signalCoordination.signalTimings;
+    return fallbackPlan?.signalTimings ?? [];
+  }
+
+  function resolveAgencyActions(alert: AlertRecord): OpsCoordinationPlan["interAgencyActions"] {
+    const actions = alert.crossSystemCoordination?.interAgencyActions;
+    if (actions?.length) return actions as OpsCoordinationPlan["interAgencyActions"];
+    return fallbackPlan?.interAgencyActions ?? [];
+  }
 
   if (!latest) return null;
 
@@ -142,48 +154,49 @@ export default function ProposalDocument() {
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>三、路段號誌動態調整細節</h2>
-        {!plan ? (
-          <p>方案生成中…</p>
-        ) : (
-          <>
-            <p>
-              <strong>調整實施時段：</strong>
-              {plan.period}
-            </p>
-            <table className={styles.table}>
-              <thead>
-                <tr>
-                  <th>受影響路段</th>
-                  <th>綠燈調整幅度</th>
-                  <th>目的</th>
-                </tr>
-              </thead>
-              <tbody>
-                {plan.signalTimings.map((row) => (
-                  <tr key={row.intersectionName}>
-                    <td>{row.intersectionName}</td>
-                    <td>+{row.adjustPct}%</td>
-                    <td>{row.goal}</td>
+        {(() => {
+          const timings = resolveSignalTimings(latest);
+          if (!timings.length) return <p>方案生成中…</p>;
+          return (
+            <>
+              {fallbackPlan?.period && (
+                <p><strong>調整實施時段：</strong>{fallbackPlan.period}</p>
+              )}
+              <table className={styles.table}>
+                <thead>
+                  <tr>
+                    <th>受影響路段</th>
+                    <th>綠燈調整幅度</th>
+                    <th>目的</th>
                   </tr>
-                ))}
-              </tbody>
-            </table>
-          </>
-        )}
+                </thead>
+                <tbody>
+                  {timings.map((row) => (
+                    <tr key={row.intersectionName}>
+                      <td>{row.intersectionName}</td>
+                      <td>+{row.adjustPct}%</td>
+                      <td>{row.goal}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </>
+          );
+        })()}
       </section>
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>四、跨單位應變聯動與支援請求</h2>
-        {!plan ? (
-          <p>方案生成中…</p>
-        ) : (
-          plan.interAgencyActions.map((action) => (
+        {(() => {
+          const actions = resolveAgencyActions(latest);
+          if (!actions.length) return <p>方案生成中…</p>;
+          return actions.map((action) => (
             <p key={action.agency}>
               <strong>• {action.agency}：</strong>
               {action.text}
             </p>
-          ))
-        )}
+          ));
+        })()}
       </section>
 
       <footer className={styles.signatureRow}>

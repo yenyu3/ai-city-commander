@@ -4,6 +4,23 @@
   gap: 18px;
 }
 
+.selector {
+  width: 100%;
+  padding: 7px 10px;
+  border: 1px solid color-mix(in srgb, var(--text), transparent 78%);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  color: var(--text);
+  font-family: var(--font-nav);
+  font-size: var(--text-sm);
+  cursor: pointer;
+}
+
+.selector:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--text), transparent 58%);
+  outline-offset: 2px;
+}
+
 .collapsible {
   padding-top: 0;
   border-top: 0;
