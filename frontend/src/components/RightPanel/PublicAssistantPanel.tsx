@@ -118,7 +118,7 @@ export default function PublicAssistantPanel() {
   const topStations = useMemo(
     () =>
       Object.values(stations)
-        .sort((a, b) => b.userCount - a.userCount)
+        .sort((a, b) => b.roamingPct - a.roamingPct || b.growthRate - a.growthRate)
         .slice(0, 3),
     [stations],
   );
