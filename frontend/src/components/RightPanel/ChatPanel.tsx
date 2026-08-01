@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
 import { MapPin, X } from "lucide-react";
 import { useAppStore } from "../../store/appStore";
 import type { ViewerMode } from "../../types";
@@ -16,6 +16,107 @@ const SUGGESTIONS = [
 function sopIdFromRef(ref: string): string | null {
   const m = ref.match(/\d+/);
   return m ? m[0] : null;
+}
+
+function renderInlineMarkdown(text: string): ReactNode {
+  const nodes: ReactNode[] = [];
+  const boldPattern = /\*\*(.+?)\*\*/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = boldPattern.exec(text)) !== null) {
+    if (match.index > lastIndex) {
+      nodes.push(text.slice(lastIndex, match.index));
+    }
+    nodes.push(<strong key={`${match.index}-${match[1]}`}>{match[1]}</strong>);
+    lastIndex = match.index + match[0].length;
+  }
+
+  if (lastIndex < text.length) nodes.push(text.slice(lastIndex));
+  return nodes.length > 0 ? nodes : text;
+}
+
+function ChatMarkdown({ text }: { text: string }) {
+  const blocks: ReactNode[] = [];
+  const lines = text.split(/\r?\n/);
+  let index = 0;
+
+  while (index < lines.length) {
+    const line = lines[index].trim();
+    if (!line) {
+      index += 1;
+      continue;
+    }
+
+    const boldHeading = line.match(/^\*\*(.+?)\*\*$/);
+    if (boldHeading) {
+      blocks.push(
+        <h4 key={`h-${index}`} className={styles.markdownHeading}>
+          {boldHeading[1]}
+        </h4>,
+      );
+      index += 1;
+      continue;
+    }
+
+    if (/^(?:[•\-*])\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].trim().match(/^(?:[•\-*])\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push(
+        <ul key={`ul-${index}`} className={styles.markdownList}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ul>,
+      );
+      continue;
+    }
+
+    if (/^\d+[.)]\s+/.test(line)) {
+      const items: string[] = [];
+      while (index < lines.length) {
+        const item = lines[index].trim().match(/^\d+[.)]\s+(.+)$/);
+        if (!item) break;
+        items.push(item[1]);
+        index += 1;
+      }
+      blocks.push(
+        <ol key={`ol-${index}`} className={styles.markdownList}>
+          {items.map((item, itemIndex) => (
+            <li key={itemIndex}>{renderInlineMarkdown(item)}</li>
+          ))}
+        </ol>,
+      );
+      continue;
+    }
+
+    const paragraph: string[] = [];
+    while (index < lines.length) {
+      const nextLine = lines[index].trim();
+      if (
+        !nextLine ||
+        /^\*\*(.+?)\*\*$/.test(nextLine) ||
+        /^(?:[•\-*])\s+/.test(nextLine) ||
+        /^\d+[.)]\s+/.test(nextLine)
+      ) {
+        break;
+      }
+      paragraph.push(nextLine);
+      index += 1;
+    }
+    blocks.push(
+      <p key={`p-${index}`} className={styles.markdownParagraph}>
+        {renderInlineMarkdown(paragraph.join(" "))}
+      </p>,
+    );
+  }
+
+  return <div className={styles.markdown}>{blocks}</div>;
 }
 
 type ChatPanelProps = {
@@ -95,7 +196,7 @@ export default function ChatPanel({
                   </span>
                 </span>
               ) : (
-                m.text
+                m.role === "assistant" ? <ChatMarkdown text={m.text} /> : m.text
               )}
             </div>
             {!isPublic && m.sopRefs && m.sopRefs.length > 0 && (

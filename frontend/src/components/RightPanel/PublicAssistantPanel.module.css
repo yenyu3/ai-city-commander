@@ -197,8 +197,11 @@
 }
 
 .tileRail {
+  align-self: stretch;
+  grid-column: 1;
+  grid-row: 1;
   width: 4px;
-  height: 100%;
+  height: auto;
   border-radius: 999px;
 }
 .tileRailOk { background: var(--ok); }
@@ -206,6 +209,8 @@
 .tileRailCrit { background: var(--crit); }
 
 .tileMain {
+  grid-column: 2;
+  grid-row: 1;
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -227,6 +232,8 @@
 }
 
 .tileValue {
+  grid-column: 3;
+  grid-row: 1;
   font-family: var(--font-mono);
   color: var(--text-dim);
   font-size: var(--text-sm);
@@ -385,13 +392,22 @@
 
   .tile {
     grid-template-columns: 4px minmax(0, 1fr);
+    grid-template-rows: auto auto;
+    align-items: start;
     gap: 0 10px;
+    min-height: 0;
+    padding: 10px;
+  }
+
+  .tileRail {
+    grid-row: 1 / 3;
   }
 
   .tileValue {
     grid-column: 2;
+    grid-row: 2;
     justify-self: start;
-    margin-top: 2px;
+    margin-top: 4px;
     font-size: 13px;
   }
 
