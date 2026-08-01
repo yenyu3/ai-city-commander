@@ -63,7 +63,7 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     if mode == "incident" and not event_id:
         return {"statusCode": 400, "body": json.dumps({"error": "incident invocation needs 'eventId'"})}
 
-    scenario_at = decision_snapshot_at(parse_scenario_at(scenario_at_raw))
+    parsed_scenario_at = parse_scenario_at(scenario_at_raw)
 
     try:
         conn = db.connect()
@@ -71,17 +71,24 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
         return {"statusCode": 503, "body": json.dumps({"error": str(exc)})}
     try:
         if mode == "incident":
-            pairs = run_incident_flow(conn, scenario_at, event_id)
+            # No 15-minute rounding here -- that's the decision API's cache
+            # slot, unrelated to this event. db.fetch_active_incidents filters
+            # on `occurred_at <= scenario_at`; rounding down could push
+            # scenario_at earlier than the incident's own occurred_at (e.g.
+            # 22:10 -> 22:00), making the incident invisible to its own flow
+            # (run_incident_flow would silently find nothing -- see
+            # decision_routing.py). Use the exact scenario_at instead.
+            pairs = run_incident_flow(conn, parsed_scenario_at, event_id)
             conn.commit()
             result: dict[str, Any] = {
                 "status": "ready",
                 "mode": "incident",
                 "eventId": event_id,
                 "scenarioAt": scenario_at_raw,
-                "resolvedScenarioAt": scenario_at.isoformat(),
                 "triggeredCount": len(pairs),
             }
         else:
+            scenario_at = decision_snapshot_at(parsed_scenario_at)
             location_id = event.get("locationId")  # optional: None/omitted -> global view
             pairs, _narrative = run_worker_phases(conn, scenario_at, location_id)
             conn.commit()
