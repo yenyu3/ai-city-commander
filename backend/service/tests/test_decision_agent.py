@@ -1,5 +1,4 @@
-"""Tests for the decision layer (agent/decision_agent.py + agent/facts.py)
-and the handler's "decide" action.
+"""Tests for the decision layer (agent/decision_agent.py + agent/facts.py).
 
 Three things get verified per scenario:
   1. The facts assembled contain raw/unclassified data only -- no tier,
@@ -19,7 +18,6 @@ import json
 
 import pytest
 
-import handler
 from agent.decision_agent import Decision, decide
 from agent.facts import (
     decide_accident,
@@ -30,11 +28,7 @@ from agent.facts import (
     decide_signal_failure,
 )
 from agent.llm_client import LLMClient
-from rules.network_loader import load_segments_from_geometry
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment
-from pathlib import Path
-
-DATA_DIR = Path(__file__).resolve().parents[3] / "data"
 
 
 def seg(segment_id, name, flow_direction, intersections, intersection_ids, capacity_vph, alternatives):
@@ -292,69 +286,3 @@ class TestDecideMultilingualFallback:
         assert at_boundary.triggered is True
         below_boundary = decide_multilingual([station(0.28)], llm_client=None)
         assert below_boundary.triggered is False
-
-
-def _api_gw_event(method: str, path: str, body: dict | None = None) -> dict:
-    return {
-        "rawPath": path,
-        "requestContext": {"http": {"method": method}},
-        "body": json.dumps(body) if body is not None else None,
-    }
-
-
-class TestHandlerDecideRouting:
-    def test_congestion_scope(self):
-        body = {
-            "action": "decide", "scope": "congestion",
-            "segmentId": "RD_TPE_001", "segmentName": "忠孝東路四段", "saturationScore": 0.96,
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert result["statusCode"] == 200
-        parsed = json.loads(result["body"])
-        assert parsed["triggered"] is True
-        assert parsed["result"]["tier"] == "A"
-        assert parsed["source"] == "fallback"  # no LLM configured in tests
-
-    def test_accident_scope_with_real_dataset(self):
-        if not DATA_DIR.exists():
-            pytest.skip(f"competition data/ not present at {DATA_DIR}")
-        raw_segments = json.loads((DATA_DIR / "road_network_geometry.json").read_text(encoding="utf-8"))
-        body = {
-            "action": "decide", "scope": "accident",
-            "incident": {
-                "eventId": "TPE_2026_ACC_001", "type": "Road_Collapse_Accident",
-                "location": "光復南路與忠孝東路口南側", "affectedSegment": "RD_TPE_002",
-                "status": "Closed", "severity": "Critical",
-                "description": "地下管線爆裂導致路面塌陷", "timestamp": "2026-05-20 22:10",
-            },
-            "segments": raw_segments,
-            "saturation": {"RD_TPE_002": 1.0, "RD_TPE_004": 0.78, "RD_TPE_005": 0.65,
-                           "RD_TPE_006": 0.72, "RD_TPE_008": 0.8},
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert result["statusCode"] == 200
-        parsed = json.loads(result["body"])
-        assert parsed["result"]["main_route"] == "RD_TPE_004"
-
-    def test_mrt_diversion_scope(self):
-        body = {
-            "action": "decide", "scope": "mrt_diversion",
-            "snapshot": {
-                "timestamp": "t", "stationId": "BS_MRT_BL17", "locationName": "捷運國父紀念館站",
-                "userCount": 33000, "stayTimeAvg": 10, "growthRate": 0.06, "roamingPct": 0.1,
-            },
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert json.loads(result["body"])["triggered"] is True
-
-    def test_unknown_scope_is_400(self):
-        result = handler.handler(
-            _api_gw_event("POST", "/api/agent", {"action": "decide", "scope": "nope"}), None
-        )
-        assert result["statusCode"] == 400
-
-    def test_missing_field_is_400(self):
-        result = handler.handler(
-            _api_gw_event("POST", "/api/agent", {"action": "decide", "scope": "congestion"}), None
-        )
-        assert result["statusCode"] == 400

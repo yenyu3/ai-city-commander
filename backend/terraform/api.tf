@@ -26,13 +26,17 @@ resource "aws_apigatewayv2_integration" "lambda" {
 }
 
 locals {
+  # 2026-08-01: matched to data/api.md's exact paths/methods (was previously
+  # a set of ad-hoc paths from before that spec was read closely -- see
+  # backend/service/local_server.py's _ROUTES, which mirrors this table for
+  # local dev).
   api_routes = {
     city_state  = "GET /api/city-state"
     incident    = "POST /api/incidents"
-    report      = "POST /api/government/emergency-reports"
-    decision    = "POST /api/ai-decisions"
-    chat        = "POST /api/chat"
-    publication = "POST /api/publications"
+    report      = "GET /api/incidents/{eventId}/report"
+    decision    = "GET /api/decisions"
+    chat        = "POST /api/chat/messages"
+    publication = "POST /api/publication"
   }
 }
 

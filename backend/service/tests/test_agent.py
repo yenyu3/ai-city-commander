@@ -9,11 +9,8 @@ provider-specific integration test alongside these rather than replacing them
 """
 from __future__ import annotations
 
-import json
-
 import pytest
 
-import handler
 from agent.llm_client import LLMClient, get_configured_llm_client
 from agent.narrator import StructuredEvent, answer_what_if, generate_multilingual, summarize
 from agent.templates import MSG_TEMPLATES
@@ -345,81 +342,3 @@ class TestNarratorFallsBackOnProviderFailure:
         )
         assert "0.96" in result
 
-
-def _api_gw_event(method: str, path: str, body: dict | None = None) -> dict:
-    return {
-        "rawPath": path,
-        "requestContext": {"http": {"method": method}},
-        "body": json.dumps(body) if body is not None else None,
-    }
-
-
-class TestHandlerRouting:
-    def test_health(self):
-        result = handler.handler(_api_gw_event("GET", "/api/health"), None)
-        assert result["statusCode"] == 200
-        assert json.loads(result["body"])["message"] == "AI City Commander API is running"
-
-    def test_schema(self):
-        result = handler.handler(_api_gw_event("GET", "/api/schema"), None)
-        assert result["statusCode"] == 200
-        assert "actions" in json.loads(result["body"])
-
-    def test_unknown_path_is_404(self):
-        result = handler.handler(_api_gw_event("GET", "/api/nope"), None)
-        assert result["statusCode"] == 404
-
-    def test_agent_summarize(self):
-        body = {
-            "action": "summarize",
-            "kind": "mrt_diversion",
-            "title": "BL17",
-            "data": {"stationName": "捷運國父紀念館站", "userCount": "33000", "growthRate": "0.06"},
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert result["statusCode"] == 200
-        text = json.loads(result["body"])["text"]
-        assert "捷運國父紀念館站" in text
-
-    def test_agent_answer_what_if(self):
-        body = {
-            "action": "answer_what_if",
-            "question": "若飽和度到 0.96 會怎樣？",
-            "ruleResult": {"tier": "A"},
-            "sopExcerpt": "SOP 第1條...",
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert result["statusCode"] == 200
-        assert "0.96" in json.loads(result["body"])["text"]
-
-    def test_agent_generate_multilingual(self):
-        body = {
-            "action": "generate_multilingual",
-            "messageType": "congestion",
-            "values": {"location": "信義區", "ete": "10"},
-        }
-        result = handler.handler(_api_gw_event("POST", "/api/agent", body), None)
-        assert result["statusCode"] == 200
-        messages = json.loads(result["body"])["messages"]
-        assert set(messages) == {"zh", "en", "ja", "ko"}
-
-    def test_agent_missing_field_is_400(self):
-        result = handler.handler(
-            _api_gw_event("POST", "/api/agent", {"action": "summarize"}), None
-        )
-        assert result["statusCode"] == 400
-
-    def test_agent_unknown_action_is_400(self):
-        result = handler.handler(
-            _api_gw_event("POST", "/api/agent", {"action": "does_not_exist"}), None
-        )
-        assert result["statusCode"] == 400
-
-    def test_agent_invalid_json_body_is_400(self):
-        event = {
-            "rawPath": "/api/agent",
-            "requestContext": {"http": {"method": "POST"}},
-            "body": "{not json",
-        }
-        result = handler.handler(event, None)
-        assert result["statusCode"] == 400

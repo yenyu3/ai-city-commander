@@ -25,15 +25,15 @@ from __future__ import annotations
 
 import argparse
 
-import s3_cache
-from handler import _parse_scenario_at
+import s3_common
+from api_common import parse_scenario_at as _parse_scenario_at
 
 _PREFIX = "decisions/"
 
 
 def _list_keys(prefix: str) -> list[str]:
-    client = s3_cache._client()
-    bucket = s3_cache._bucket()
+    client = s3_common.client()
+    bucket = s3_common.internal_bucket()
     keys: list[str] = []
     paginator = client.get_paginator("list_objects_v2")
     for page in paginator.paginate(Bucket=bucket, Prefix=prefix):
@@ -44,8 +44,8 @@ def _list_keys(prefix: str) -> list[str]:
 def _delete_keys(keys: list[str]) -> int:
     if not keys:
         return 0
-    client = s3_cache._client()
-    bucket = s3_cache._bucket()
+    client = s3_common.client()
+    bucket = s3_common.internal_bucket()
     # delete_objects takes at most 1000 keys per call
     deleted = 0
     for i in range(0, len(keys), 1000):

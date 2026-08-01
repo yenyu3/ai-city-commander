@@ -23,33 +23,16 @@ the standard AWS credential chain (Lambda execution role in prod, local
 from __future__ import annotations
 
 import json
-import os
 from datetime import datetime
 from typing import Optional
 
+import s3_common
 from agent.decision_agent import Decision
 
 # SOP §6's multilingual judgment runs once per poll across every visible
 # station, not per station -- "all" names that it's the one cross-cutting
 # decision for this scenario_at, not a specific location.
 _MULTILINGUAL_LOCATION_ID = "all"
-
-
-def _client():
-    import boto3  # optional dependency, only needed on this path (see BedrockLLMClient)
-
-    return boto3.client("s3")
-
-
-def _bucket() -> str:
-    bucket = os.environ.get("INTERNAL_RESULTS_BUCKET")
-    if not bucket:
-        raise RuntimeError(
-            "INTERNAL_RESULTS_BUCKET is not set. For local dev, point it at a "
-            "real S3 bucket you can read/write (a deployed internal-results "
-            "bucket, or a scratch `aws s3 mb` bucket)."
-        )
-    return bucket
 
 
 def _key(scenario_at: datetime, location_id: str) -> str:
@@ -96,7 +79,7 @@ def _fetch(location_id: str, scenario_at: datetime) -> Optional[Decision]:
     from botocore.exceptions import ClientError
 
     try:
-        obj = _client().get_object(Bucket=_bucket(), Key=_key(scenario_at, location_id))
+        obj = s3_common.client().get_object(Bucket=s3_common.internal_bucket(), Key=_key(scenario_at, location_id))
     except ClientError as exc:
         if exc.response.get("Error", {}).get("Code") in ("NoSuchKey", "404"):
             return None
@@ -107,8 +90,8 @@ def _fetch(location_id: str, scenario_at: datetime) -> Optional[Decision]:
 
 def _save(location_id: str, scenario_at: datetime, decision: Decision, *, title: Optional[str] = None) -> None:
     body = json.dumps(_decision_to_json(decision, title=title), ensure_ascii=False).encode("utf-8")
-    _client().put_object(
-        Bucket=_bucket(),
+    s3_common.client().put_object(
+        Bucket=s3_common.internal_bucket(),
         Key=_key(scenario_at, location_id),
         Body=body,
         ContentType="application/json; charset=utf-8",

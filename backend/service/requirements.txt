@@ -1,0 +1,4 @@
+# boto3/botocore ship in the base public.ecr.aws/lambda/python image
+# already -- not listed here on purpose, don't add it or pip may pull in a
+# version mismatched with what the runtime image bundles.
+psycopg[binary]

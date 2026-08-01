@@ -18,15 +18,46 @@ locals {
 
   lambda_handlers = merge(local.api_handlers, local.scheduled_handlers)
 
+  # 2026-08-01: every per-service Dockerfile now COPYs these shared modules
+  # (db.py/s3_cache.py/decision_routing.py/agent//rules/) alongside its own
+  # handler.py -- the image tag must change when any of them change too, or
+  # a shared-code fix would silently ship a stale image.
+  shared_service_files = concat(
+    [
+      "${path.module}/../service/db.py",
+      "${path.module}/../service/s3_cache.py",
+      "${path.module}/../service/decision_routing.py",
+      "${path.module}/../service/api_common.py",
+      "${path.module}/../service/s3_common.py",
+      "${path.module}/../service/worker_invoke.py",
+    ],
+    [for f in fileset("${path.module}/../service/agent", "*.py") : "${path.module}/../service/agent/${f}"],
+    [for f in fileset("${path.module}/../service/rules", "*.py") : "${path.module}/../service/rules/${f}"],
+  )
+
   api_images = {
     for name, handler in local.lambda_handlers : name => {
-      tag = "sha-${substr(sha256(join("", [
-        local.image_build_revision,
-        filesha256("${path.module}/../service/${name}/Dockerfile"),
-        filesha256("${path.module}/../service/${name}/handler.py"),
-      ])), 0, 16)}"
+      tag = "sha-${substr(sha256(join("", concat(
+        [
+          local.image_build_revision,
+          filesha256("${path.module}/../service/${name}/Dockerfile"),
+          filesha256("${path.module}/../service/${name}/handler.py"),
+        ],
+        [for f in local.shared_service_files : filesha256(f)]
+      ))), 0, 16)}"
     }
   }
+}
+
+locals {
+  # Computed the same way as aws_lambda_function.api's own function_name
+  # argument, on purpose: referencing aws_lambda_function.api["decision-
+  # generator-worker"].function_name from inside every Lambda's own
+  # environment block (including that Lambda's own) would be a
+  # self-reference cycle for that one instance. This is just a plain string
+  # built from local.name, so it breaks the cycle without needing to know
+  # anything about the resource itself.
+  decision_generator_worker_function_name = "${local.name}-decision-generator-worker"
 }
 
 resource "aws_lambda_function" "api" {
@@ -47,6 +78,11 @@ resource "aws_lambda_function" "api" {
       INTERNAL_RESULTS_BUCKET       = aws_s3_bucket.internal_results.bucket
       PUBLIC_RESULTS_BUCKET         = aws_s3_bucket.public_results.bucket
       EMERGENCY_TOPIC_ARN           = aws_sns_topic.emergency.arn
+      # data/api.md §4's cache-aside flow: incident/ and decision/ invoke the
+      # worker asynchronously on a cache miss/new incident -- see
+      # worker_invoke.py. Every Lambda gets this env var (harmless for the
+      # ones that never call invoke_async).
+      DECISION_GENERATOR_WORKER_FUNCTION_NAME = local.decision_generator_worker_function_name
     }
   }
 
@@ -103,7 +139,13 @@ resource "terraform_data" "api_image" {
     command     = <<-EOT
       set -eu
       aws ecr get-login-password --region ${var.aws_region} | docker login --username AWS --password-stdin ${split("/", aws_ecr_repository.api[each.key].repository_url)[0]}
-      docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push --tag ${aws_ecr_repository.api[each.key].repository_url}:${each.value.tag} ${path.module}/../service/${each.key}
+      # Context is backend/service/ (the parent), not backend/service/${each.key}/ --
+      # each Dockerfile COPYs shared modules (db.py, s3_cache.py, agent/, rules/)
+      # that live outside its own subdirectory, so the build needs to see them.
+      docker buildx build --platform linux/amd64 --provenance=false --sbom=false --push \
+        --tag ${aws_ecr_repository.api[each.key].repository_url}:${each.value.tag} \
+        -f ${path.module}/../service/${each.key}/Dockerfile \
+        ${path.module}/../service
     EOT
   }
 }
@@ -152,11 +194,24 @@ resource "aws_iam_role_policy" "lambda" {
         Effect   = "Allow"
         Action   = ["sns:Publish"]
         Resource = aws_sns_topic.emergency.arn
+        }, {
+        # decision/handler.py invokes decision-generator-worker asynchronously
+        # on a cache miss (data/api.md §4's cache-aside flow) -- every
+        # function in this account shares this one role, so it can invoke
+        # itself as the worker.
+        Effect   = "Allow"
+        Action   = ["lambda:InvokeFunction"]
+        Resource = aws_lambda_function.api["decision-generator-worker"].arn
       }],
       var.bedrock_model_id == null ? [] : [{
-        Effect   = "Allow"
-        Action   = ["bedrock:InvokeModel"]
-        Resource = "arn:aws:bedrock:${var.aws_region}::foundation-model/${var.bedrock_model_id}"
+        Effect = "Allow"
+        Action = ["bedrock:InvokeModel", "bedrock:InvokeModelWithResponseStream"]
+        # "*" and not a specific model/inference-profile ARN on purpose: bare
+        # foundation-model IDs and cross-region inference profile IDs (e.g.
+        # the "us." prefix this project actually uses) have different ARN
+        # shapes, and locking to one breaks the moment bedrock_model_id
+        # changes. The action list itself is the real restriction here.
+        Resource = "*"
       }],
       var.bedrock_agentcore_runtime_arn == null ? [] : [{
         Effect   = "Allow"

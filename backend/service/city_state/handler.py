@@ -1,26 +1,74 @@
-"""GET /api/city-state — fixed demo state for frontend integration."""
+"""GET /api/city-state?scenarioAt={scenarioAt} -- see data/api.md §1.
 
-from datetime import datetime, timezone
-import json
+Per the spec: raw traffic/crowd state as of scenarioAt, no SOP judgment
+content. `tier` is the cheap deterministic threshold label
+(rules/congestion_tier.py::get_tier(), pure arithmetic on saturation_score),
+not a decide_congestion() LLM call -- that heavier per-location judgment now
+lives behind GET /api/decisions (see ../decision/handler.py), queried
+separately per locationId. This endpoint's only job is "what does RDS say
+right now", cheap and always-fast.
+
+Known gap (not solved here, see the merge plan this was built from): the
+spec's API table has no "list active incidents" endpoint, so there's no
+documented way for a caller to discover which locationIds even need a
+GET /api/decisions follow-up call. Not inventing an undocumented field to
+paper over this -- flagging it here so it's visible next time this is read.
+"""
+from __future__ import annotations
+
+from typing import Any
+
+import api_common
+import db
+from rules.congestion_tier import get_tier
 
 
-DEFAULT_SCENARIO_AT = "2026-05-20T21:00:00+08:00"
+def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
+    query = event.get("queryStringParameters") or {}
+    if "scenarioAt" not in query:
+        return api_common.response(400, {"error": "missing query param: 'scenarioAt'"})
+    try:
+        scenario_at = api_common.parse_scenario_at(query["scenarioAt"])
+    except ValueError:
+        return api_common.response(400, {"error": f"invalid scenarioAt: {query['scenarioAt']!r}"})
 
+    try:
+        conn = db.connect()
+    except RuntimeError as exc:
+        return api_common.response(503, {"error": str(exc)})
 
-def handler(event, _context):
-    scenario_at = ((event.get("queryStringParameters") or {}).get("scenarioAt") or DEFAULT_SCENARIO_AT)
-    generated_at = datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
-    payload = {
-        "meta": {"scenarioAt": scenario_at, "generatedAt": generated_at, "dataMode": "demo"},
-        "traffic": [
-            {"segmentId": "RD_TPE_001", "observedAt": scenario_at, "avgSpeedKph": 18.2, "vehicleCount": 1420, "saturationScore": 0.96, "laneStatus": "Critical", "tier": "A"},
-            {"segmentId": "RD_TPE_002", "observedAt": scenario_at, "avgSpeedKph": 27.5, "vehicleCount": 1090, "saturationScore": 0.88, "laneStatus": "Congested", "tier": "B"},
-        ],
-        "crowd": [
-            {"stationId": "BS_MRT_BL17", "observedAt": scenario_at, "userCount": 26700, "stayTimeAvgMinutes": 12.4, "growthRate": 0.34, "roamingUserPct": 0.31},
-            {"stationId": "BS_TPE_DOME", "observedAt": scenario_at, "userCount": 18300, "stayTimeAvgMinutes": 9.8, "growthRate": -0.12, "roamingUserPct": 0.18},
-        ],
-        "activeIncidents": [{"eventId": "INC_001", "type": "Accident", "location": "忠孝東路與光復南路口", "status": "Closed", "severity": "High", "description": "雙向車道封閉處理中", "occurredAt": "2026-05-20T20:55:00+08:00", "roadImpacts": [{"segmentId": "RD_TPE_001", "role": "primary"}], "stationImpacts": []}],
-        "alerts": [{"alertId": "ALT_001", "eventId": "INC_001", "kind": "accident", "title": "忠孝東路封閉", "summary": "忠孝東路封閉，請改道仁愛路，預計延誤 52 分鐘", "eteMinutes": 52, "createdAt": scenario_at}],
-    }
-    return {"statusCode": 200, "headers": {"content-type": "application/json; charset=utf-8"}, "body": json.dumps(payload, ensure_ascii=False)}
+    try:
+        traffic = db.fetch_latest_traffic_snapshots(conn, scenario_at)
+        crowd = db.fetch_latest_crowd_snapshots(conn, scenario_at)
+    finally:
+        conn.close()
+
+    return api_common.response(
+        200,
+        {
+            "meta": {"scenarioAt": query["scenarioAt"], "generatedAt": api_common.now_iso(), "dataMode": "demo"},
+            "traffic": [
+                {
+                    "segmentId": t.segment_id,
+                    "observedAt": t.timestamp,
+                    "avgSpeedKph": t.avg_speed,
+                    "vehicleCount": t.vehicle_count,
+                    "saturationScore": t.saturation_score,
+                    "laneStatus": t.lane_status,
+                    "tier": get_tier(t.saturation_score),
+                }
+                for t in traffic
+            ],
+            "crowd": [
+                {
+                    "stationId": c.station_id,
+                    "observedAt": c.timestamp,
+                    "userCount": c.user_count,
+                    "stayTimeAvgMinutes": c.stay_time_avg,
+                    "growthRate": c.growth_rate,
+                    "roamingUserPct": c.roaming_pct,
+                }
+                for c in crowd
+            ],
+        },
+    )

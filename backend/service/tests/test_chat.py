@@ -86,7 +86,7 @@ class TestAnswerChatFallback:
 
 def _event(body: dict) -> dict:
     return {
-        "rawPath": "/api/chat",
+        "rawPath": "/api/chat/messages",
         "requestContext": {"http": {"method": "POST"}},
         "body": json.dumps(body),
     }
@@ -98,15 +98,15 @@ class TestChatHandlerWithoutDb:
     Postgres is available."""
 
     def test_missing_scenario_at_is_400(self):
-        import handler
+        from chat.handler import handler as chat_handler
 
-        result = handler.handler(_event({"message": "hi"}), None)
+        result = chat_handler(_event({"message": "hi"}), None)
         assert result["statusCode"] == 400
 
     def test_missing_message_is_400(self):
-        import handler
+        from chat.handler import handler as chat_handler
 
-        result = handler.handler(
+        result = chat_handler(
             _event({"context": {"scenarioAt": "2026-05-20T21:00:00+08:00"}}), None
         )
         assert result["statusCode"] == 400

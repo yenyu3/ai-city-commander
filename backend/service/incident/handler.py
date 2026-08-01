@@ -1,27 +1,105 @@
-"""POST /api/incidents — simulated event injection endpoint."""
+"""POST /api/incidents -- see data/api.md §2.
 
-from datetime import datetime, timezone
+Creates the incident in RDS (operational source of truth), writes the raw
+payload to S3 (internal-results/incidents/{date}/{eventId}.json, per the
+doc's data flow), and best-effort warms the decision cache for the
+incident's segment so the first GET /api/decisions?locationId=<segment>
+call afterward is more likely to already be cached (see worker_invoke.py --
+this is optional/non-blocking, not required for correctness).
+
+Always returns 202 -- per the doc, this never waits for judgment/report/
+publication to finish. `publication.status` stays "pending": there's no
+emergency-report/notice-generation pipeline built yet (see report/handler.py
+and publication/handler.py's own docstrings), so reporting it as "pending"
+is honest; nothing here fabricates a "published" status.
+"""
+from __future__ import annotations
+
 import json
+from datetime import datetime, timezone
+from typing import Any
+
+import api_common
+import db
+import s3_common
+import worker_invoke
+from rules.types import LiveIncident
 
 
-def handler(event, _context):
+def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
     try:
-        request = json.loads(event.get("body") or "{}")
+        payload = json.loads(event.get("body") or "{}")
     except json.JSONDecodeError:
-        request = {}
-    scenario_at = request.get("context", {}).get("scenarioAt")
-    incident = request.get("incident", {})
-    payload = {
-        "meta": {
-            "scenarioAt": scenario_at,
-            "generatedAt": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-            "dataMode": "demo",
+        return api_common.response(400, {"error": "invalid JSON body"})
+
+    context = payload.get("context", {})
+    incident_payload = payload.get("incident")
+    if "scenarioAt" not in context:
+        return api_common.response(400, {"error": "missing field: 'context.scenarioAt'"})
+    if incident_payload is None:
+        return api_common.response(400, {"error": "missing field: 'incident'"})
+
+    try:
+        scenario_at = api_common.parse_scenario_at(context["scenarioAt"])
+        occurred_at = (
+            api_common.parse_scenario_at(incident_payload["occurredAt"])
+            if incident_payload.get("occurredAt")
+            else scenario_at
+        )
+        event_id = incident_payload["eventId"]
+        affected_segment = incident_payload["affectedSegmentId"]
+        incident = LiveIncident(
+            event_id=event_id,
+            type=incident_payload["type"],
+            location=incident_payload["location"],
+            affected_segment=affected_segment,
+            status=incident_payload["status"],
+            severity=incident_payload["severity"],
+            description=incident_payload["description"],
+            timestamp=occurred_at.isoformat(),
+        )
+    except KeyError as exc:
+        return api_common.response(400, {"error": f"missing field: {exc}"})
+
+    try:
+        conn = db.connect()
+    except RuntimeError as exc:
+        return api_common.response(503, {"error": str(exc)})
+    try:
+        db.insert_incident(conn, incident, occurred_at=occurred_at)
+        conn.commit()
+    finally:
+        conn.close()
+
+    date = occurred_at.date().isoformat()
+    s3_common.client().put_object(
+        Bucket=s3_common.internal_bucket(),
+        Key=f"incidents/{date}/{event_id}.json",
+        Body=json.dumps(payload, ensure_ascii=False).encode("utf-8"),
+        ContentType="application/json; charset=utf-8",
+    )
+
+    # Best-effort cache warm -- not required for correctness (a GET
+    # /api/decisions?locationId=<segment> that lands before this finishes
+    # just computes it itself instead of hitting a warm cache).
+    worker_invoke.invoke_async({"scenarioAt": context["scenarioAt"], "locationId": affected_segment})
+
+    generated_at = api_common.now_iso()
+    return api_common.response(
+        202,
+        {
+            "meta": {"scenarioAt": context["scenarioAt"], "generatedAt": generated_at, "dataMode": "demo"},
+            "incident": incident_payload,
+            "processing": {
+                "jobId": f"ERJ_{event_id}",
+                "status": "queued",
+                "processor": "incident-decision-worker",
+                "queuedAt": context["scenarioAt"],
+            },
+            "publication": {
+                "status": "pending",
+                "expectedNoticeId": f"PUB_{event_id}",
+                "publicManifestUrl": f"/public/{date}/manifest.json",
+            },
         },
-        "incident": incident,
-        "injection": {"status": "accepted", "injectedAt": scenario_at},
-    }
-    return {
-        "statusCode": 202,
-        "headers": {"content-type": "application/json; charset=utf-8"},
-        "body": json.dumps(payload, ensure_ascii=False),
-    }
+    )

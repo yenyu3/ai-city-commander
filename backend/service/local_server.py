@@ -1,8 +1,9 @@
-"""Minimal local HTTP server for exercising handler.py without deploying to
-AWS. Never used in production -- API Gateway invokes handler.handler
-directly there (see backend/terraform/lambda.tf). This exists purely so the
-frontend dev server (or curl) can talk to a real backend during local
-development/testing.
+"""Minimal local HTTP server for exercising the 7 per-service Lambda
+handlers without deploying to AWS. Never used in production -- API Gateway
+invokes each Lambda directly there (see backend/terraform/api.tf's
+local.api_routes, which this file's routing table mirrors). This exists
+purely so the frontend dev server (or curl) can talk to a real backend
+during local development/testing.
 
 Usage:
     cd backend/service
@@ -13,17 +14,44 @@ Then set frontend/.env.local's VITE_API_BASE_URL=http://localhost:8787
 """
 from __future__ import annotations
 
+import importlib.util
+import re
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qsl, urlsplit
-
-from handler import handler as lambda_handler
 
 _CORS_HEADERS = {
     "Access-Control-Allow-Origin": "*",
     "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
     "Access-Control-Allow-Headers": "content-type",
 }
+
+
+def _load_handler(service_dir: str):
+    """Loads {service_dir}/handler.py's `handler` function by file path --
+    needed because "decision-generator-worker" has a hyphen and isn't a
+    valid Python package/module name for a normal `import`."""
+    module_name = f"_local_server_{service_dir.replace('-', '_')}_handler"
+    if module_name in sys.modules:
+        return sys.modules[module_name].handler
+    path = f"{service_dir}/handler.py"
+    spec = importlib.util.spec_from_file_location(module_name, path)
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = module
+    spec.loader.exec_module(module)
+    return module.handler
+
+
+# Mirrors backend/terraform/api.tf's local.api_routes -- (method, regex) ->
+# service directory. Named capture groups become event["pathParameters"].
+_ROUTES: list[tuple[str, re.Pattern, str]] = [
+    ("GET", re.compile(r"^/api/city-state$"), "city_state"),
+    ("POST", re.compile(r"^/api/incidents$"), "incident"),
+    ("GET", re.compile(r"^/api/incidents/(?P<eventId>[^/]+)/report$"), "report"),
+    ("GET", re.compile(r"^/api/decisions$"), "decision"),
+    ("POST", re.compile(r"^/api/chat/messages$"), "chat"),
+    ("POST", re.compile(r"^/api/publication$"), "publication"),
+]
 
 
 class _Handler(BaseHTTPRequestHandler):
@@ -34,19 +62,31 @@ class _Handler(BaseHTTPRequestHandler):
         split = urlsplit(self.path)
         query = dict(parse_qsl(split.query)) or None
 
-        event = {
-            "rawPath": split.path,
-            "requestContext": {"http": {"method": method}},
-            "body": body,
-            "queryStringParameters": query,
-        }
-        result = lambda_handler(event, None)
+        for route_method, pattern, service_dir in _ROUTES:
+            if method != route_method:
+                continue
+            match = pattern.match(split.path)
+            if not match:
+                continue
+            event = {
+                "rawPath": split.path,
+                "requestContext": {"http": {"method": method}},
+                "body": body,
+                "queryStringParameters": query,
+                "pathParameters": match.groupdict() or None,
+            }
+            result = _load_handler(service_dir)(event, None)
+            self._write(result)
+            return
 
+        self._write({"statusCode": 404, "body": '{"error": "not found"}'})
+
+    def _write(self, result: dict) -> None:
         self.send_response(result["statusCode"])
         for key, value in {**result.get("headers", {}), **_CORS_HEADERS}.items():
             self.send_header(key, value)
         self.end_headers()
-        self.wfile.write(result["body"].encode("utf-8"))
+        self.wfile.write(result.get("body", "").encode("utf-8"))
 
     def do_GET(self) -> None:  # noqa: N802 - required BaseHTTPRequestHandler name
         self._dispatch("GET")
