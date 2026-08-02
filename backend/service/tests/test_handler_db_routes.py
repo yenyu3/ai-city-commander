@@ -337,7 +337,9 @@ class TestIncidentReportGeneration:
             None,
         )
         assert result["statusCode"] == 200
-        assert json.loads(result["body"])["report"]["status"] == "ready"
+        payload = json.loads(result["body"])
+        assert payload["eventId"] == "TPE_2026_ACC_001"
+        assert payload["incident"]["affectedSegment"] == "RD_TPE_002"
 
 
 class TestChatWithDbContext:
