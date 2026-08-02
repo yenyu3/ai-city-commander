@@ -337,7 +337,9 @@ class TestIncidentReportGeneration:
             None,
         )
         assert result["statusCode"] == 200
-        assert json.loads(result["body"])["report"]["status"] == "ready"
+        payload = json.loads(result["body"])
+        assert payload["eventId"] == "TPE_2026_ACC_001"
+        assert payload["incident"]["affectedSegment"] == "RD_TPE_002"
 
 
 class TestChatWithDbContext:
@@ -481,7 +483,7 @@ class TestPhaseBParallelization:
 
             city_data = _CityData(
                 current_traffic={t.segment_id: t for t in data},
-                previous_traffic={}, current_crowd={}, previous_crowd={}, incidents={}, segments={},
+                current_crowd={}, incidents={}, segments={},
             )
             triggers = [_Trigger(sop_section_id="1", location_id=t.segment_id) for t in data[:3]]
 

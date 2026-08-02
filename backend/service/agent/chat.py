@@ -163,10 +163,21 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         # answer and falling back to the keyword-excerpt path.
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
+        pass
+    try:
         # Same long-JSON trailing-comma slip caught live in
         # router_agent.py's _parse_json_response -- one retry with trailing
         # commas stripped before giving up and falling back.
         return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
+    except json.JSONDecodeError:
+        # "Extra data" -- a real Bedrock call returned a complete, valid
+        # JSON object followed by stray trailing content (e.g. the model
+        # appended a stray sentence after the closing brace). json.loads()
+        # requires the ENTIRE string to be exactly one JSON document;
+        # raw_decode() instead parses just the first complete value and
+        # ignores whatever follows, which is exactly what's needed here.
+        obj, _end = json.JSONDecoder(strict=False).raw_decode(text)
+        return obj
 
 
 def _fallback_answer(question: str, audience: str) -> ChatAnswer:

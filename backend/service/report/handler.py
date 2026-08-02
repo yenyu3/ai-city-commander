@@ -1,7 +1,7 @@
 """GET /api/incidents/{eventId}/report?format={format}&scenarioAt={scenarioAt}
 -- see data/api.md §3.
 
-Read-only: checks S3 for an already-generated report (emergency-reports/
+Read-only: reads an already-generated report from S3 (emergency-reports/
 {date}/{eventId}/report-v1.{format}), never re-runs SOP rules or calls an
 LLM, per the doc. `{date}` isn't in the request -- looked up from the
 incident's own `occurred_at` in RDS instead.
@@ -11,10 +11,12 @@ report-v1.json AND report-v1.pdf here (see report_builder.py) once ALL of an
 incident's SOP checks finish (not per-check -- a single incident can trip up
 to 3 articles, §2/§3/§5). Both formats are written together in the same call,
 so `format=json`/`format=pdf` become `ready` at the same time -- no window
-where one format exists and the other doesn't.
+where one format exists and the other doesn't. JSON is returned inline as the
+complete report payload; PDF returns its download location.
 """
 from __future__ import annotations
 
+import json
 from typing import Any
 
 import api_common
@@ -66,6 +68,25 @@ def handler(event: dict[str, Any], _context: Any) -> dict[str, Any]:
                 },
             },
         )
+
+    if query["format"] == "json":
+        try:
+            obj = s3_common.client().get_object(Bucket=s3_common.internal_bucket(), Key=key)
+            report = json.loads(obj["Body"].read())
+        except Exception:  # noqa: BLE001 - report became unavailable or malformed after head_object
+            return api_common.response(
+                202,
+                {
+                    "meta": meta,
+                    "report": {
+                        "eventId": event_id,
+                        "jobId": f"ERJ_{event_id}",
+                        "status": "processing",
+                        "retryAfterSeconds": 3,
+                    },
+                },
+            )
+        return api_common.response(200, report)
 
     return api_common.response(
         200,

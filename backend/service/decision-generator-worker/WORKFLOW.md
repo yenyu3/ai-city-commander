@@ -12,36 +12,36 @@
 
 ## 三個階段（同一次 worker invocation 裡依序跑完）
 
-- **Phase A — 分診（Router）**：`agent/router_agent.py::route_triggers()`，
-  一次 LLM 呼叫，餵給它**全市**目前所有路段/站點的即時快照**加上前一筆快照**
-  （讓它看得到趨勢，不是只看單一時間點的數字），以及目前所有進行中的事件。
-  只負責回答「現在哪些 SOP 條款被觸發、在哪裡」，不產生詳細理由或民眾訊息
-  （那是 Phase B 的工作）。每個 `scenarioAt` 只算一次，快取在
-  `decisions/{scenarioAt}/_triggers.json`。
-  - 沒有 LLM 可用時的備援：不是重寫一套規則，而是把現有的
-    `decide_congestion`/`decide_accident`/`decide_signal_failure`/
-    `decide_multilingual` 對每個路段/站點/事件都跑一次（跟舊版行為完全一樣），
-    只是現在是一次掃過全部，不是被外部逐個查詢觸發。
-  - SOP §3（`BS_MRT_BL17`）、§4（`BS_TPE_DOME`）**不**交給 Phase A 判斷——
-    這兩個站點固定只有這兩個，直接無條件當候選丟給 Phase B，讓
-    `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的有沒有觸發
-    （§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，Phase A 的
-    「目前+前一筆」快照看不到，硬要它猜反而不準）。
-  - **只做一般決策**（2026-08-01）：Phase A/B 只產生 congestion（§1）、
-    mrt_diversion（§3）、dome（§4）、multilingual（§6）。router 或備援掃出的
-    accident（§2）／signal_failure（§5）事件回應會被濾掉——那是 **incident
-    API 入口**（見下面「Incident API 入口」）的職責。decision 跟 incident 的
-    界線由「打哪個 API 進來」決定（worker 收到的 `mode`），不是 SOP 種類，
-    也不是 event_id 有沒有值。
-  - **Phase A 看到的是加工過的 facts，不是只有原始欄位**（2026-08-01 補強）：
-    每個路段多帶一個 `is_city_trigger_segment` 布林值（是不是 SOP 第1條認定
-    的觸發路段），每個 active incident 多帶一份 `candidate_alternative_routes`
-    （`agent/facts.py::build_accident_candidates()`，跟 `decide_accident()`
-    自己用的是同一份，只是抽出來共用）。這些欄位本來就是 Phase B 會用到、
-    已經在 `_CityData` 裡撈好的資料重新整理成 JSON，不是額外的 DB/LLM 呼叫，
-    所以幾乎零成本——讓 Phase A 判斷時直接用真實結構化資料，不用自己從 SOP
-    文字反推「這個路段算不算觸發路段」，或憑空猜「這個候選路線容量夠不夠、
-    在不在上游」。
+- **Phase A — 候選篩選**：`decision_routing.py::_deterministic_city_sweep()`，
+  純 Python、不呼叫 LLM。只負責回答「現在哪些 SOP 條款被觸發、在哪裡」，
+  不產生詳細理由或民眾訊息（那是 Phase B 的工作）。每個 `scenarioAt` 只算
+  一次，快取在 `decisions/{scenarioAt}/_triggers.json`。
+  - **2026-08-02 改版**：這裡原本是 `agent/router_agent.py::route_triggers()`，
+    一次 LLM 呼叫餵給它全市快照＋前一筆快照＋所有進行中事件，要求它列出
+    §1/§6 的觸發清單。拿掉的原因：§1（`is_city_trigger_segment` 布林值＋
+    飽和度門檻）、§6（roaming ≥ 30%）的觸發條件本來就是純算術，prompt 裡
+    甚至明講「不用自己反推、只要照抄這個布林值」——LLM 在這裡從來沒有真的
+    做判斷，只是被要求把一個已經算好的答案原封不動列出來。真實跑
+    `eval/router_precision_recall.py`（已刪除）量到 recall 低到 0.44、
+    precision 卻是滿分 1.0，證實不是誤判，是尖峰時段同時十幾個候選時，
+    LLM 在一次生成裡漏列的機率變高——這是枚舉型任務的已知弱點，不是校準
+    問題，所以直接改用 `rules/congestion_tier.py::check_city_response`／
+    `rules/multilingual_check.py::check_multilingual_needed`（跟
+    `eval/llm_vs_rules_consistency.py` 拿來當 ground truth 的同一組決定論
+    函式）在 Python 端直接算,recall/precision 因為不是用猜的，直接變成
+    100%。
+  - SOP §3（`BS_MRT_BL17`）、§4（`BS_TPE_DOME`）維持原本作法，**不**交給
+    Phase A 判斷——這兩個站點固定只有這兩個，直接無條件當候選丟給
+    Phase B，讓 `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的
+    有沒有觸發（§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，
+    Phase A 的「目前+前一筆」快照看不到，硬要它猜反而不準）。
+  - **只做一般決策**：Phase A/B 只產生 congestion（§1）、mrt_diversion
+    （§3）、dome（§4）、multilingual（§6）。§2/§5 從來就不是 Phase A 的候選
+    集合的一部分——那是 **incident API 入口**（見下面「Incident API 入口」）
+    的職責。decision 跟 incident 的界線由「打哪個 API 進來」決定（worker
+    收到的 `mode`），不是 SOP 種類，也不是 event_id 有沒有值（decision
+    sweep 產生的項目 `eventId` 也已經改成永遠是 `null`，不會再跟同地點的
+    incident 互相掛勾，見 `decision_routing.py` 內的說明）。
 
 - **Phase B — 聚焦生成**：對 Phase A 找出的每個候選，呼叫既有的
   `agent/facts.py::decide_*()`（完全沒改，一樣是「facts 進、LLM 判斷+生成
@@ -135,8 +135,11 @@ incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收
     查完（`_ensure_decisions` 裡的 `dome_history` 預先撈好、當參數傳進並行
     函式，並行函式本身完全不碰 `conn`）。`run_incident_flow` 的三項檢查則
     完全不需要 `conn`，可以直接並行。
-  - Phase A（router，本來就只有一次 LLM call）跟 Phase C（narrative，同理）
-    不受影響，沒有並行化的必要。
+  - Phase A（2026-08-02 起已經不是 LLM call，純 Python 決定論計算）不受影響；
+    Phase C（narrative）本來就只有一次 LLM call，也沒有並行化的必要——不過
+    2026-08-02 另外把 Phase C 拆成 citizen/government 兩個獨立呼叫平行送出
+    （government 內容量比 citizen 重很多，拆開後 wall-clock 收斂到較重那份
+    的時間，不是兩份加總），細節見 `agent/router_agent.py::narrate_for_focus`。
 
 （原本這裡還有一項「`GET /api/city-state` 輪詢時機會性預熱 decision
 cache」——2026-08-01 撤掉了：確認前端是同時、幾乎同一瞬間打
@@ -151,8 +154,7 @@ city-state 跟 decision，不是先打 city-state、隔一段時間才切去 AI 
 都會先把收到的 `scenarioAt` 用 `api_common.decision_snapshot_at()` 無條件捨去
 到 15 分鐘整（例如 `22:07` 會被捨去成 `22:00`），才拿去查/存快取。**`mode:
 "incident"` 完全不套用這個捨去**——用呼叫端傳來的精確 `scenarioAt`（見下面
-「收到 reactive 請求」步驟 1 的說明）。這跟前面「Phase A 找『前一筆快照
-時間』」也是三件不同的事，不要搞混：
+「收到 reactive 請求」步驟 1 的說明）：
 
 - **這裡（decision 的快取時槽）**：決定「這次查詢/計算要用哪一把 S3 快取
   key」，目的是讓同一個 15 分鐘視窗內、時間戳不完全一樣的多次查詢（例如
@@ -170,11 +172,13 @@ city-state 跟 decision，不是先打 city-state、隔一段時間才切去 AI 
   注入事件時抓到這個問題：`incidents/`、`emergency-reports/` 都遲遲不出現
   任何 key。修法是 incident mode 用 `parse_scenario_at()` 解析後的原始精確
   時間，完全不經過 `decision_snapshot_at()`。
-- **Phase A 的「前一筆快照」**：決定 router 拿到的趨勢比較基準是哪個時間點
-  的路段/站點資料，跟快取 key 完全無關，用的是 `db.fetch_previous_traffic_timestamp`
-  查資料庫裡實際存在的前一筆取樣時間（不是固定往前推 15 分鐘，因為
-  `city_traffic_flow.csv`/`signaling_crowd_density.csv` 的取樣間隔本身不
-  均勻，21:00 前是整點/半小時一次，之後才變 15 分鐘）。
+
+（原本這裡還有一段「Phase A 的『前一筆快照』」，說明 `_fetch_city_data` 額外
+撈前一筆路段/站點資料給 router 看趨勢——2026-08-02 拿掉了：`db.
+fetch_previous_traffic_timestamp`/`fetch_previous_crowd_timestamp` 這兩次
+額外查詢連同「前一筆快照」資料本身，是專門為了餵給已經拿掉的 LLM router
+用的，Phase A 換成決定論計算後沒有任何東西再讀這份資料，所以連同撈取一起
+移除，省下每次 sweep 兩次不必要的 DB 查詢。）
 
 ## 收到 reactive 請求（`{mode, scenarioAt, locationId? | eventId?}`）後做什麼
 
@@ -255,6 +259,45 @@ RDS/LLM）。命中時 `200`：
 選填、回應從單一 `aiDecision` 變成 `decisions[]` 陣列 + `citizenText` +
 `governmentText`）——我沒有自己去改那份文件，會另外把確切要改的段落告訴
 使用者。
+
+## `citizen.routingVariants` —— 民眾分流建議（2026-08-02 新增，前端尚未串接）
+
+**動機**：如果系統只給全部民眾同一句「建議改道經 OO 通行」，那條「建議路徑」本身就會變成新的塞車點——等於把塞車問題轉移，沒有真的分散。這個欄位讓後端針對同一個事故的**多條可行疏散路徑**，各自生成一則獨立的市民版訊息、並附上一個機率權重，前端再依裝置各自的穩定亂數，依權重分配到其中一則顯示，達到人流真正分散的效果。
+
+**只出現在 `citizen`，`government` 沒有這個欄位**——指揮官需要看到完整的全部候選路徑去管控全局，不能被隨機分配到只看到一個。
+
+**只有在同一事故有 2 條以上可行候選路徑時才會出現**；只有 1 條候選（目前多數情況）或完全沒有事故觸發時，這個欄位是空陣列 `[]`，代表沒有分流的必要，前端應該退回原本只看 `citizen.headline`/`citizen.text` 的邏輯。**既有的 `citizen.headline`/`.text`/`.recommendedActions` 等欄位完全不受這個新欄位影響**——不認得這個欄位的舊前端邏輯，行為跟現在完全一樣。
+
+### 欄位形狀
+
+```json
+{
+  "citizen": {
+    "headline": "...",
+    "text": "...",
+    "...": "（其餘既有欄位不變）",
+    "routingVariants": [
+      {"segmentId": "RD_TPE_004", "text": "光復南路封閉中，建議改道經市民大道四段通行...", "weight": 0.84},
+      {"segmentId": "RD_TPE_005", "text": "光復南路封閉中，建議改道經仁愛路四段通行...", "weight": 0.16}
+    ]
+  }
+}
+```
+
+- `segmentId`：這個變體對應的疏散路徑路段 ID（跟 `decisions[]` 裡該事故項 `reroute.mainRoute`/`secondaryRoutes` 用的是同一個 ID 空間）。
+- `text`：這則變體專屬的市民版訊息，口語化、只推薦自己這條路徑，跟其他變體互相獨立，不會互相提及。
+- `weight`：0~1 之間的機率權重，同一個 `routingVariants` 陣列裡所有 `weight` 加總為 1。**這是後端用道路剩餘容量（`capacityVph × (1 - currentSaturation)`）算出來的決定論數字，不是 LLM 猜的**——容量越大、目前越不塞的路徑，權重越高。
+
+### 前端該怎麼用（尚未實作，規格先寫在這）
+
+目標：**同一台裝置，在同一批 `routingVariants` 沒變的情況下，重新整理要選到同一個變體**，不能每次刷新看到不同建議（會顯得系統很不穩定）；但不同裝置之間，母體分佈要盡量逼近後端算出的權重比例。
+
+建議做法：
+1. 裝置第一次載入時，若本地沒有既有的識別碼，產生一個亂數 UUID 存進 `localStorage`（例如 key `citizenVariantSeed`），之後每次都重複使用同一個值，不要每次重新產生。
+2. 需要選變體時，把這個 seed 字串（可以加上 `decisionId` 或 `noticeId` 讓不同事故各自獨立分配，避免同一裝置永遠選到同一個路徑名稱）雜湊成一個 `[0, 1)` 之間的浮點數（例如用任何穩定雜湊函式如 FNV-1a、或現成的 hash 套件，避免用 `Math.random()`——那個不是穩定的）。
+3. 依 `routingVariants` 陣列順序，把 `weight` 累加，找出雜湊值落在哪個候選的累加區間內，就顯示那一個。
+
+這個演算法本身很小，前端拿到規格後應該可以直接實作，不需要後端額外支援。
 
 ## 目前不做的事（刻意，不是漏做）
 

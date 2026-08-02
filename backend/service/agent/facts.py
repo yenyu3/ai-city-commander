@@ -60,9 +60,17 @@ def decide_congestion(
         facts,
         instructions=(
             "依 SOP 第1條判斷：這個路段的飽和度屬於 Normal / B / A 哪一級？"
-            "若是城市觸發路段（RD_TPE_001 或 RD_TPE_002）且達 B 級以上，"
-            "應該啟動哪些處置動作？"
-            'result 欄位請包含 "tier"（"Normal"/"B"/"A"）與 "actions"（字串陣列）。'
+            "這個分級（tier）適用全 15 路段，只是給 Dashboard 決定紅黃燈顯示用，"
+            "任何路段只要飽和度達門檻都要回報正確的 tier。\n"
+            "但 triggered 欄位是另一件事，判斷條件嚴格得多——"
+            "triggered 必須是 true，若且唯若 is_city_trigger_segment 為 true"
+            "（也就是 RD_TPE_001 或 RD_TPE_002）且 tier 達 B 級以上；"
+            "其餘所有路段，不管 tier 是不是 B 或 A，triggered 一律是 false。"
+            "不要因為飽和度高、看起來很壅塞，就自行推論成 triggered=true——"
+            "只有這兩個城市應變觸發路段才會啟動實際處置動作。\n"
+            "triggered=true 時，result 欄位請包含 \"tier\"（\"Normal\"/\"B\"/\"A\"）"
+            "與 \"actions\"（字串陣列，該啟動哪些處置動作）；"
+            "triggered=false 時 \"tier\" 仍要如實回報，\"actions\" 給空陣列。"
         ),
         fallback=fallback,
         llm_client=llm_client,
@@ -184,6 +192,15 @@ def decide_accident(
     # or the fallback, and merged in here so callers (incl. the frontend)
     # never need their own copy of this formula either.
     if decision.triggered:
+        # decision_detail()'s `title`/`location_name` fell back to the bare
+        # segment_id ("RD_TPE_002") for accident items, since this was the
+        # only decide_*() that never merged a human-readable location_name
+        # into its result (congestion/mrt/dome already do this in
+        # _compute_decision_for_trigger) -- caught live when a citizen
+        # routing-variant message said "那邊出事了" with no actual place
+        # name. incident.location is already known, not derived by the LLM.
+        decision.result = {**decision.result, "location_name": incident.location}
+
         main_route = decision.result.get("main_route")
         incident_saturation = saturation.get(incident.affected_segment, 0.0)
         main_saturation = (
@@ -200,6 +217,29 @@ def decide_accident(
             "ete_penalty": ete_result.penalty,
             "ete_breakdown": ete_result.breakdown,
         }
+
+        # capacity_vph/current_saturation for whichever routes ended up
+        # chosen as main/secondary -- looked up from `candidates` (already
+        # fully known before the decide() call, not re-derived or asked of
+        # the LLM). This is what agent/router_agent.py's citizen routing-
+        # variant split (2026-08-02) weights each candidate by: how much
+        # more traffic a route can absorb before it saturates too, not an
+        # LLM-invented number. Kept alongside the route IDs the judgment
+        # step above already chose, not a second judgment of which routes
+        # are "viable" -- that's still main_route/secondary_routes' job.
+        candidates_by_id = {c["segment_id"]: c for c in candidates}
+        route_ids = ([main_route] if main_route else []) + list(decision.result.get("secondary_routes") or [])
+        viable_routes = [
+            {
+                "segmentId": rid,
+                "name": candidates_by_id[rid]["name"],
+                "capacityVph": candidates_by_id[rid]["capacity_vph"],
+                "currentSaturation": candidates_by_id[rid]["current_saturation"],
+            }
+            for rid in route_ids
+            if rid in candidates_by_id
+        ]
+        decision.result = {**decision.result, "viable_routes": viable_routes}
 
     return decision
 
@@ -292,7 +332,15 @@ def decide_signal_failure(
 
     return decide(
         facts,
-        instructions="依 SOP 第5條判斷：是否為號誌故障事件，需要產出人工指揮派遣建議？",
+        instructions=(
+            "依 SOP 第5條判斷：triggered 是否為 true，判斷條件是精確的機械比對，"
+            "不是語意判斷——若且唯若 type 的值精確等於 \"Power_Failure\"，"
+            "或 description 文字中包含「號誌失效」或「故障」其中一個詞，才算觸發。"
+            "不要用語意相近但字面不符的詞（例如「交通中斷」「事故」「號誌異常」"
+            "「燈號問題」等）自行推論成觸發——只認 type 精確比對跟這兩個關鍵詞的"
+            "文字比對，其餘一律 triggered=false。"
+            "觸發時才需要產出人工指揮派遣建議。"
+        ),
         fallback=fallback,
         llm_client=llm_client,
     )

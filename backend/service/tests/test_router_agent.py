@@ -1,7 +1,11 @@
-"""Tests for agent/router_agent.py (Phase A route_triggers + Phase C
-narrate_for_focus). Mirrors tests/test_decision_agent.py's conventions:
-FakeLLMClient for the LLM path, no-LLM env for the fallback path -- never a
-real network call.
+"""Tests for agent/router_agent.py (Phase C narrate_for_focus). Mirrors
+tests/test_decision_agent.py's conventions: FakeLLMClient for the LLM path,
+no-LLM env for the fallback path -- never a real network call.
+
+2026-08-02: Phase A (route_triggers) was removed from this module -- see
+decision_routing.py's module docstring -- so its tests (TestRouteTriggers)
+were removed too. Phase A is now decision_routing._deterministic_city_sweep,
+pure Python with no LLM path to test against a fake client.
 """
 from __future__ import annotations
 
@@ -10,7 +14,7 @@ import json
 import pytest
 
 from agent.llm_client import LLMClient
-from agent.router_agent import Narrative, Trigger, narrate_for_focus, route_triggers
+from agent.router_agent import Narrative, Trigger, narrate_for_focus
 
 
 class FakeLLMClient(LLMClient):
@@ -43,36 +47,6 @@ class TestTriggerKind:
         assert Trigger(sop_section_id="4", location_id="BS_TPE_DOME").kind == "dome_dispersal"
         assert Trigger(sop_section_id="5", location_id="RD_TPE_007").kind == "signal_failure"
         assert Trigger(sop_section_id="6", location_id="BS_XY_ATT").kind == "multilingual"
-
-
-class TestRouteTriggers:
-    def test_no_client_uses_fallback(self):
-        sentinel = [Trigger(sop_section_id="1", location_id="RD_TPE_001")]
-        result = route_triggers({}, fallback=lambda: sentinel, llm_client=None)
-        assert result is sentinel
-
-    def test_valid_json_response_is_parsed_and_sop_section_id_normalized(self):
-        fake = FakeLLMClient(
-            json.dumps({"triggers": [{"sopSectionId": "第1條", "locationId": "RD_TPE_001"}]})
-        )
-        result = route_triggers({}, fallback=lambda: [], llm_client=fake)
-        assert result == [Trigger(sop_section_id="1", location_id="RD_TPE_001")]
-        assert len(fake.calls) == 1
-
-    def test_items_missing_location_id_are_dropped(self):
-        fake = FakeLLMClient(json.dumps({"triggers": [{"sopSectionId": "1"}]}))
-        assert route_triggers({}, fallback=lambda: [], llm_client=fake) == []
-
-    def test_invalid_json_falls_back(self):
-        fake = FakeLLMClient("這不是 JSON")
-        sentinel = [Trigger(sop_section_id="6", location_id="BS_XY_ATT")]
-        result = route_triggers({}, fallback=lambda: sentinel, llm_client=fake)
-        assert result is sentinel
-
-    def test_client_exception_falls_back(self):
-        sentinel: list[Trigger] = []
-        result = route_triggers({}, fallback=lambda: sentinel, llm_client=RaisingLLMClient())
-        assert result is sentinel
 
 
 class TestNarrateForFocus:
