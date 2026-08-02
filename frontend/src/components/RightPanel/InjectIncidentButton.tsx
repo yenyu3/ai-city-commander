@@ -5,20 +5,49 @@ import { pick, useLanguage } from "../../i18n";
 import type { LiveIncident } from "../../types";
 import styles from "./InjectIncidentButton.module.css";
 
+type UploadStatus = { type: "ok" | "error"; message: string };
+
+const SUCCESS_HOLD_MS = 2000;
+
 export default function InjectIncidentButton() {
   const submitIncident = useAppStore((s) => s.submitIncident);
   const { language } = useLanguage();
   const [showMenu, setShowMenu] = useState(false);
   const [isDragOver, setIsDragOver] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState<{ type: "ok" | "error"; message: string } | null>(null);
+  const [uploadLocked, setUploadLocked] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState<UploadStatus | null>(null);
   const menuRef = useRef<HTMLDivElement | null>(null);
   const fileInputRef = useRef<HTMLInputElement | null>(null);
 
   useEffect(() => {
-    if (!uploadStatus) return;
-    const timer = window.setTimeout(() => setUploadStatus(null), 4000);
+    if (!uploadStatus || uploadLocked) return;
+    const timer = window.setTimeout(() => setUploadStatus(null), SUCCESS_HOLD_MS);
     return () => window.clearTimeout(timer);
-  }, [uploadStatus]);
+  }, [uploadLocked, uploadStatus]);
+
+  useEffect(() => {
+    if (!uploadLocked) return;
+    const timer = window.setTimeout(() => {
+      setUploadLocked(false);
+      setUploadStatus(null);
+      setIsDragOver(false);
+      setShowMenu(false);
+    }, SUCCESS_HOLD_MS);
+    return () => window.clearTimeout(timer);
+  }, [uploadLocked]);
+
+  useEffect(() => {
+    if (!showMenu) return;
+
+    function handlePointerDown(event: MouseEvent) {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowMenu(false);
+      }
+    }
+
+    window.addEventListener("mousedown", handlePointerDown);
+    return () => window.removeEventListener("mousedown", handlePointerDown);
+  }, [showMenu]);
 
   function parseAndAdd(text: string) {
     let raw: unknown;
@@ -27,7 +56,7 @@ export default function InjectIncidentButton() {
     } catch {
       setUploadStatus({
         type: "error",
-        message: pick(language, "JSON 格式無效，請檢查檔案內容", "Invalid JSON. Please check the file content."),
+        message: pick(language, "JSON 格式錯誤，請檢查檔案內容", "Invalid JSON. Please check the file content."),
       });
       return;
     }
@@ -87,16 +116,18 @@ export default function InjectIncidentButton() {
     }
 
     valid.forEach(submitIncident);
+    setUploadLocked(true);
     setUploadStatus({
       type: "ok",
       message:
         skipped > 0
-          ? pick(language, `已加入 ${valid.length} 筆，略過 ${skipped} 筆`, `Added ${valid.length}, skipped ${skipped}`)
-          : pick(language, `已加入 ${valid.length} 筆事件`, `Added ${valid.length} incident(s)`),
+          ? pick(language, `已上傳成功，略過 ${skipped} 筆無效資料`, `Upload successful, skipped ${skipped} invalid item(s)`)
+          : pick(language, "已上傳成功", "Upload successful"),
     });
   }
 
   function readFile(file: File) {
+    if (uploadLocked) return;
     const reader = new FileReader();
     reader.onload = (event) => parseAndAdd(String(event.target?.result ?? ""));
     reader.onerror = () => {
@@ -109,6 +140,10 @@ export default function InjectIncidentButton() {
   }
 
   function handleFileInput(event: React.ChangeEvent<HTMLInputElement>) {
+    if (uploadLocked) {
+      event.target.value = "";
+      return;
+    }
     const file = event.target.files?.[0];
     if (file) readFile(file);
     event.target.value = "";
@@ -117,22 +152,14 @@ export default function InjectIncidentButton() {
   function handleDrop(event: React.DragEvent) {
     event.preventDefault();
     setIsDragOver(false);
+    if (uploadLocked) return;
     const file = event.dataTransfer.files?.[0];
     if (file) readFile(file);
   }
 
-  useEffect(() => {
-    if (!showMenu) return;
-
-    function handlePointerDown(event: MouseEvent) {
-      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
-        setShowMenu(false);
-      }
-    }
-
-    window.addEventListener("mousedown", handlePointerDown);
-    return () => window.removeEventListener("mousedown", handlePointerDown);
-  }, [showMenu]);
+  function openFilePicker() {
+    if (!uploadLocked) fileInputRef.current?.click();
+  }
 
   return (
     <div className={styles.wrap} ref={menuRef}>
@@ -141,7 +168,11 @@ export default function InjectIncidentButton() {
         className={styles.btn}
         aria-label={pick(language, "注入緊急事件", "Inject incident")}
         title={pick(language, "注入緊急事件", "Inject incident")}
-        onClick={() => setShowMenu((value) => !value)}
+        onClick={() => {
+          setUploadStatus(null);
+          setIsDragOver(false);
+          setShowMenu((value) => !value);
+        }}
       >
         <Plus size={16} aria-hidden="true" />
       </button>
@@ -151,11 +182,15 @@ export default function InjectIncidentButton() {
         accept=".json,application/json"
         className={styles.fileInput}
         onChange={handleFileInput}
+        disabled={uploadLocked}
       />
       {showMenu && (
         <div className={styles.menu}>
           {uploadStatus && (
-            <div className={`${styles.status} ${uploadStatus.type === "error" ? styles.statusError : styles.statusOk}`} role="status">
+            <div
+              className={`${styles.status} ${uploadStatus.type === "error" ? styles.statusError : styles.statusOk}`}
+              role="status"
+            >
               {uploadStatus.message}
             </div>
           )}
@@ -163,26 +198,37 @@ export default function InjectIncidentButton() {
             {pick(language, "上傳事件 JSON", "Upload incident JSON")}
           </div>
           <div
-            className={`${styles.dropzone} ${isDragOver ? styles.dropzoneOver : ""}`}
+            className={[
+              styles.dropzone,
+              isDragOver && !uploadLocked ? styles.dropzoneOver : "",
+              uploadLocked ? styles.dropzoneLocked : "",
+            ]
+              .filter(Boolean)
+              .join(" ")}
             onDragOver={(event) => {
               event.preventDefault();
-              setIsDragOver(true);
+              if (!uploadLocked) setIsDragOver(true);
             }}
             onDragLeave={() => setIsDragOver(false)}
             onDrop={handleDrop}
-            onClick={() => fileInputRef.current?.click()}
+            onClick={openFilePicker}
             role="button"
-            tabIndex={0}
+            tabIndex={uploadLocked ? -1 : 0}
             onKeyDown={(event) => {
-              if (event.key === "Enter" || event.key === " ") {
+              if (!uploadLocked && (event.key === "Enter" || event.key === " ")) {
                 event.preventDefault();
-                fileInputRef.current?.click();
+                openFilePicker();
               }
             }}
+            aria-disabled={uploadLocked}
             aria-label={pick(language, "上傳事件 JSON", "Upload incident JSON")}
           >
             <UploadCloud size={18} aria-hidden="true" />
-            <span>{pick(language, "拖曳或點擊上傳 JSON", "Drop or click to upload JSON")}</span>
+            <span>
+              {uploadLocked
+                ? pick(language, "已上傳成功，請稍候", "Upload successful")
+                : pick(language, "拖曳或點擊上傳 JSON", "Drop or click to upload JSON")}
+            </span>
           </div>
         </div>
       )}
