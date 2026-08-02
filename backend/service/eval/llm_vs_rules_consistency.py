@@ -19,6 +19,18 @@ over `triggered` (true/false), plus tier agreement for §1 specifically (SOP
 separately since its ground truth is triggered + which main_route was
 selected, not just a boolean.
 
+2026-08-02: every decide_*() call is an independent LLM call with no shared
+state, so they're dispatched through a ThreadPoolExecutor instead of a plain
+sequential loop -- same rationale (and same _MAX_PARALLEL ceiling) as
+decision_routing.py's _ensure_decisions. Only DB reads (db.fetch_latest_
+traffic_snapshots/fetch_latest_crowd_snapshots/fetch_crowd_history/
+fetch_active_incidents) stay on the main thread first, building a flat list
+of "work items" -- psycopg connections aren't thread-safe, so `conn` is
+never touched from inside a worker. Scoring (mutating the shared
+_ArticleScore dict) also stays on the main thread, after every future has
+resolved, for the same reason. This cut a real run from ~15 sequential
+minutes (one segment/station at a time) to a few minutes.
+
 Usage (from backend/service/, with DATABASE_URL and an LLM configured):
 
     python3 -m eval.llm_vs_rules_consistency
@@ -29,7 +41,9 @@ from __future__ import annotations
 import argparse
 import sys
 from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
+from typing import Any, Callable
 
 import db
 from agent.facts import decide_accident, decide_congestion, decide_dome_dispersal, decide_mrt_diversion, decide_multilingual, decide_signal_failure
@@ -39,6 +53,12 @@ from rules import dome_dispersal as _rules_dome
 from rules import mrt_diversion as _rules_mrt
 from rules import multilingual_check as _rules_multilingual
 from rules import signal_failure as _rules_signal
+
+# Bounded so a large demo dataset doesn't open an unbounded number of
+# concurrent LLM calls -- same ceiling as decision_routing.py's
+# _MAX_PARALLEL_DECISIONS, for the same reason (comfortable headroom over
+# what's actually been observed, capping worst-case fan-out).
+_MAX_PARALLEL = 20
 
 
 @dataclass
@@ -68,32 +88,59 @@ class _ArticleScore:
             self.false_negative += 1
 
 
+def _run_parallel(label: str, jobs: list[Callable[[], Any]]) -> list[Any]:
+    """Runs every job (each a zero-arg closure doing one decide_*() call) in
+    a bounded thread pool, printing progress as each completes (not as each
+    is dispatched, since completion order isn't submission order under a
+    pool). Returns results in the SAME order as `jobs`, not completion
+    order, so callers can zip them back against whatever context built each
+    job."""
+    results: list[Any] = [None] * len(jobs)
+    print(f"  {label}: {len(jobs)} LLM call(s), up to {_MAX_PARALLEL} in parallel...", file=sys.stderr)
+    with ThreadPoolExecutor(max_workers=min(_MAX_PARALLEL, len(jobs) or 1)) as pool:
+        future_to_index = {pool.submit(job): i for i, job in enumerate(jobs)}
+        done = 0
+        for future in as_completed(future_to_index):
+            results[future_to_index[future]] = future.result()
+            done += 1
+            if done % 20 == 0 or done == len(jobs):
+                print(f"    {label}: {done}/{len(jobs)} done", file=sys.stderr, flush=True)
+    return results
+
+
 def _score_congestion(conn, timestamps, scores: dict[str, _ArticleScore]) -> None:
     score = scores["§1 congestion"]
-    for i, scenario_at in enumerate(timestamps, 1):
-        print(f"  [{i}/{len(timestamps)}] {scenario_at} ...", file=sys.stderr, flush=True)
-        for t in db.fetch_latest_traffic_snapshots(conn, scenario_at):
+    items = [(scenario_at, t) for scenario_at in timestamps for t in db.fetch_latest_traffic_snapshots(conn, scenario_at)]
+
+    def job(scenario_at, t):
+        def run():
             llm = decide_congestion(t.segment_id, t.road_name, t.saturation_score)
             rules_tier = _rules_congestion.get_tier(t.saturation_score)
             rules_city = _rules_congestion.check_city_response(t.segment_id, rules_tier)
-            rules_triggered = rules_city is not None
-            score.record(llm.triggered, rules_triggered)
-            if llm.triggered and rules_triggered:
-                llm_tier = llm.result.get("tier")
-                if llm_tier != rules_tier:
-                    score.tier_mismatches.append(
-                        f"{scenario_at} {t.segment_id}: LLM said {llm_tier!r}, rules/ said {rules_tier!r} "
-                        f"(saturation={t.saturation_score})"
-                    )
+            return llm, rules_tier, rules_city is not None
+        return run
+
+    results = _run_parallel("§1 congestion", [job(scenario_at, t) for scenario_at, t in items])
+    for (scenario_at, t), (llm, rules_tier, rules_triggered) in zip(items, results):
+        score.record(llm.triggered, rules_triggered)
+        if llm.triggered and rules_triggered:
+            llm_tier = llm.result.get("tier")
+            if llm_tier != rules_tier:
+                score.tier_mismatches.append(
+                    f"{scenario_at} {t.segment_id}: LLM said {llm_tier!r}, rules/ said {rules_tier!r} "
+                    f"(saturation={t.saturation_score})"
+                )
 
 
 def _score_multilingual(conn, timestamps, scores: dict[str, _ArticleScore]) -> None:
     score = scores["§6 multilingual"]
-    for scenario_at in timestamps:
-        stations = db.fetch_latest_crowd_snapshots(conn, scenario_at)
-        if not stations:
-            continue
-        llm = decide_multilingual(stations)
+    per_tick_stations = [db.fetch_latest_crowd_snapshots(conn, scenario_at) for scenario_at in timestamps]
+    ticks_with_stations = [stations for stations in per_tick_stations if stations]
+
+    results = _run_parallel(
+        "§6 multilingual", [(lambda stations=stations: decide_multilingual(stations)) for stations in ticks_with_stations]
+    )
+    for stations, llm in zip(ticks_with_stations, results):
         llm_flagged = set(llm.result.get("stations") or [])
         rules_flagged = {s.station_id for s in _rules_multilingual.check_multilingual_needed(stations)}
         for s in stations:
@@ -103,17 +150,27 @@ def _score_multilingual(conn, timestamps, scores: dict[str, _ArticleScore]) -> N
 def _score_mrt_and_dome(conn, timestamps, scores: dict[str, _ArticleScore]) -> None:
     mrt_score = scores["§3 mrt_diversion"]
     dome_score = scores["§4 dome_dispersal"]
+
+    mrt_items = []
+    dome_items = []
     for scenario_at in timestamps:
         stations = {s.station_id: s for s in db.fetch_latest_crowd_snapshots(conn, scenario_at)}
         if "BS_MRT_BL17" in stations:
-            bl17 = stations["BS_MRT_BL17"]
-            llm = decide_mrt_diversion(bl17)
-            mrt_score.record(llm.triggered, _rules_mrt.check_mrt_diversion(bl17))
+            mrt_items.append(stations["BS_MRT_BL17"])
         if "BS_TPE_DOME" in stations:
             dome = stations["BS_TPE_DOME"]
             history = db.fetch_crowd_history(conn, "BS_TPE_DOME", scenario_at)
-            llm = decide_dome_dispersal(history, dome)
-            dome_score.record(llm.triggered, _rules_dome.check_dome_dispersal(history, dome))
+            dome_items.append((history, dome))
+
+    mrt_results = _run_parallel("§3 mrt_diversion", [(lambda s=s: decide_mrt_diversion(s)) for s in mrt_items])
+    for bl17, llm in zip(mrt_items, mrt_results):
+        mrt_score.record(llm.triggered, _rules_mrt.check_mrt_diversion(bl17))
+
+    dome_results = _run_parallel(
+        "§4 dome_dispersal", [(lambda h=h, d=d: decide_dome_dispersal(h, d)) for h, d in dome_items]
+    )
+    for (history, dome), llm in zip(dome_items, dome_results):
+        dome_score.record(llm.triggered, _rules_dome.check_dome_dispersal(history, dome))
 
 
 def _score_signal_failure(conn, scores: dict[str, _ArticleScore]) -> None:
@@ -126,8 +183,9 @@ def _score_signal_failure(conn, scores: dict[str, _ArticleScore]) -> None:
     latest = conn.execute("SELECT MAX(occurred_at) AS latest FROM incidents").fetchone()
     if not latest or latest["latest"] is None:
         return
-    for incident in db.fetch_active_incidents(conn, latest["latest"]):
-        llm = decide_signal_failure(incident)
+    incidents = db.fetch_active_incidents(conn, latest["latest"])
+    results = _run_parallel("§5 signal_failure", [(lambda i=i: decide_signal_failure(i)) for i in incidents])
+    for incident, llm in zip(incidents, results):
         score.record(llm.triggered, _rules_signal.check_signal_failure(incident))
 
 
@@ -142,7 +200,7 @@ def evaluate(limit: int | None = None) -> dict[str, _ArticleScore]:
             timestamps = timestamps[:limit]
 
         scores: dict[str, _ArticleScore] = defaultdict(_ArticleScore)
-        print(f"Scoring §1/§6 across {len(timestamps)} timestamps...", file=sys.stderr)
+        print(f"Scoring §1/§6/§3/§4 across {len(timestamps)} timestamps...", file=sys.stderr)
         _score_congestion(conn, timestamps, scores)
         _score_multilingual(conn, timestamps, scores)
         _score_mrt_and_dome(conn, timestamps, scores)

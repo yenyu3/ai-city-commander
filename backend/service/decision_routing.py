@@ -9,10 +9,31 @@ once per segment, each time only knowing that one segment's own number --
 zero cross-location awareness, and `locationId` was *required* (no way to
 ask "what's going on city-wide"). The new design:
 
-  Phase A -- Router (agent/router_agent.py::route_triggers): one LLM call
-    given the ENTIRE city's current + previous-tick snapshot (all segments,
-    all stations, all active incidents) decides which SOP articles are
-    triggered and where. Cached once per scenario_at (`_ensure_city_sweep`).
+  Phase A -- Candidate sweep (`_deterministic_city_sweep`): decides which
+    §1/§6 locations are WORTH generating a full Phase B judgment for.
+    Cached once per scenario_at (`_ensure_city_sweep`).
+    2026-08-02: this used to be one LLM call (agent/router_agent.py::
+    route_triggers) handed the entire city's current+previous-tick
+    snapshot, asked to enumerate every triggered location in one JSON
+    response. Removed after a real eval run (eval/router_precision_recall.py)
+    measured recall as low as 0.44 on the demo dataset's busiest ticks
+    (9-14 simultaneous congestion candidates) with zero false positives --
+    i.e. the model wasn't misjudging anything, it was just failing to list
+    every match when asked to enumerate a long candidate set in one shot, a
+    known LLM weakness. The underlying problem: §1/§6's candidacy is
+    already pure SOP-threshold arithmetic by the time it reaches the
+    prompt (`is_city_trigger_segment` + saturation tier for §1, roaming%
+    for §6 -- the prompt's own rules told the model "don't re-derive this,
+    just echo the boolean"), so there was never a real judgment call for
+    an LLM to make here -- asking it to re-enumerate a already-computed
+    boolean across dozens of candidates only added a chance to drop some.
+    Phase A is now the same `rules/congestion_tier.py`/`rules/
+    multilingual_check.py` functions eval/llm_vs_rules_consistency.py
+    already treats as ground truth, called directly -- deterministic by
+    construction, same treatment §3/§4 already got (see below). §2/§5
+    were never part of this snapshot's real candidate set either (see
+    _INCIDENT_RESPONSE_KINDS) -- there's nothing left in the decision
+    sweep that ever needed genuine LLM triage.
   Phase B -- Focused generation (agent/facts.py's existing decide_*()
     functions, unchanged): for each Phase A candidate, generate the real
     reasoning/result/public_message. Phase B's own `triggered` is
@@ -76,7 +97,6 @@ import s3_cache
 import s3_common
 from agent.decision_agent import Decision
 from agent.facts import (
-    build_accident_candidates,
     decide_accident,
     decide_congestion,
     decide_dome_dispersal,
@@ -84,8 +104,9 @@ from agent.facts import (
     decide_multilingual,
     decide_signal_failure,
 )
-from agent.router_agent import Narrative, NarrativeSummary, Trigger, narrate_for_focus, route_triggers
-from rules.congestion_tier import CITY_TRIGGER_SEGMENTS
+from agent.router_agent import Narrative, NarrativeSummary, Trigger, narrate_for_focus
+from rules.congestion_tier import check_city_response, get_tier
+from rules.multilingual_check import check_multilingual_needed
 from rules.types import CrowdSnapshot, LiveIncident, RoadSegment, TrafficSnapshot
 
 logger = logging.getLogger(__name__)
@@ -158,125 +179,43 @@ _KIND_AGENCIES: dict[str, list[dict[str, str]]] = {
 @dataclass
 class _CityData:
     current_traffic: dict[str, TrafficSnapshot]
-    previous_traffic: dict[str, TrafficSnapshot]
     current_crowd: dict[str, CrowdSnapshot]
-    previous_crowd: dict[str, CrowdSnapshot]
     incidents: dict[str, LiveIncident]  # by event_id
     segments: dict[str, RoadSegment] = field(default_factory=dict)  # full network graph, for decide_accident
 
 
 def _fetch_city_data(conn, scenario_at: datetime) -> _CityData:
+    # 2026-08-02: used to also fetch the previous tick's traffic/crowd
+    # snapshots (db.fetch_previous_traffic_timestamp/fetch_previous_crowd_
+    # timestamp + a second fetch_latest_*_snapshots call each) purely so
+    # Phase A's LLM router could see a trend, not just a point-in-time
+    # value. Now that Phase A is deterministic threshold arithmetic (see
+    # _deterministic_city_sweep), nothing reads previous-tick data anymore
+    # -- dropped, saving two extra DB round-trips per sweep for data no
+    # caller used.
     current_traffic = {t.segment_id: t for t in db.fetch_latest_traffic_snapshots(conn, scenario_at)}
-    prev_traffic_ts = db.fetch_previous_traffic_timestamp(conn, scenario_at)
-    previous_traffic = (
-        {t.segment_id: t for t in db.fetch_latest_traffic_snapshots(conn, prev_traffic_ts)}
-        if prev_traffic_ts
-        else {}
-    )
-
     current_crowd = {c.station_id: c for c in db.fetch_latest_crowd_snapshots(conn, scenario_at)}
-    prev_crowd_ts = db.fetch_previous_crowd_timestamp(conn, scenario_at)
-    previous_crowd = (
-        {c.station_id: c for c in db.fetch_latest_crowd_snapshots(conn, prev_crowd_ts)} if prev_crowd_ts else {}
-    )
-
     incidents = {i.event_id: i for i in db.fetch_active_incidents(conn, scenario_at)}
     segments = db.fetch_road_segments(conn)
 
-    return _CityData(current_traffic, previous_traffic, current_crowd, previous_crowd, incidents, segments)
+    return _CityData(current_traffic, current_crowd, incidents, segments)
 
 
-def _traffic_point(t: TrafficSnapshot) -> dict:
-    return {
-        "saturationScore": t.saturation_score,
-        "avgSpeed": t.avg_speed,
-        "vehicleCount": t.vehicle_count,
-        "laneStatus": t.lane_status,
-    }
-
-
-def _crowd_point(c: CrowdSnapshot) -> dict:
-    return {
-        "userCount": c.user_count,
-        "growthRate": c.growth_rate,
-        "roamingPct": c.roaming_pct,
-        "stayTimeAvg": c.stay_time_avg,
-    }
-
-
-def _snapshot_json(data: _CityData) -> dict:
-    # Both of these are already-fetched data reshaped, not new DB/LLM calls
-    # -- cheap to hand Phase A the same structural facts Phase B's decide_*()
-    # functions use, instead of making it re-derive them (e.g. from reading
-    # the SOP text) or guess blind. See agent/router_agent.py's system
-    # prompt for how these are used.
-    saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
-
-    return {
-        "segments": [
-            {
-                "segment_id": t.segment_id,
-                "segment_name": t.road_name,
-                "is_city_trigger_segment": t.segment_id in CITY_TRIGGER_SEGMENTS,
-                "current": _traffic_point(t),
-                "previous": _traffic_point(data.previous_traffic[t.segment_id])
-                if t.segment_id in data.previous_traffic
-                else None,
-            }
-            for t in data.current_traffic.values()
-        ],
-        "stations": [
-            {
-                "station_id": c.station_id,
-                "location_name": c.location_name,
-                "current": _crowd_point(c),
-                "previous": _crowd_point(data.previous_crowd[c.station_id])
-                if c.station_id in data.previous_crowd
-                else None,
-            }
-            for c in data.current_crowd.values()
-        ],
-        "active_incidents": [
-            {
-                "event_id": i.event_id,
-                "type": i.type,
-                "location": i.location,
-                "affected_segment": i.affected_segment,
-                "status": i.status,
-                "severity": i.severity,
-                "description": i.description,
-                "candidate_alternative_routes": build_accident_candidates(i, data.segments, saturation),
-            }
-            for i in data.incidents.values()
-        ],
-    }
-
-
-def _eager_trigger_scan(conn, data: _CityData, scenario_at: datetime) -> list[Trigger]:
-    """Phase A's no-LLM fallback -- exactly today's brute-force behavior
-    (call every existing decide_*() eagerly, keep the triggered ones), just
-    orchestrated as one sweep instead of driven by external per-location
-    queries. Each decide_*() call independently falls back to rules/ too
-    (no LLM configured propagates all the way down), so this stays a pure
-    deterministic path end to end."""
+def _deterministic_city_sweep(data: _CityData) -> list[Trigger]:
+    """§1/§6 candidate selection -- pure SOP-threshold arithmetic (the same
+    `rules/congestion_tier.py`/`rules/multilingual_check.py` functions
+    eval/llm_vs_rules_consistency.py already treats as ground truth), no
+    LLM call involved. See the module docstring for why this replaced the
+    old LLM router entirely: there was never a real judgment call being
+    made here, just a chance to under-enumerate a long candidate list.
+    §2/§5 aren't computed here -- they're the incident API's job
+    (run_incident_flow), never part of a decision sweep."""
     triggers: list[Trigger] = []
-
     for segment_id, t in data.current_traffic.items():
-        if decide_congestion(segment_id, t.road_name, t.saturation_score).triggered:
+        if check_city_response(segment_id, get_tier(t.saturation_score)) is not None:
             triggers.append(Trigger(sop_section_id="1", location_id=segment_id))
-
-    if data.current_crowd:
-        multilingual = decide_multilingual(list(data.current_crowd.values()))
-        for station_id in multilingual.result.get("stations") or []:
-            triggers.append(Trigger(sop_section_id="6", location_id=station_id))
-
-    saturation = {sid: t.saturation_score for sid, t in data.current_traffic.items()}
-    for incident in data.incidents.values():
-        if decide_accident(incident, data.segments, saturation).triggered:
-            triggers.append(Trigger(sop_section_id="2", location_id=incident.affected_segment))
-        if decide_signal_failure(incident).triggered:
-            triggers.append(Trigger(sop_section_id="5", location_id=incident.affected_segment))
-
+    for station in check_multilingual_needed(list(data.current_crowd.values())):
+        triggers.append(Trigger(sop_section_id="6", location_id=station.station_id))
     return triggers
 
 
@@ -291,22 +230,15 @@ def _always_on_triggers(data: _CityData) -> list[Trigger]:
     return triggers
 
 
-def _ensure_city_sweep(conn, scenario_at: datetime, data: _CityData, *, force_refresh: bool) -> list[Trigger]:
+def _ensure_city_sweep(scenario_at: datetime, data: _CityData, *, force_refresh: bool) -> list[Trigger]:
     if not force_refresh:
         cached = s3_cache.fetch_cached_triggers(scenario_at)
         if cached is not None:
             return cached
 
-    snapshot = _snapshot_json(data)
-
-    def fallback() -> list[Trigger]:
-        return _eager_trigger_scan(conn, data, scenario_at)
-
-    triggers = route_triggers(snapshot, fallback=fallback) + _always_on_triggers(data)
-    # Decision API entry only: drop the per-incident §2/§5 responses (both the
-    # router's output and _eager_trigger_scan's fallback feed through here) --
-    # those are the incident entry's job (run_incident_flow), see the
-    # _INCIDENT_RESPONSE_KINDS note.
+    # §2/§5 were never part of this sweep's candidate set to begin with
+    # (_deterministic_city_sweep only computes §1/§6) -- those are the
+    # incident entry's job (run_incident_flow), see _INCIDENT_RESPONSE_KINDS.
     #
     # 2026-08-02: used to also tag any remaining trigger (congestion/mrt/
     # dome/multilingual) with an active incident's event_id whenever they
@@ -319,7 +251,7 @@ def _ensure_city_sweep(conn, scenario_at: datetime, data: _CityData, *, force_re
     # never wrote a report off of it (that's run_incident_flow's job alone,
     # see its own docstring), it was purely a cosmetic field on the API
     # response.
-    triggers = [t for t in triggers if t.kind not in _INCIDENT_RESPONSE_KINDS]
+    triggers = _deterministic_city_sweep(data) + _always_on_triggers(data)
     s3_cache.save_triggers(scenario_at=scenario_at, triggers=triggers)
     return triggers
 
@@ -684,7 +616,7 @@ def run_worker_phases(
     so a second caller asking about a different focus for the same scenario_at
     reuses the cached sweep/decisions."""
     data = _fetch_city_data(conn, scenario_at)
-    triggers = _ensure_city_sweep(conn, scenario_at, data, force_refresh=force_refresh)
+    triggers = _ensure_city_sweep(scenario_at, data, force_refresh=force_refresh)
     pairs = _ensure_decisions(conn, scenario_at, data, triggers)
     narrative = _ensure_narrative(scenario_at, data, pairs, location_id)
     return pairs, narrative

@@ -196,9 +196,19 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         # quotes"), even though the content itself was fine.
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
+        pass
+    try:
         # Same long-JSON trailing-comma slip caught live in
         # router_agent.py/chat.py's _parse_json_response -- one retry with
         # trailing commas stripped before giving up and falling back. Does
         # NOT recover a genuinely truncated response (unterminated string),
         # which max_tokens above is sized to avoid in the first place.
         return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
+    except json.JSONDecodeError:
+        # "Extra data" -- a real Bedrock call returned a complete, valid
+        # JSON object followed by stray trailing content. json.loads()
+        # requires the ENTIRE string to be exactly one JSON document;
+        # raw_decode() instead parses just the first complete value and
+        # ignores whatever follows.
+        obj, _end = json.JSONDecoder(strict=False).raw_decode(text)
+        return obj

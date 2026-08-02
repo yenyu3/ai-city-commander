@@ -481,7 +481,7 @@ class TestPhaseBParallelization:
 
             city_data = _CityData(
                 current_traffic={t.segment_id: t for t in data},
-                previous_traffic={}, current_crowd={}, previous_crowd={}, incidents={}, segments={},
+                current_crowd={}, incidents={}, segments={},
             )
             triggers = [_Trigger(sop_section_id="1", location_id=t.segment_id) for t in data[:3]]
 

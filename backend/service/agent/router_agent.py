@@ -1,19 +1,22 @@
-"""City-wide SOP triage (Phase A) + focused narrative generation (Phase C)
-for decision-generator-worker's 3-phase pipeline (2026-08-01 redesign -- see
-decision_routing.py's module docstring for the full picture).
+"""Focused narrative generation (Phase C) for decision-generator-worker's
+3-phase pipeline (2026-08-01 redesign -- see decision_routing.py's module
+docstring for the full picture).
 
-Direction from the user: don't fragment context into tiny per-location LLM
-calls. `route_triggers()` is handed the ENTIRE city's current state (every
-segment/station, current *and* previous tick so it can see a trend, not a
-single point) plus every active incident, in one shot, and decides which SOP
-articles are triggered and where. Detailed reasoning/report content is
-*not* produced here -- that's Phase B (agent/facts.py's existing decide_*()
-functions, reused as-is, called only for whatever Phase A flagged worth
-generating). `narrate_for_focus()` then blends the resulting triggered
-items into a `Narrative` (`.citizen` / `.government`, one caller-supplied
-focus location, possibly none) -- this is what lets a response say "your
-station's fine, but avoid Station B, it's congested" instead of only ever
-answering about one isolated location.
+2026-08-02: this module used to also hold Phase A (`route_triggers()`, a
+router LLM call that triaged the entire city's snapshot into a trigger
+list). Removed -- see decision_routing.py's module docstring for why:
+§1/§6 candidacy turned out to be pure SOP-threshold arithmetic the model
+was just being asked to re-echo, and doing that as one big enumeration
+over dozens of candidates was measurably losing recall on busy ticks
+(eval/router_precision_recall.py caught it at 0.44 recall / 1.0 precision
+-- the model wasn't guessing wrong, it was under-listing). Phase A is now
+`decision_routing._deterministic_city_sweep`, plain Python.
+
+`narrate_for_focus()` blends the currently-triggered items (however Phase A
+found them) into a `Narrative` (`.citizen` / `.government`, one
+caller-supplied focus location, possibly none) -- this is what lets a
+response say "your station's fine, but avoid Station B, it's congested"
+instead of only ever answering about one isolated location.
 
 2026-08-01, final design after three wrong intermediate versions (see git
 history if that reasoning is ever needed, but the ONLY correct contract is
@@ -49,14 +52,9 @@ integrated summary object, not a parallel per-item list (decisions[] is
 already the per-item list).
 
 Same resilience contract as the rest of agent/: no LLM configured, or the
-call fails/returns unparseable JSON, falls back -- `route_triggers()` takes
-an explicit `fallback` callable (like decision_agent.decide()) because its
-fallback needs RDS-backed data (full road network graph, full crowd
-history) that this module deliberately doesn't fetch itself (agent/ stays a
-pure judgment layer, given data -- see decision_routing.py for the fetching
-side). `narrate_for_focus()`'s fallback needs no such data (it only
-recombines already-generated structured fields from decision_detail()
-output), so it's self-contained.
+call fails/returns unparseable JSON, falls back. `narrate_for_focus()`'s
+fallback needs no RDS-backed data (it only recombines already-generated
+structured fields from decision_detail() output), so it's self-contained.
 """
 from __future__ import annotations
 
@@ -64,10 +62,9 @@ import json
 import sys
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 from .llm_client import LLMClient, get_configured_llm_client
-from .sop_sections import FULL_SOP_TEXT
 
 
 @dataclass
@@ -141,71 +138,6 @@ class Trigger:
     @property
     def kind(self) -> str:
         return _KIND_BY_SOP_SECTION.get(self.sop_section_id, "unknown")
-
-
-_ROUTER_SYSTEM_PROMPT = (
-    "你是台北市交通應變指揮系統的分診 Agent。你會收到全市目前所有路段、站點的"
-    "即時與前一筆快照數據（用來看趨勢變化，不是只看單一時間點），以及目前所有"
-    "進行中的事件，還有完整的 SOP 七條全文。\n\n"
-    "你的工作只有一件事：找出目前有哪些 SOP 條款被觸發、分別在哪個地點/哪個"
-    "事件。不需要在這一步生成詳細處置建議、理由或民眾訊息，那是下一階段的工作，"
-    "這一步只要正確列出目前觸發清單即可（不確定的可以列出來，之後會被各自的"
-    "規則再驗證一次，多列不影響正確性；但漏掉真的有觸發的比較不好，請寧可"
-    "多列）。\n\n"
-    "規則：\n"
-    "1. 針對 segments 陣列中的每一個路段，依 SOP 第1條判斷是否觸發——"
-    "每個路段已經附上 is_city_trigger_segment 布林值，直接告訴你這個路段是不是"
-    "SOP 第1條認定的城市應變觸發路段，不用自己再從 SOP 文字反推；只有這個值"
-    "為 true、且達 B 級以上門檻，才算觸發（其餘路段即使飽和度再高，也不算"
-    "第1條觸發，只是 dashboard 顯示分級用，不用列入 triggers）。\n"
-    "2. 針對 stations 陣列中的每一個站點，依 SOP 第6條判斷 roaming 是否達門檻。\n"
-    "3. 針對 active_incidents 陣列中的每一個事件，同時且獨立判斷 SOP 第2條"
-    "（事故/路障）與第5條（號誌故障）是否觸發——一個事件可能兩條都觸發、都不"
-    "觸發，不要用事件 type 預先排除任何一條，locationId 請填該事件的"
-    "affected_segment。每個事件已經附上 candidate_alternative_routes（各候選"
-    "替代路線的 capacity_vph/is_direct_intersection/is_upstream/"
-    "current_saturation），可以直接拿來判斷第2條是否觸發（三項觸發條件：狀態"
-    "屬於封閉/阻斷/管制、severity 屬於高/危急、affected_segment 是路段），"
-    "不需要在這一步就選出主/次疏散路徑，那是下一階段的工作。\n"
-    "4. SOP 第3條（捷運分流）與第4條（大巨蛋散場）由程式碼另外處理，這裡不用"
-    "判斷 BS_MRT_BL17 或 BS_TPE_DOME。\n"
-    "5. 只能輸出一個 JSON 物件，不要有其他文字或 markdown 標記，格式：\n"
-    '   {"triggers": [{"sopSectionId": "純數字字串，例如 \\"1\\"", '
-    '"locationId": "路段或站點 ID"}, ...]}\n'
-    '   沒有任何觸發就輸出 {"triggers": []}。不需要輸出 eventId，事件關聯由'
-    "程式碼自動比對，你只要給 sopSectionId 跟 locationId。"
-)
-
-
-def route_triggers(
-    snapshot: dict[str, Any],
-    *,
-    fallback: Callable[[], list[Trigger]],
-    llm_client: Optional[LLMClient] = None,
-) -> list[Trigger]:
-    client = llm_client if llm_client is not None else get_configured_llm_client()
-    if client is None:
-        return fallback()
-
-    prompt = (
-        f"{FULL_SOP_TEXT}\n\n"
-        f"=== 全市目前快照（含前一筆資料供趨勢比對） ===\n"
-        f"{json.dumps(snapshot, ensure_ascii=False, indent=2)}"
-    )
-    try:
-        raw = client.complete(system=_ROUTER_SYSTEM_PROMPT, prompt=prompt, max_tokens=2000)
-        parsed = _parse_json_response(raw)
-        return [
-            Trigger(
-                sop_section_id=_normalize_sop_section_id(item.get("sopSectionId")),
-                location_id=item["locationId"],
-            )
-            for item in parsed.get("triggers", [])
-            if item.get("locationId")
-        ]
-    except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
-        print(f"[agent.router_agent] route_triggers LLM call failed, falling back: {exc}", file=sys.stderr)
-        return fallback()
 
 
 _NARRATIVE_SHARED_PREAMBLE = (
@@ -465,15 +397,6 @@ def _fallback_narrative(
     )
 
 
-def _normalize_sop_section_id(raw: Any) -> Optional[str]:
-    import re
-
-    if raw is None:
-        return None
-    match = re.search(r"\d+", str(raw))
-    return match.group(0) if match else None
-
-
 def _parse_json_response(raw: str) -> dict[str, Any]:
     import re
 
@@ -494,6 +417,8 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         # fields are exactly this kind of long free-form content.
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
+        pass
+    try:
         # narrate_for_focus's governmentText is long-form (up to 8000
         # tokens, every triggered item spelled out in full) -- caught live
         # against a real Bedrock call producing a trailing comma before a
@@ -503,3 +428,11 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         # and falling back (which would silently discard this whole
         # response, per narrate_for_focus's docstring on why that's costly).
         return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
+    except json.JSONDecodeError:
+        # "Extra data" -- a real Bedrock call returned a complete, valid
+        # JSON object followed by stray trailing content. json.loads()
+        # requires the ENTIRE string to be exactly one JSON document;
+        # raw_decode() instead parses just the first complete value and
+        # ignores whatever follows.
+        obj, _end = json.JSONDecoder(strict=False).raw_decode(text)
+        return obj

@@ -12,36 +12,36 @@
 
 ## 三個階段（同一次 worker invocation 裡依序跑完）
 
-- **Phase A — 分診（Router）**：`agent/router_agent.py::route_triggers()`，
-  一次 LLM 呼叫，餵給它**全市**目前所有路段/站點的即時快照**加上前一筆快照**
-  （讓它看得到趨勢，不是只看單一時間點的數字），以及目前所有進行中的事件。
-  只負責回答「現在哪些 SOP 條款被觸發、在哪裡」，不產生詳細理由或民眾訊息
-  （那是 Phase B 的工作）。每個 `scenarioAt` 只算一次，快取在
-  `decisions/{scenarioAt}/_triggers.json`。
-  - 沒有 LLM 可用時的備援：不是重寫一套規則，而是把現有的
-    `decide_congestion`/`decide_accident`/`decide_signal_failure`/
-    `decide_multilingual` 對每個路段/站點/事件都跑一次（跟舊版行為完全一樣），
-    只是現在是一次掃過全部，不是被外部逐個查詢觸發。
-  - SOP §3（`BS_MRT_BL17`）、§4（`BS_TPE_DOME`）**不**交給 Phase A 判斷——
-    這兩個站點固定只有這兩個，直接無條件當候選丟給 Phase B，讓
-    `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的有沒有觸發
-    （§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，Phase A 的
-    「目前+前一筆」快照看不到，硬要它猜反而不準）。
-  - **只做一般決策**（2026-08-01）：Phase A/B 只產生 congestion（§1）、
-    mrt_diversion（§3）、dome（§4）、multilingual（§6）。router 或備援掃出的
-    accident（§2）／signal_failure（§5）事件回應會被濾掉——那是 **incident
-    API 入口**（見下面「Incident API 入口」）的職責。decision 跟 incident 的
-    界線由「打哪個 API 進來」決定（worker 收到的 `mode`），不是 SOP 種類，
-    也不是 event_id 有沒有值。
-  - **Phase A 看到的是加工過的 facts，不是只有原始欄位**（2026-08-01 補強）：
-    每個路段多帶一個 `is_city_trigger_segment` 布林值（是不是 SOP 第1條認定
-    的觸發路段），每個 active incident 多帶一份 `candidate_alternative_routes`
-    （`agent/facts.py::build_accident_candidates()`，跟 `decide_accident()`
-    自己用的是同一份，只是抽出來共用）。這些欄位本來就是 Phase B 會用到、
-    已經在 `_CityData` 裡撈好的資料重新整理成 JSON，不是額外的 DB/LLM 呼叫，
-    所以幾乎零成本——讓 Phase A 判斷時直接用真實結構化資料，不用自己從 SOP
-    文字反推「這個路段算不算觸發路段」，或憑空猜「這個候選路線容量夠不夠、
-    在不在上游」。
+- **Phase A — 候選篩選**：`decision_routing.py::_deterministic_city_sweep()`，
+  純 Python、不呼叫 LLM。只負責回答「現在哪些 SOP 條款被觸發、在哪裡」，
+  不產生詳細理由或民眾訊息（那是 Phase B 的工作）。每個 `scenarioAt` 只算
+  一次，快取在 `decisions/{scenarioAt}/_triggers.json`。
+  - **2026-08-02 改版**：這裡原本是 `agent/router_agent.py::route_triggers()`，
+    一次 LLM 呼叫餵給它全市快照＋前一筆快照＋所有進行中事件，要求它列出
+    §1/§6 的觸發清單。拿掉的原因：§1（`is_city_trigger_segment` 布林值＋
+    飽和度門檻）、§6（roaming ≥ 30%）的觸發條件本來就是純算術，prompt 裡
+    甚至明講「不用自己反推、只要照抄這個布林值」——LLM 在這裡從來沒有真的
+    做判斷，只是被要求把一個已經算好的答案原封不動列出來。真實跑
+    `eval/router_precision_recall.py`（已刪除）量到 recall 低到 0.44、
+    precision 卻是滿分 1.0，證實不是誤判，是尖峰時段同時十幾個候選時，
+    LLM 在一次生成裡漏列的機率變高——這是枚舉型任務的已知弱點，不是校準
+    問題，所以直接改用 `rules/congestion_tier.py::check_city_response`／
+    `rules/multilingual_check.py::check_multilingual_needed`（跟
+    `eval/llm_vs_rules_consistency.py` 拿來當 ground truth 的同一組決定論
+    函式）在 Python 端直接算,recall/precision 因為不是用猜的，直接變成
+    100%。
+  - SOP §3（`BS_MRT_BL17`）、§4（`BS_TPE_DOME`）維持原本作法，**不**交給
+    Phase A 判斷——這兩個站點固定只有這兩個，直接無條件當候選丟給
+    Phase B，讓 `decide_mrt_diversion`/`decide_dome_dispersal` 自己決定真的
+    有沒有觸發（§4 的「歷史峰值 ≥ 30000」門檻本來就需要完整歷史資料，
+    Phase A 的「目前+前一筆」快照看不到，硬要它猜反而不準）。
+  - **只做一般決策**：Phase A/B 只產生 congestion（§1）、mrt_diversion
+    （§3）、dome（§4）、multilingual（§6）。§2/§5 從來就不是 Phase A 的候選
+    集合的一部分——那是 **incident API 入口**（見下面「Incident API 入口」）
+    的職責。decision 跟 incident 的界線由「打哪個 API 進來」決定（worker
+    收到的 `mode`），不是 SOP 種類，也不是 event_id 有沒有值（decision
+    sweep 產生的項目 `eventId` 也已經改成永遠是 `null`，不會再跟同地點的
+    incident 互相掛勾，見 `decision_routing.py` 內的說明）。
 
 - **Phase B — 聚焦生成**：對 Phase A 找出的每個候選，呼叫既有的
   `agent/facts.py::decide_*()`（完全沒改，一樣是「facts 進、LLM 判斷+生成
@@ -135,8 +135,11 @@ incident 入口只寫 `incidents/` + `emergency-reports/`。界線由 worker 收
     查完（`_ensure_decisions` 裡的 `dome_history` 預先撈好、當參數傳進並行
     函式，並行函式本身完全不碰 `conn`）。`run_incident_flow` 的三項檢查則
     完全不需要 `conn`，可以直接並行。
-  - Phase A（router，本來就只有一次 LLM call）跟 Phase C（narrative，同理）
-    不受影響，沒有並行化的必要。
+  - Phase A（2026-08-02 起已經不是 LLM call，純 Python 決定論計算）不受影響；
+    Phase C（narrative）本來就只有一次 LLM call，也沒有並行化的必要——不過
+    2026-08-02 另外把 Phase C 拆成 citizen/government 兩個獨立呼叫平行送出
+    （government 內容量比 citizen 重很多，拆開後 wall-clock 收斂到較重那份
+    的時間，不是兩份加總），細節見 `agent/router_agent.py::narrate_for_focus`。
 
 （原本這裡還有一項「`GET /api/city-state` 輪詢時機會性預熱 decision
 cache」——2026-08-01 撤掉了：確認前端是同時、幾乎同一瞬間打
@@ -151,8 +154,7 @@ city-state 跟 decision，不是先打 city-state、隔一段時間才切去 AI 
 都會先把收到的 `scenarioAt` 用 `api_common.decision_snapshot_at()` 無條件捨去
 到 15 分鐘整（例如 `22:07` 會被捨去成 `22:00`），才拿去查/存快取。**`mode:
 "incident"` 完全不套用這個捨去**——用呼叫端傳來的精確 `scenarioAt`（見下面
-「收到 reactive 請求」步驟 1 的說明）。這跟前面「Phase A 找『前一筆快照
-時間』」也是三件不同的事，不要搞混：
+「收到 reactive 請求」步驟 1 的說明）：
 
 - **這裡（decision 的快取時槽）**：決定「這次查詢/計算要用哪一把 S3 快取
   key」，目的是讓同一個 15 分鐘視窗內、時間戳不完全一樣的多次查詢（例如
@@ -170,11 +172,13 @@ city-state 跟 decision，不是先打 city-state、隔一段時間才切去 AI 
   注入事件時抓到這個問題：`incidents/`、`emergency-reports/` 都遲遲不出現
   任何 key。修法是 incident mode 用 `parse_scenario_at()` 解析後的原始精確
   時間，完全不經過 `decision_snapshot_at()`。
-- **Phase A 的「前一筆快照」**：決定 router 拿到的趨勢比較基準是哪個時間點
-  的路段/站點資料，跟快取 key 完全無關，用的是 `db.fetch_previous_traffic_timestamp`
-  查資料庫裡實際存在的前一筆取樣時間（不是固定往前推 15 分鐘，因為
-  `city_traffic_flow.csv`/`signaling_crowd_density.csv` 的取樣間隔本身不
-  均勻，21:00 前是整點/半小時一次，之後才變 15 分鐘）。
+
+（原本這裡還有一段「Phase A 的『前一筆快照』」，說明 `_fetch_city_data` 額外
+撈前一筆路段/站點資料給 router 看趨勢——2026-08-02 拿掉了：`db.
+fetch_previous_traffic_timestamp`/`fetch_previous_crowd_timestamp` 這兩次
+額外查詢連同「前一筆快照」資料本身，是專門為了餵給已經拿掉的 LLM router
+用的，Phase A 換成決定論計算後沒有任何東西再讀這份資料，所以連同撈取一起
+移除，省下每次 sweep 兩次不必要的 DB 查詢。）
 
 ## 收到 reactive 請求（`{mode, scenarioAt, locationId? | eventId?}`）後做什麼
 

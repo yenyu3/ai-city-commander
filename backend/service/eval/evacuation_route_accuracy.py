@@ -28,6 +28,13 @@ Scores, per segment:
 Requires a real LLM configured -- otherwise decide_accident() calls its own
 rules/ fallback and this would trivially agree 100% with itself.
 
+2026-08-02: `segments`/`traffic`/`saturation` are all fetched from `conn`
+ONCE before the loop, and the loop body never touches `conn` again -- so
+the 15 decide_accident() calls (each an independent LLM call) are safe to
+run through a ThreadPoolExecutor instead of a plain sequential loop, same
+pattern (and same _MAX_PARALLEL ceiling) as decision_routing.py's
+_ensure_decisions / eval/llm_vs_rules_consistency.py.
+
 Usage (from backend/service/, with DATABASE_URL and an LLM configured):
 
     python3 -m eval.evacuation_route_accuracy
@@ -37,12 +44,18 @@ from __future__ import annotations
 
 import argparse
 import sys
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 
 import api_common
 import db
 from agent.facts import decide_accident
 from rules import accident_response as _rules_accident
+
+# Same ceiling as decision_routing.py's _MAX_PARALLEL_DECISIONS / eval/
+# llm_vs_rules_consistency.py's _MAX_PARALLEL -- comfortable headroom over
+# this eval's fixed 15-segment candidate set.
+_MAX_PARALLEL = 20
 
 
 @dataclass
@@ -86,11 +99,9 @@ def evaluate(scenario_at_str: str = "2026-05-20T22:10:00+08:00") -> list[_RouteR
         saturation = {t.segment_id: t.saturation_score for t in traffic}
 
         candidates = [sid for sid, seg in segments.items() if seg.alternatives]
-        results = []
-        for i, segment_id in enumerate(candidates, 1):
-            incident = _synthetic_incident(segment_id)
 
-            print(f"  [{i}/{len(candidates)}] {segment_id} ...", file=sys.stderr, end="", flush=True)
+        def score_one(segment_id: str) -> _RouteResult:
+            incident = _synthetic_incident(segment_id)
             llm = decide_accident(incident, segments, saturation)
             rules_route = _rules_accident.select_evacuation_route(
                 segment_id, incident.location, segments, saturation
@@ -101,7 +112,7 @@ def evaluate(scenario_at_str: str = "2026-05-20T22:10:00+08:00") -> list[_RouteR
             llm_secondary = sorted(llm.result.get("secondary_routes") or []) if llm.triggered else []
             rules_secondary = sorted(rules_route.secondary_routes)
 
-            results.append(_RouteResult(
+            return _RouteResult(
                 segment_id=segment_id,
                 triggered_agree=(llm.triggered == rules_triggered),
                 main_route_match=(llm_main == rules_route.main_route),
@@ -110,11 +121,19 @@ def evaluate(scenario_at_str: str = "2026-05-20T22:10:00+08:00") -> list[_RouteR
                 rules_main=rules_route.main_route,
                 llm_secondary=llm_secondary,
                 rules_secondary=rules_secondary,
-            ))
-            print(
-                f" main={llm_main!r} ({'match' if llm_main == rules_route.main_route else 'MISMATCH'})",
-                file=sys.stderr,
             )
+
+        results: list[_RouteResult] = [None] * len(candidates)  # type: ignore[list-item]
+        print(f"  {len(candidates)} segment(s), up to {_MAX_PARALLEL} in parallel...", file=sys.stderr)
+        with ThreadPoolExecutor(max_workers=min(_MAX_PARALLEL, len(candidates) or 1)) as pool:
+            future_to_index = {pool.submit(score_one, sid): i for i, sid in enumerate(candidates)}
+            done = 0
+            for future in as_completed(future_to_index):
+                r = future.result()
+                results[future_to_index[future]] = r
+                done += 1
+                match_label = "match" if r.main_route_match else "MISMATCH"
+                print(f"  [{done}/{len(candidates)}] {r.segment_id} ... main={r.llm_main!r} ({match_label})", file=sys.stderr)
         conn.commit()
         return results
     finally:
@@ -139,6 +158,13 @@ def summarize(results: list[_RouteResult]) -> None:
         print("Main route mismatches:")
         for r in mismatches:
             print(f"  {r.segment_id}: LLM chose {r.llm_main!r}, rules/ chose {r.rules_main!r}")
+
+    secondary_mismatches = [r for r in results if not r.secondary_match]
+    if secondary_mismatches:
+        print()
+        print("Secondary route mismatches:")
+        for r in secondary_mismatches:
+            print(f"  {r.segment_id}: LLM chose {r.llm_secondary!r}, rules/ chose {r.rules_secondary!r}")
 
 
 def main() -> None:
