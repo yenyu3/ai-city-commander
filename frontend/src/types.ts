@@ -130,6 +130,23 @@ export interface RerouteSnapshot {
   congestionWarning: boolean;
 }
 
+/** GET /api/decisions government/citizen summary 的前端內部表示。
+ *  government 版多出 sopRefs/signalCoordination/crossSystemCoordination/publicationEligibleLocationIds，
+ *  citizen 版這幾個欄位為 undefined。 */
+export interface NarrativeSummary {
+  focusLocationId: string | null;
+  headline: string;
+  text: string;
+  recommendedActions: string[];
+  estimatedRecovery: { decisionId: string; locationId: string; ete: number }[];
+  prioritizedDecisionIds: string[];
+  // government only
+  sopRefs?: string[];
+  signalCoordination?: { intersectionName: string; adjustPct: number; goal: string }[];
+  crossSystemCoordination?: { agency: string; text: string; icon: string }[];
+  publicationEligibleLocationIds?: string[];
+}
+
 export interface AlertRecord {
   id: string;
   timestamp: string;
@@ -139,6 +156,8 @@ export interface AlertRecord {
   decisionId?: string;
   /** The locationId used when querying GET /api/decisions. */
   decisionLocationId?: string;
+  /** 來源：city_sweep = GET /api/decisions，incident = POST /api/incidents 觸發的 notice */
+  source?: "city_sweep" | "incident";
   kind:
     | "city_response"
     | "accident"
@@ -159,6 +178,10 @@ export interface AlertRecord {
   reasoningSteps?: ReasoningStep[];
   segmentMetrics?: SegmentMetricsSnapshot;
   reroute?: RerouteSnapshot;
+  /** 後端 decision_detail() 的 signalCoordination，已接後端資料取代 opsCoordinationAdapter 模板。 */
+  signalCoordination?: { signalTimings: { intersectionName: string; adjustPct: number; goal: string }[] } | null;
+  /** 後端 decision_detail() 的 crossSystemCoordination。 */
+  crossSystemCoordination?: { interAgencyActions: { agency: string; text: string; icon: string }[] } | null;
   /** 事件來源："incident" 表示由 injectIncident 注入，其餘為規則觸發 */
   origin?: "incident";
   /** 追蹤解決狀態用的路段 ID */

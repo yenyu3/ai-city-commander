@@ -70,15 +70,61 @@ function getPrimaryMetric(
   };
 }
 
-export default function DecisionSummary() {
+export default function DecisionSummary({ showSummary = false }: { showSummary?: boolean }) {
   const alerts = useAppStore((s) => s.alerts);
   const activeAlertId = useAppStore((s) => s.activeAlertId);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const stations = useAppStore((s) => s.stations);
   const currentTime = useAppStore((s) => s.currentTime);
+  const incidentGovernmentSummary = useAppStore((s) => s.incidentGovernmentSummary);
+  const governmentSummary = useAppStore((s) => s.governmentSummary);
   const { language } = useLanguage();
   const latest = alerts.find((a) => a.id === activeAlertId) ?? alerts[0];
   const [modalOpen, setModalOpen] = useState(false);
+  const [publishedAlertIds, setPublishedAlertIds] = useState<Set<string>>(() => new Set());
+
+  const narrativeSummary = incidentGovernmentSummary ?? governmentSummary;
+
+  // 綜合摘要模式
+  if (showSummary && narrativeSummary) {
+    return (
+      <div className={styles.wrap}>
+        <div className={styles.summaryCard}>
+          <div className={styles.cardHeaderRow}>
+            <span className={styles.title}>{pick(language, "綜合摘要", "Summary")}</span>
+            {incidentGovernmentSummary && (
+              <span className={styles.kind}>{pick(language, "事件來源", "Incident")}</span>
+            )}
+          </div>
+          <FieldPositionHint />
+          {narrativeSummary.headline && (
+            <div className={styles.cardHead}>
+              <span className={styles.eventTitle}>{narrativeSummary.headline}</span>
+            </div>
+          )}
+          {narrativeSummary.sopRefs && narrativeSummary.sopRefs.length > 0 && (
+            <div className={styles.metaRow}>
+              <span className={styles.kind}>{narrativeSummary.sopRefs.join(" / ")}</span>
+            </div>
+          )}
+        </div>
+
+        {narrativeSummary.recommendedActions.length > 0 && (
+          <div id="decision-actions" className={styles.actionsBlock}>
+            <span className={styles.actionsLabel}>{pick(language, "建議行動", "Recommended Actions")}</span>
+            <ol className={styles.actionList}>
+              {narrativeSummary.recommendedActions.map((item, index) => (
+                <li key={item} className={styles.actionItem}>
+                  <span className={styles.actionNumber}>{index + 1}</span>
+                  <p>{item}</p>
+                </li>
+              ))}
+            </ol>
+          </div>
+        )}
+      </div>
+    );
+  }
 
   const multilingualTriggered = checkMultilingualNeeded(
     Object.values(stations).map((st) => ({
@@ -91,7 +137,6 @@ export default function DecisionSummary() {
       roamingUserPct: st.roamingPct,
     })),
   );
-  const [publishedAlertIds, setPublishedAlertIds] = useState<Set<string>>(() => new Set());
   // canPublish 以卡片當前事件 id 為 key：事件換了就重新判斷，發布過的同一事件不重複發
   const canPublish = multilingualTriggered.length > 0 && !publishedAlertIds.has(latest?.id ?? "");
 

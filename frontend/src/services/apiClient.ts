@@ -9,6 +9,8 @@ import type {
   ApiErrorResponse,
   ApiPublicationRequest,
   ApiPublicationResponse,
+  ApiPublicManifestResponse,
+  ApiPublicNoticeResponse,
   ApiReportResponse,
 } from "../types/api";
 
@@ -92,24 +94,14 @@ export function getIncidentReport(
   );
 }
 
-/**
- * 4. GET /api/decisions
- * 404 DECISION_NOT_READY 是預期中的正常狀態（尚未有排程結果），回傳 null 而非拋例外，
- * 呼叫端應該 fallback 回本地 rule engine，見 docs/frontend-backend-coordination-issues.md 第 1、2 項。
- */
-export async function getDecision(
+/** 4. GET /api/decisions — 202 Accepted (processing) 與 200 OK (hit) 均為正常狀態，由呼叫端的 isDecisionProcessing 判斷。 */
+export function getDecision(
   scenarioAt: string,
   locationId: string,
-): Promise<ApiDecisionQueryResponse | null> {
-  console.log(`[DEBUG] apiClient.getDecision FETCH scenarioAt=${scenarioAt} locationId=${locationId} at ${Date.now()}`);
-  try {
-    return await apiFetch<ApiDecisionQueryResponse>(
-      `/decisions?scenarioAt=${encodeURIComponent(scenarioAt)}&locationId=${encodeURIComponent(locationId)}`,
-    );
-  } catch (err) {
-    if (err instanceof ApiError && err.status === 404 && err.code === "DECISION_NOT_READY") return null;
-    throw err;
-  }
+): Promise<ApiDecisionQueryResponse> {
+  return apiFetch<ApiDecisionQueryResponse>(
+    `/decisions?scenarioAt=${encodeURIComponent(scenarioAt)}&locationId=${encodeURIComponent(locationId)}`,
+  );
 }
 
 /** 5. POST /api/chat/messages */
@@ -126,4 +118,31 @@ export function publishAlert(payload: ApiPublicationRequest): Promise<ApiPublica
     method: "POST",
     body: JSON.stringify(payload),
   });
+}
+
+/** 7. GET /api/experiments/public-notices?date=YYYY-MM-DD (manifest) */
+export async function getPublicManifest(
+  date: string,
+): Promise<ApiPublicManifestResponse | null> {
+  try {
+    return await apiFetch<ApiPublicManifestResponse>(
+      `/experiments/public-notices?date=${encodeURIComponent(date)}`,
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** 7. GET /api/experiments/public-notices?date=YYYY-MM-DD&noticeId=... */
+export async function getPublicNotice(
+  date: string,
+  noticeId: string,
+): Promise<ApiPublicNoticeResponse | null> {
+  try {
+    return await apiFetch<ApiPublicNoticeResponse>(
+      `/experiments/public-notices?date=${encodeURIComponent(date)}&noticeId=${encodeURIComponent(noticeId)}`,
+    );
+  } catch {
+    return null;
+  }
 }

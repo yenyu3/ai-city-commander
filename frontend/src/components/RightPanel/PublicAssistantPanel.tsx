@@ -103,7 +103,9 @@ export default function PublicAssistantPanel() {
   const alerts = useAppStore((s) => s.alerts);
   const currentTime = useAppStore((s) => s.currentTime);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
-  const citySituationSummary = useAppStore((s) => s.citySituationSummary);
+  const incidentCitizenSummary = useAppStore((s) => s.incidentCitizenSummary);
+  const citizenSummary = useAppStore((s) => s.citizenSummary);
+  const citizenNarrativeText = (incidentCitizenSummary ?? citizenSummary)?.text ?? null;
 
   const topRoads = useMemo(
     () =>
@@ -145,8 +147,8 @@ export default function PublicAssistantPanel() {
 
   // situationSummary 是後端依 focus locationId（小人現場定位鄰近路段）生成的周邊情勢摘要，
   // 內容比本地算出的 heroReason 更完整（含鄰近路段、人潮熱點），有拿到就優先顯示。
-  const heroReason = citySituationSummary
-    ? citySituationSummary
+  const heroReason = citizenNarrativeText
+    ? citizenNarrativeText
     : latestAlert
       ? getPublicAlertText(latestAlert, language)
       : mostAffectedRoad

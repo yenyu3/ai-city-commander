@@ -63,6 +63,7 @@ export default function IncidentTimeline() {
   }, [alerts]);
 
   const markerOffsets = useMemo(() => {
+    if (!start || !end) return new Map<string, number>();
     const sorted = [...markers].sort((a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
     const groups: TimelineMarker[][] = [];
     for (const m of sorted) {

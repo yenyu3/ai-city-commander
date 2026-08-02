@@ -3,6 +3,7 @@ import type {
   ChatMessage,
   CrowdSnapshot,
   LaneStatus,
+  NarrativeSummary,
   RerouteSnapshot,
   RoadSegment,
   Tier,
@@ -13,6 +14,9 @@ import type {
   ApiChatAnswer,
   ApiCrowdItem,
   ApiDecisionListItem,
+  ApiGovernmentSummary,
+  ApiNarrativeSummary,
+  ApiReasoningStep,
   ApiReroute,
   ApiTrafficItem,
 } from "../types/api";
@@ -20,6 +24,35 @@ import type {
 const TIERS: Tier[] = ["Normal", "B", "A"];
 function coerceTier(tier: string | undefined): Tier | undefined {
   return tier && (TIERS as string[]).includes(tier) ? (tier as Tier) : undefined;
+}
+
+type LocationNameMap = Record<string, string>;
+
+function buildLocationNameResolver(
+  segmentDefs: Map<string, RoadSegment>,
+  stationNames: LocationNameMap,
+): (locationId: string) => string {
+  return (locationId) =>
+    segmentDefs.get(locationId)?.name ?? stationNames[locationId] ?? locationId;
+}
+
+function replaceLocationIds(
+  text: string | undefined,
+  resolveName: (locationId: string) => string,
+): string {
+  if (!text) return text ?? "";
+  return text.replace(/\b(?:RD_TPE_\d+|BS_[A-Z0-9_]+)\b/g, (id) => resolveName(id));
+}
+
+function localizeReasoningStep(
+  step: ApiReasoningStep,
+  resolveName: (locationId: string) => string,
+): ApiReasoningStep {
+  return {
+    ...step,
+    title: replaceLocationIds(step.title, resolveName),
+    detail: replaceLocationIds(step.detail, resolveName),
+  };
 }
 
 /** GET /api/city-state traffic[] -> frontend TrafficSnapshot[]. roadName is joined locally. */
@@ -42,7 +75,7 @@ export function adaptTraffic(
 /** GET /api/city-state crowd[] -> frontend CrowdSnapshot[]. locationName is joined locally. */
 export function adaptCrowd(
   items: ApiCrowdItem[],
-  stationNames: Record<string, string>,
+  stationNames: LocationNameMap,
 ): CrowdSnapshot[] {
   return items.map((item) => ({
     observedAt: item.observedAt,
@@ -91,15 +124,16 @@ function coerceAlertKind(kind: string): AlertRecord["kind"] {
 function adaptReroute(
   reroute: ApiReroute | null,
   segmentDefs: Map<string, RoadSegment>,
+  resolveName: (locationId: string) => string,
 ): RerouteSnapshot | undefined {
   if (!reroute) return undefined;
-  const nameOf = (segmentId: string) => segmentDefs.get(segmentId)?.name ?? segmentId;
+  const nameOf = (segmentId: string) => segmentDefs.get(segmentId)?.name ?? resolveName(segmentId);
   return {
     primaryRouteName: reroute.mainRoute ? nameOf(reroute.mainRoute) : null,
     secondaryRouteNames: reroute.secondaryRoutes.map(nameOf),
     excluded: reroute.excluded.map((e) => ({
       segmentName: nameOf(e.segment_id),
-      reason: e.reason,
+      reason: replaceLocationIds(e.reason, resolveName),
     })),
     // 後端 decide_accident 有算出 congestion_warning，但 decision/handler.py 沒把它塞進
     // reroute 物件回傳，這支 API 目前沒有這個資料可用（見 coordination doc）。
@@ -111,43 +145,115 @@ export function adaptDecisionListItemToPartialAlert(
   decision: ApiDecisionListItem,
   locationName: string,
   segmentDefs: Map<string, RoadSegment>,
+  stationNames: LocationNameMap = {},
 ): Partial<AlertRecord> {
+  const resolveName = buildLocationNameResolver(segmentDefs, stationNames);
   const partial: Partial<AlertRecord> = {
     kind: coerceAlertKind(decision.kind),
-    title: locationName,
-    llmText: decision.summary.aiText,
-    publicMessage: decision.publicMessage,
+    title: replaceLocationIds(decision.title ?? locationName, resolveName),
+    llmText: replaceLocationIds(decision.summary.aiText, resolveName),
+    publicMessage: decision.publicMessage
+      ? replaceLocationIds(decision.publicMessage, resolveName)
+      : undefined,
   };
 
   if (decision.summary.sopRefs && decision.summary.sopRefs.length > 0) {
     partial.sopRef = decision.summary.sopRefs.join(" / ");
   }
-  // GET /api/decisions 沒有像 POST /api/chat/messages 一樣附逐步推理鏈（ApiDecisionListItem
-  // 沒有 reasoningSteps 欄位），純 API 決策若不補一個結論步驟，ReasoningChain 會誤判成
-  // 「尚無事件觸發」而整個留白，即使 aiText/actions 都已經有內容。這裡用後端真實回傳的
-  // aiText/sopRefs 組一則「結論」步驟，不是憑空生出推理過程。
-  if (decision.summary.aiText) {
-    partial.reasoningSteps = [
-      {
-        order: 1,
-        status: "final",
-        title: "AI 決策結論",
-        detail: decision.summary.aiText,
-        sopRef: partial.sopRef,
-      },
-    ];
+
+  if (decision.reasoningSteps.length > 0) {
+    partial.reasoningSteps = decision.reasoningSteps.map((step) =>
+      localizeReasoningStep(step, resolveName),
+    );
+  } else if (decision.summary.aiText) {
+    // fallback：後端沒有 reasoningSteps 時補一個結論步驟，避免 ReasoningChain 留白
+    partial.reasoningSteps = [{
+      order: 1,
+      status: "final",
+      title: "AI 決策結論",
+      detail: replaceLocationIds(decision.summary.aiText, resolveName),
+      sopRef: partial.sopRef,
+    }];
   }
+
   if (decision.recommendedActions.length > 0) {
-    partial.actions = decision.recommendedActions;
+    partial.actions = decision.recommendedActions.map((action) =>
+      replaceLocationIds(action, resolveName),
+    );
   }
+
   if (decision.estimatedRecovery !== null) {
-    partial.ete = decision.estimatedRecovery;
+    partial.ete = decision.estimatedRecovery.ete;
+    partial.eteBase = decision.estimatedRecovery.base;
+    partial.etePenalty = decision.estimatedRecovery.penalty;
   }
+
+  if (decision.segmentMetrics) {
+    partial.segmentMetrics = {
+      ...decision.segmentMetrics,
+      segmentName: replaceLocationIds(decision.segmentMetrics.segmentName, resolveName),
+    };
+  }
+
+  if (decision.signalCoordination) {
+    partial.signalCoordination = {
+      signalTimings: decision.signalCoordination.signalTimings.map((row) => ({
+        ...row,
+        intersectionName: replaceLocationIds(row.intersectionName, resolveName),
+        goal: replaceLocationIds(row.goal, resolveName),
+      })),
+    };
+  }
+
+  if (decision.crossSystemCoordination) {
+    partial.crossSystemCoordination = {
+      interAgencyActions: decision.crossSystemCoordination.interAgencyActions.map((action) => ({
+        ...action,
+        text: replaceLocationIds(action.text, resolveName),
+      })),
+    };
+  }
+
   if (decision.eventId) {
     partial.sourceIncidentId = decision.eventId;
   }
-  const reroute = adaptReroute(decision.reroute, segmentDefs);
+
+  const reroute = adaptReroute(decision.reroute, segmentDefs, resolveName);
   if (reroute) partial.reroute = reroute;
 
   return partial;
+}
+
+/** GET /api/decisions government/citizen -> frontend NarrativeSummary. */
+export function adaptNarrativeSummary(
+  summary: ApiNarrativeSummary | ApiGovernmentSummary,
+  segmentDefs: Map<string, RoadSegment>,
+  stationNames: LocationNameMap = {},
+): NarrativeSummary {
+  const gov = summary as ApiGovernmentSummary;
+  const resolveName = buildLocationNameResolver(segmentDefs, stationNames);
+  return {
+    focusLocationId: summary.focusLocationId,
+    headline: replaceLocationIds(summary.headline, resolveName),
+    text: replaceLocationIds(summary.text, resolveName),
+    recommendedActions: summary.recommendedActions.map((action) =>
+      replaceLocationIds(action, resolveName),
+    ),
+    estimatedRecovery: summary.estimatedRecovery.map((item) => ({
+      ...item,
+      locationId: resolveName(item.locationId),
+    })),
+    prioritizedDecisionIds: summary.prioritizedDecisionIds,
+    sopRefs: gov.sopRefs,
+    signalCoordination: gov.signalCoordination?.map((row) => ({
+      ...row,
+      intersectionName: replaceLocationIds(row.intersectionName, resolveName),
+      goal: replaceLocationIds(row.goal, resolveName),
+    })),
+    crossSystemCoordination: gov.crossSystemCoordination?.map((action) => ({
+      ...action,
+      text: replaceLocationIds(action.text, resolveName),
+    })),
+    publicationEligibleLocationIds: gov.publicationEligibleLocationIds?.map(resolveName),
+  };
 }
