@@ -114,12 +114,16 @@ export default function DecisionTab() {
   const { language } = useLanguage();
   const alerts = useAppStore((s) => s.alerts);
   const activeAlertId = useAppStore((s) => s.activeAlertId);
+  const decisionSummarySelected = useAppStore((s) => s.decisionSummarySelected);
+  const decisionSelectionId = useAppStore((s) => s.decisionSelectionId);
+  const selectAlert = useAppStore((s) => s.selectAlert);
   const incidentGovernmentSummary = useAppStore((s) => s.incidentGovernmentSummary);
   const governmentSummary = useAppStore((s) => s.governmentSummary);
   const hasSummary = !!(incidentGovernmentSummary ?? governmentSummary);
 
-  const [selected, setSelected] = useState<string>(SUMMARY_VALUE);
-  const effectiveSelected = hasSummary ? selected : (activeAlertId ?? alerts[0]?.id ?? "");
+  const effectiveSelected = hasSummary && decisionSummarySelected
+    ? SUMMARY_VALUE
+    : (decisionSelectionId ?? activeAlertId ?? alerts[0]?.id ?? "");
   const showSummary = effectiveSelected === SUMMARY_VALUE && hasSummary;
   const selectorOptions = useMemo<DecisionOption[]>(() => {
     const summaryOptions: DecisionOption[] = hasSummary
@@ -139,9 +143,13 @@ export default function DecisionTab() {
   }, [alerts, hasSummary, language]);
 
   const handleChange = (value: string) => {
-    setSelected(value);
-    if (value !== SUMMARY_VALUE) {
-      useAppStore.setState({ activeAlertId: value });
+    if (value === SUMMARY_VALUE) {
+      useAppStore.setState({
+        decisionSummarySelected: true,
+        decisionSelectionId: null,
+      });
+    } else {
+      selectAlert(value);
     }
   };
 
