@@ -4,21 +4,168 @@
   gap: 18px;
 }
 
-.selector {
+.selectorWrap {
+  position: relative;
   width: 100%;
-  padding: 7px 10px;
-  border: 1px solid color-mix(in srgb, var(--text), transparent 78%);
-  border-radius: var(--radius-md);
-  background: var(--panel);
-  color: var(--text);
-  font-family: var(--font-nav);
-  font-size: var(--text-sm);
-  cursor: pointer;
 }
 
-.selector:focus-visible {
-  outline: 2px solid color-mix(in srgb, var(--text), transparent 58%);
+.selectorTrigger {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 46px;
+  padding: 8px 10px;
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-md);
+  background:
+    linear-gradient(to bottom, color-mix(in srgb, var(--text), transparent 97%), transparent),
+    var(--panel);
+  color: var(--text);
+  font-family: var(--font-nav);
+  text-align: left;
+  cursor: pointer;
+  box-shadow: var(--shadow-sm);
+  transition:
+    border-color var(--transition-fast),
+    box-shadow var(--transition-fast),
+    transform var(--transition-fast),
+    background var(--transition-fast);
+}
+
+.selectorTrigger:hover,
+.selectorTriggerOpen {
+  border-color: color-mix(in srgb, var(--accent), var(--soft-border) 30%);
+  box-shadow: var(--shadow-md);
+}
+
+.selectorTrigger:hover {
+  transform: translateY(-1px);
+}
+
+.selectorTrigger:focus-visible {
+  outline: 2px solid color-mix(in srgb, var(--accent), transparent 42%);
   outline-offset: 2px;
+}
+
+.selectorIcon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  border-radius: var(--radius-sm);
+  background: color-mix(in srgb, var(--accent), transparent 86%);
+  color: var(--accent);
+}
+
+.selectorText,
+.optionMain {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.selectorTitle,
+.optionTitle {
+  color: var(--text);
+  font-size: var(--text-sm);
+  font-weight: 700;
+  line-height: 1.25;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectorMeta,
+.optionMeta {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  min-width: 0;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: var(--text-xs);
+  line-height: 1.2;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.selectorChevron {
+  color: var(--text-dim);
+  transition: transform var(--transition-fast), color var(--transition-fast);
+}
+
+.selectorChevronOpen {
+  color: var(--accent);
+  transform: rotate(180deg);
+}
+
+.selectorMenu {
+  position: absolute;
+  top: calc(100% + 8px);
+  left: 0;
+  right: 0;
+  z-index: 30;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: min(360px, 62vh);
+  padding: 6px;
+  overflow-y: auto;
+  border: 1px solid var(--soft-border);
+  border-radius: var(--radius-md);
+  background: var(--panel);
+  box-shadow: var(--shadow-md);
+}
+
+.selectorOption {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 10px;
+  width: 100%;
+  min-height: 44px;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font-nav);
+  text-align: left;
+  cursor: pointer;
+  transition:
+    background var(--transition-fast),
+    color var(--transition-fast);
+}
+
+.selectorOption:hover,
+.selectorOption:focus-visible {
+  background: color-mix(in srgb, var(--text), transparent 94%);
+  outline: none;
+}
+
+.selectorOptionSelected {
+  background: color-mix(in srgb, var(--accent), transparent 88%);
+}
+
+.optionCheck {
+  color: var(--accent);
+  flex-shrink: 0;
+}
+
+@media (max-width: 480px) {
+  .selectorTrigger {
+    min-height: 44px;
+    padding: 7px 9px;
+  }
+
+  .selectorMenu {
+    max-height: 56vh;
+  }
 }
 
 .collapsible {

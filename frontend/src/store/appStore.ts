@@ -748,8 +748,16 @@ async function refreshDecisionForLocation(
 
     const state = useAppStore.getState();
     useAppStore.setState({
-      governmentSummary: adaptNarrativeSummary(res.government),
-      citizenSummary: adaptNarrativeSummary(res.citizen),
+      governmentSummary: adaptNarrativeSummary(
+        res.government,
+        state.segmentDefs,
+        state.stationNames,
+      ),
+      citizenSummary: adaptNarrativeSummary(
+        res.citizen,
+        state.segmentDefs,
+        state.stationNames,
+      ),
     });
     const decisionsToRender: ApiDecisionListItem[] = res.decisions;
     for (const decision of decisionsToRender) {
@@ -757,6 +765,7 @@ async function refreshDecisionForLocation(
         decision,
         resolveDecisionLocationName(decision.locationId, state),
         state.segmentDefs,
+        state.stationNames,
       );
       upsertDecisionAlert(
         timestamp,
@@ -877,8 +886,16 @@ function startManifestPolling(): () => void {
         const state = useAppStore.getState();
         // Update summaries (most recent notice wins)
         useAppStore.setState({
-          incidentGovernmentSummary: adaptNarrativeSummary(notice.government),
-          incidentCitizenSummary: adaptNarrativeSummary(notice.citizen),
+          incidentGovernmentSummary: adaptNarrativeSummary(
+            notice.government,
+            state.segmentDefs,
+            state.stationNames,
+          ),
+          incidentCitizenSummary: adaptNarrativeSummary(
+            notice.citizen,
+            state.segmentDefs,
+            state.stationNames,
+          ),
         });
 
         // Apply decisions: update existing alert or create new one
@@ -887,6 +904,7 @@ function startManifestPolling(): () => void {
             decision,
             decision.title,
             state.segmentDefs,
+            state.stationNames,
           );
           const eventId = notice.eventId;
           useAppStore.setState((s) => {
@@ -988,17 +1006,26 @@ async function pollIncidentReport(
           `PUB_${eventId}_v1`,
         );
         if (notice) {
+          const state = useAppStore.getState();
           useAppStore.setState({
-            incidentGovernmentSummary: adaptNarrativeSummary(notice.government),
-            incidentCitizenSummary: adaptNarrativeSummary(notice.citizen),
+            incidentGovernmentSummary: adaptNarrativeSummary(
+              notice.government,
+              state.segmentDefs,
+              state.stationNames,
+            ),
+            incidentCitizenSummary: adaptNarrativeSummary(
+              notice.citizen,
+              state.segmentDefs,
+              state.stationNames,
+            ),
           });
           // Apply AI decisions from the notice back onto the local alert
-          const state = useAppStore.getState();
           for (const decision of notice.decisions) {
             const partial = adaptDecisionListItemToPartialAlert(
               decision,
               decision.title,
               state.segmentDefs,
+              state.stationNames,
             );
             useAppStore.setState((s) => ({
               alerts: s.alerts.map((a) =>
