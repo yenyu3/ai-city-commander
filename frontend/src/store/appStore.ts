@@ -273,6 +273,7 @@ interface AppState {
   /** True while the decision selector's "綜合摘要" option is active — drives the map's alert
    *  markers to emphasize every unresolved alert at once instead of just `activeAlertId`. */
   decisionSummarySelected: boolean;
+  decisionSelectionId: string | null;
   /** `${kind}:${entityId}:${timestamp}` fingerprints of rule-based alerts already fired, so
    *  scrubbing backward past a trigger point and playing forward again doesn't re-fire the
    *  same historical crossing as a duplicate alert. */
@@ -300,6 +301,7 @@ interface AppState {
   setPlaybackSpeed(ms: number): void;
   advanceTime(): void;
   seekTime(timestamp: string): void;
+  selectAlert(alertId: string): void;
   injectIncident(incidentId: string, suppressToast?: boolean): void;
   addIncidents(incidents: LiveIncident[]): void;
   /** 統一的事件注入入口：demo 模式行為與 injectIncident 相同；api 模式下另外呼叫
@@ -572,6 +574,8 @@ function pushAlert(
   useAppStore.setState((s) => ({
     alerts: [alert, ...s.alerts],
     activeAlertId: alert.id,
+    decisionSummarySelected: false,
+    decisionSelectionId: alert.id,
     reasoningLog: reasoningSteps ?? s.reasoningLog,
     displayedAlertIds:
       suppressToast || s.displayedAlertIds.has(alert.id)
@@ -705,6 +709,8 @@ function upsertDecisionAlert(
           a.id === existing.id ? { ...a, ...alert } : a,
         ),
         activeAlertId: existing.id,
+        decisionSummarySelected: false,
+        decisionSelectionId: existing.id,
         reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
       };
     }
@@ -712,6 +718,8 @@ function upsertDecisionAlert(
     return {
       alerts: [alert, ...s.alerts],
       activeAlertId: alert.id,
+      decisionSummarySelected: false,
+      decisionSelectionId: alert.id,
       displayedAlertIds: new Set(s.displayedAlertIds).add(alert.id),
       reasoningLog: partial.reasoningSteps ?? s.reasoningLog,
     };
@@ -953,6 +961,8 @@ function startManifestPolling(): () => void {
             return {
               alerts: [alert, ...s.alerts],
               activeAlertId: alert.id,
+              decisionSummarySelected: false,
+              decisionSelectionId: alert.id,
               displayedAlertIds: new Set(s.displayedAlertIds).add(alert.id),
             };
           });
@@ -1096,6 +1106,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   alerts: [],
   activeAlertId: null,
   decisionSummarySelected: false,
+  decisionSelectionId: null,
   firedAlertKeys: new Set(),
   displayedAlertIds: new Set(),
   reasoningLog: [],
@@ -1231,6 +1242,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         alerts: [],
         activeAlertId: null,
         decisionSummarySelected: false,
+        decisionSelectionId: null,
         firedAlertKeys: new Set(),
         displayedAlertIds: new Set(),
         reasoningLog: [],
@@ -1256,6 +1268,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       incidentEte: {},
       alerts: [],
       activeAlertId: null,
+      decisionSummarySelected: false,
+      decisionSelectionId: null,
       firedAlertKeys: new Set(),
       displayedAlertIds: new Set(),
       reasoningLog: [],
@@ -1639,6 +1653,8 @@ export const useAppStore = create<AppState>((set, get) => ({
       legStartedAt: Date.now(),
       frozenPlayheadPct: null,
       activeAlertId,
+      decisionSummarySelected: false,
+      decisionSelectionId: activeAlertId,
     });
 
     // 事件自動注入：時鐘走到事件時間點時自動注入（同時仍保留手動按鈕注入能力）
@@ -1650,6 +1666,14 @@ export const useAppStore = create<AppState>((set, get) => ({
         get().injectIncident(incident.eventId, isManualSeek);
       }
     }
+  },
+
+  selectAlert(alertId) {
+    set({
+      activeAlertId: alertId,
+      decisionSummarySelected: false,
+      decisionSelectionId: alertId,
+    });
   },
 
   addIncidents(incidents) {

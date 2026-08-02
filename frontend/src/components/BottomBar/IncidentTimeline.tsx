@@ -7,6 +7,13 @@ import { formatDisplayShortTime, formatDisplayTimestamp, parseTimestamp, timePct
 import type { AlertRecord } from "../../types";
 
 const CLUSTER_PCT_THRESHOLD = 1.5;
+const CLUSTER_X_STEP_PX = 14;
+const CLUSTER_MAX_COLUMNS = 7;
+const CLUSTER_ROW_OFFSETS = [
+  [0],
+  [-6, 6],
+  [-10, 0, 10],
+];
 
 interface TimelineMarker {
   key: string;
@@ -14,6 +21,12 @@ interface TimelineMarker {
   color: string;
   alert: AlertRecord;
   isResolution: boolean;
+}
+
+interface MarkerLayout {
+  leftPct: number;
+  xOffsetPx: number;
+  yOffsetPx: number;
 }
 import styles from "./IncidentTimeline.module.css";
 
@@ -28,6 +41,7 @@ export default function IncidentTimeline() {
   const tickIndex = useAppStore((s) => s.tickIndex);
   const alerts = useAppStore((s) => s.alerts);
   const seekTime = useAppStore((s) => s.seekTime);
+  const selectAlert = useAppStore((s) => s.selectAlert);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
   const isPlaying = useAppStore((s) => s.isPlaying);
   const playbackSpeed = useAppStore((s) => s.playbackSpeed);
@@ -62,8 +76,8 @@ export default function IncidentTimeline() {
     return result;
   }, [alerts]);
 
-  const markerOffsets = useMemo(() => {
-    if (!start || !end) return new Map<string, number>();
+  const markerLayouts = useMemo(() => {
+    if (!start || !end) return new Map<string, MarkerLayout>();
     const sorted = [...markers].sort((a, b) => parseTimestamp(a.timestamp) - parseTimestamp(b.timestamp));
     const groups: TimelineMarker[][] = [];
     for (const m of sorted) {
@@ -76,11 +90,44 @@ export default function IncidentTimeline() {
         groups.push([m]);
       }
     }
-    const offsets = new Map<string, number>();
+    const layouts = new Map<string, MarkerLayout>();
     for (const group of groups) {
-      group.forEach((m, i) => offsets.set(m.key, (i - (group.length - 1) / 2) * 14));
+      if (group.length === 1) {
+        const marker = group[0];
+        layouts.set(marker.key, {
+          leftPct: timePct(marker.timestamp, start, end),
+          xOffsetPx: 0,
+          yOffsetPx: 0,
+        });
+        continue;
+      }
+
+      const groupPct = group.map((m) => timePct(m.timestamp, start, end));
+      const centerPct = groupPct.reduce((sum, pct) => sum + pct, 0) / groupPct.length;
+      const rowCount = Math.min(CLUSTER_ROW_OFFSETS.length, Math.ceil(group.length / CLUSTER_MAX_COLUMNS));
+      const colCount = Math.ceil(group.length / rowCount);
+      const rowOffsets = CLUSTER_ROW_OFFSETS[rowCount - 1];
+
+      group.forEach((m, i) => {
+        const row = i % rowCount;
+        const col = Math.floor(i / rowCount);
+        const centeredCol = col - (colCount - 1) / 2;
+        let xOffsetPx = centeredCol * CLUSTER_X_STEP_PX;
+
+        if (centerPct < 6) {
+          xOffsetPx = col * CLUSTER_X_STEP_PX;
+        } else if (centerPct > 94) {
+          xOffsetPx = (col - (colCount - 1)) * CLUSTER_X_STEP_PX;
+        }
+
+        layouts.set(m.key, {
+          leftPct: groupPct[i],
+          xOffsetPx,
+          yOffsetPx: rowOffsets[row],
+        });
+      });
     }
-    return offsets;
+    return layouts;
   }, [markers, start, end]);
 
   if (ticks.length === 0) return null;
@@ -140,25 +187,34 @@ export default function IncidentTimeline() {
           }}
         />
 
-        {visibleMarkers.map((m) => (
-          <button
-            key={m.key}
-            type="button"
-            className={styles.node}
-            style={{
-              left: `${timePct(m.timestamp, start, end)}%`,
-              top: `calc(50% + ${markerOffsets.get(m.key) ?? 0}px)`,
-              background: m.color,
-            }}
-            onClick={(e) => {
-              e.stopPropagation();
-              seekTime(m.timestamp);
-            }}
-            onMouseEnter={() => setHovered(m.alert)}
-            onMouseLeave={() => setHovered((h) => (h?.id === m.alert.id ? null : h))}
-            aria-label={m.alert.title}
-          />
-        ))}
+        {visibleMarkers.map((m) => {
+          const layout = markerLayouts.get(m.key) ?? {
+            leftPct: timePct(m.timestamp, start, end),
+            xOffsetPx: 0,
+            yOffsetPx: 0,
+          };
+
+          return (
+            <button
+              key={m.key}
+              type="button"
+              className={styles.node}
+              style={{
+                left: `calc(${layout.leftPct}% + ${layout.xOffsetPx}px)`,
+                top: `calc(50% + ${layout.yOffsetPx}px)`,
+                background: m.color,
+              }}
+              onClick={(e) => {
+                e.stopPropagation();
+                seekTime(m.timestamp);
+                selectAlert(m.alert.id);
+              }}
+              onMouseEnter={() => setHovered(m.alert)}
+              onMouseLeave={() => setHovered((h) => (h?.id === m.alert.id ? null : h))}
+              aria-label={m.alert.title}
+            />
+          );
+        })}
       </div>
 
       <div className={styles.controls}>
