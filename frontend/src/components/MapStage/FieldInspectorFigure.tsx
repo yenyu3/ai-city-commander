@@ -16,8 +16,8 @@ export interface FieldInspectorFigureProps {
 
 const VIEW_W = 44;
 const VIEW_H = 58;
-const SPECIAL_MOVE_MIN_DELAY_MS = 10000;
-const SPECIAL_MOVE_JITTER_MS = 5000;
+const SPECIAL_MOVE_MIN_DELAY_MS = 7000;
+const SPECIAL_MOVE_JITTER_MS = 3000;
 const CELEBRATION_ANIM_MS = 2600;
 
 type SpecialMove = "hop" | "siu" | "bellingham";

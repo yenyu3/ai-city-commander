@@ -129,6 +129,23 @@
   color: #1e293b;
 }
 
+.actionList {
+  margin: 4px 0 0;
+  padding-left: 28px;
+  color: #1e293b;
+}
+
+.actionList li {
+  margin-bottom: 3px;
+}
+
+.preWrap {
+  white-space: pre-wrap;
+  margin: 4px 0;
+  padding-left: 12px;
+  color: #1e293b;
+}
+
 .sectionTitle {
   margin: 0 0 5px;
   padding-left: 8px;

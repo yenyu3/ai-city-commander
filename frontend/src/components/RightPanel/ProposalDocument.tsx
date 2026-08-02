@@ -24,12 +24,21 @@ import styles from "./ProposalDocument.module.css";
 export default function ProposalDocument() {
   const alerts = useAppStore((s) => s.alerts);
   const timeOffsetMs = useAppStore((s) => s.timeOffsetMs);
+  const incidentGovernmentSummary = useAppStore((s) => s.incidentGovernmentSummary);
+  const governmentSummary = useAppStore((s) => s.governmentSummary);
+  const incidentCitizenSummary = useAppStore((s) => s.incidentCitizenSummary);
+  const citizenSummary = useAppStore((s) => s.citizenSummary);
+  const allIncidents = useAppStore((s) => s.allIncidents);
   const { language } = useLanguage();
   const latest = alerts[0];
+  const govSummary = incidentGovernmentSummary ?? governmentSummary;
+  const citSummary = incidentCitizenSummary ?? citizenSummary;
+  const sourceIncident = latest?.sourceIncidentId
+    ? allIncidents.find((i) => i.eventId === latest.sourceIncidentId)
+    : undefined;
   const [fallbackPlan, setFallbackPlan] = useState<OpsCoordinationPlan | null>(null);
 
-  // api 模式下後端已提供真實資料；只有兩者都缺少時才 fallback 到模板。
-  const needsFallback = !latest?.signalCoordination && !latest?.crossSystemCoordination;
+  const needsFallback = !latest?.signalCoordination && !latest?.crossSystemCoordination && !govSummary?.signalCoordination?.length;
   useEffect(() => {
     if (!latest || !needsFallback) {
       setFallbackPlan(null);
@@ -44,19 +53,44 @@ export default function ProposalDocument() {
 
   function resolveSignalTimings(alert: AlertRecord): OpsCoordinationPlan["signalTimings"] {
     if (alert.signalCoordination?.signalTimings?.length) return alert.signalCoordination.signalTimings;
+    if (govSummary?.signalCoordination?.length) return govSummary.signalCoordination;
     return fallbackPlan?.signalTimings ?? [];
   }
 
   function resolveAgencyActions(alert: AlertRecord): OpsCoordinationPlan["interAgencyActions"] {
     const actions = alert.crossSystemCoordination?.interAgencyActions;
     if (actions?.length) return actions as OpsCoordinationPlan["interAgencyActions"];
+    if (govSummary?.crossSystemCoordination?.length)
+      return govSummary.crossSystemCoordination as OpsCoordinationPlan["interAgencyActions"];
     return fallbackPlan?.interAgencyActions ?? [];
+  }
+
+  function resolveActions(alert: AlertRecord): string[] {
+    if (alert.actions?.length) return alert.actions;
+    if (govSummary?.recommendedActions?.length) return govSummary.recommendedActions;
+    return [];
+  }
+
+  function resolveSopRef(alert: AlertRecord): string {
+    if (alert.sopRef) return alert.sopRef;
+    if (govSummary?.sopRefs?.length) return govSummary.sopRefs.join(" / ");
+    return "—";
+  }
+
+  function resolveNarrativeText(alert: AlertRecord): string {
+    if (govSummary?.text) return govSummary.text;
+    return alert.llmText ?? alert.ruleSummary;
   }
 
   if (!latest) return null;
 
   const kindLabel = pick(language, ALERT_KIND_LABEL[latest.kind].zh, ALERT_KIND_LABEL[latest.kind].en);
   const finalStep = latest.reasoningSteps?.find((s) => s.status === "final");
+  const otherSteps = (latest.reasoningSteps ?? []).filter((s) => s.status !== "final");
+
+  // 動態編號：只對實際顯示的項目編號，避免跳號
+  let n = 0;
+  const N = () => `${++n}.`;
 
   return createPortal(
     <div id="proposal-document" className={styles.doc}>
@@ -69,7 +103,7 @@ export default function ProposalDocument() {
         <div className={styles.metaBox}>
           <div>
             <strong>事件編號：</strong>
-            {latest.id}
+            {latest.sourceIncidentId ?? latest.id}
           </div>
           <div>
             <strong>列印時間：</strong>
@@ -84,13 +118,33 @@ export default function ProposalDocument() {
       <section className={styles.summaryBanner}>
         <div>
           <span className={styles.summaryLabel}>事件名稱：</span>
-          <span className={styles.summaryValue}>{latest.title}</span>
+          <span className={styles.summaryValue}>{govSummary?.headline ?? latest.title}</span>
         </div>
         <div>
           <span className={styles.summaryLabel}>時間與事件類型：</span>
           <span className={styles.summaryMono}>{formatDisplayTimestamp(latest.timestamp, timeOffsetMs)}</span>
           <span className={styles.summaryTag}>[{kindLabel}]</span>
         </div>
+        {sourceIncident && (
+          <div>
+            <span className={styles.summaryLabel}>事件地點：</span>
+            <span>{sourceIncident.location}</span>
+          </div>
+        )}
+        {sourceIncident && (
+          <div>
+            <span className={styles.summaryLabel}>嚴重程度 / 狀態：</span>
+            <span className={styles.summaryMono}>{sourceIncident.severity}</span>
+            <span style={{ margin: "0 4px" }}>/</span>
+            <span className={styles.summaryMono}>{sourceIncident.status}</span>
+          </div>
+        )}
+        {sourceIncident?.description && (
+          <div className={styles.summaryFull}>
+            <span className={styles.summaryLabel}>事件描述：</span>
+            <span>{sourceIncident.description}</span>
+          </div>
+        )}
         {latest.ete !== undefined && (
           <div className={styles.summaryFull}>
             <span className={styles.summaryLabel}>預計恢復時間 (ETE)：</span>
@@ -103,48 +157,79 @@ export default function ProposalDocument() {
 
       <section className={styles.section}>
         <h2 className={styles.sectionTitle}>一、事件辨識與判定依據</h2>
-        <p>
-          <strong>1.1 依據 SOP 條款：</strong>
-          {latest.sopRef ?? "—"}
-        </p>
+        <p><strong>{N()} 依據 SOP 條款：</strong>{resolveSopRef(latest)}</p>
         {latest.segmentMetrics && (
           <p>
-            <strong>1.2 現場監測數據：</strong>
+            <strong>{N()} 現場監測數據：</strong>
             車流量 {latest.segmentMetrics.flowPcuh.toLocaleString()} pcu/h，飽和度 (V/C){" "}
             {latest.segmentMetrics.saturation.toFixed(2)}。
           </p>
         )}
         {finalStep && (
-          <p>
-            <strong>1.3 預估恢復算式：</strong>
-            {finalStep.detail}
-          </p>
+          <p><strong>{N()} 預估恢復算式：</strong>{finalStep.detail}</p>
         )}
-        <p>
-          <strong>1.4 判定理由說明：</strong>
-          {latest.llmText ?? latest.ruleSummary}
-        </p>
+        <p><strong>{N()} 判定理由說明：</strong>{resolveNarrativeText(latest)}</p>
+        {otherSteps.length > 0 && (
+          <>
+            <p style={{ marginTop: 6 }}><strong>{N()} 推理步驟：</strong></p>
+            <table className={styles.table}>
+              <thead>
+                <tr>
+                  <th style={{ width: 24 }}>#</th>
+                  <th style={{ width: 52 }}>狀態</th>
+                  <th style={{ width: 120 }}>標題</th>
+                  <th>說明</th>
+                  <th style={{ width: 64 }}>SOP</th>
+                </tr>
+              </thead>
+              <tbody>
+                {otherSteps.map((s) => (
+                  <tr key={s.order}>
+                    <td>{s.order}</td>
+                    <td>{s.status}</td>
+                    <td>{s.title}</td>
+                    <td>{s.detail}</td>
+                    <td>{s.sopRef ?? ""}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>二、替代路徑與疏散導引方案</h2>
+        <h2 className={styles.sectionTitle}>二、建議行動清單</h2>
+        {resolveActions(latest).length === 0 ? (
+          <p>無建議行動資料。</p>
+        ) : (
+          <ol className={styles.actionList}>
+            {resolveActions(latest).map((item, i) => (
+              <li key={i}>{item}</li>
+            ))}
+          </ol>
+        )}
+      </section>
+
+      <section className={styles.section}>
+        <h2 className={styles.sectionTitle}>三、替代路徑與疏散導引方案</h2>
         {!latest.reroute ? (
-          <p>此事件類型無替代路徑建議。</p>
+          <p>此事件類型無替代路徑建議（後端未回傳 reroute 資料）。</p>
         ) : (
           <>
             <p>
-              <strong>2.1 主要疏散路徑：</strong>
+              <strong>3.1 主要疏散路徑：</strong>
               {latest.reroute.primaryRouteName ?? "（無符合條件之替代路段）"}
             </p>
             {latest.reroute.secondaryRouteNames.length > 0 && (
               <p>
-                <strong>2.2 次要替代路徑：</strong>
+                <strong>3.2 次要替代路徑：</strong>
                 {latest.reroute.secondaryRouteNames.join("、")}
               </p>
             )}
             {latest.reroute.excluded.length > 0 && (
               <p>
-                <strong>2.3 排除候選路段理由：</strong>
+                <strong>3.3 排除候選路段理由：</strong>
                 {latest.reroute.excluded.map((e) => `${e.segmentName}（${e.reason}）`).join("；")}
               </p>
             )}
@@ -153,7 +238,7 @@ export default function ProposalDocument() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>三、路段號誌動態調整細節</h2>
+        <h2 className={styles.sectionTitle}>四、路段號誌動態調整細節</h2>
         {(() => {
           const timings = resolveSignalTimings(latest);
           if (!timings.length) return <p>方案生成中…</p>;
@@ -186,7 +271,7 @@ export default function ProposalDocument() {
       </section>
 
       <section className={styles.section}>
-        <h2 className={styles.sectionTitle}>四、跨單位應變聯動與支援請求</h2>
+        <h2 className={styles.sectionTitle}>五、跨單位應變聯動與支援請求</h2>
         {(() => {
           const actions = resolveAgencyActions(latest);
           if (!actions.length) return <p>方案生成中…</p>;
@@ -198,6 +283,26 @@ export default function ProposalDocument() {
           ));
         })()}
       </section>
+
+      {citSummary && (
+        <section className={styles.section}>
+          <h2 className={styles.sectionTitle}>六、民眾版公告摘要</h2>
+          {citSummary.headline && (
+            <p><strong>標題：</strong>{citSummary.headline}</p>
+          )}
+          <p className={styles.preWrap}>{citSummary.text}</p>
+          {citSummary.recommendedActions.length > 0 && (
+            <>
+              <p style={{ marginTop: 6 }}><strong>民眾建議行動：</strong></p>
+              <ol className={styles.actionList}>
+                {citSummary.recommendedActions.map((item, i) => (
+                  <li key={i}>{item}</li>
+                ))}
+              </ol>
+            </>
+          )}
+        </section>
+      )}
 
       <footer className={styles.signatureRow}>
         <div className={styles.signatureBlock}>

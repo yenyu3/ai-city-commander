@@ -186,6 +186,9 @@ export interface AlertRecord {
   origin?: "incident";
   /** 追蹤解決狀態用的路段 ID */
   trackedSegmentId?: string;
+  /** 事件發生地點，供地圖警示 icon 定位用；segment 對應 roadPaths、station 對應 stationCoords。 */
+  locationId?: string;
+  locationType?: "segment" | "station";
   /** 是否曾觀察到路段惡化（解決判定的前置條件） */
   wasElevated?: boolean;
   /** 事件解決的時間戳記 */

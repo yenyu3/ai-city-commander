@@ -51,6 +51,15 @@
   color: var(--accent);
 }
 
+.dropzoneLocked {
+  border-style: solid;
+  border-color: color-mix(in srgb, var(--ok), transparent 42%);
+  background: color-mix(in srgb, var(--ok), transparent 92%);
+  color: var(--ok);
+  cursor: default;
+  pointer-events: none;
+}
+
 .status {
   padding: 6px 10px;
   border-radius: var(--radius-sm);

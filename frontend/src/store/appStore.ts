@@ -96,6 +96,11 @@ function segToName(segments: Map<string, RoadSegment>, id: string): string {
   return segments.get(id)?.name ?? id;
 }
 
+/** BS_ prefixed ids are crowd-monitoring stations, everything else is a road segment. */
+function locationTypeForId(id: string): "segment" | "station" {
+  return id.startsWith("BS_") ? "station" : "segment";
+}
+
 // Demo ticks are sampled unevenly (hourly early on, down to 10-15min later). The progress
 // bar maps left% to real elapsed time linearly (see timePct), so for the playhead to cross
 // it at a constant pixel velocity, each step's real playback duration must be proportional
@@ -265,6 +270,9 @@ interface AppState {
   /** The alert id that the right panel should display — tracks the most recent alert whose
    *  timestamp is <= currentTime, so the decision panel stays in sync with the timeline. */
   activeAlertId: string | null;
+  /** True while the decision selector's "綜合摘要" option is active — drives the map's alert
+   *  markers to emphasize every unresolved alert at once instead of just `activeAlertId`. */
+  decisionSummarySelected: boolean;
   /** `${kind}:${entityId}:${timestamp}` fingerprints of rule-based alerts already fired, so
    *  scrubbing backward past a trigger point and playing forward again doesn't re-fire the
    *  same historical crossing as a duplicate alert. */
@@ -484,6 +492,8 @@ function buildAccidentAlert(
       })),
       congestionWarning: route.congestionWarning,
     },
+    locationId: incident.affectedSegmentId,
+    locationType: locationTypeForId(incident.affectedSegmentId),
   };
 
   const structured: StructuredEvent = {
@@ -1085,6 +1095,7 @@ export const useAppStore = create<AppState>((set, get) => ({
   incidentEte: {},
   alerts: [],
   activeAlertId: null,
+  decisionSummarySelected: false,
   firedAlertKeys: new Set(),
   displayedAlertIds: new Set(),
   reasoningLog: [],
@@ -1102,9 +1113,10 @@ export const useAppStore = create<AppState>((set, get) => ({
       if (DATA_SOURCE === "api") {
         decisionRequestKeys.clear();
         localStorage.removeItem(PROCESSED_NOTICES_KEY);
+        localStorage.removeItem(PERSISTED_INCIDENTS_KEY);
         const ticks = buildApiScenarioTicks();
         const firstTime = ticks[0];
-        const persistedIncidents = loadPersistedIncidents();
+        const persistedIncidents: LiveIncident[] = [];
         set({
           isLoading: false,
           traffic: [],
@@ -1218,6 +1230,7 @@ export const useAppStore = create<AppState>((set, get) => ({
         incidentEte: {},
         alerts: [],
         activeAlertId: null,
+        decisionSummarySelected: false,
         firedAlertKeys: new Set(),
         displayedAlertIds: new Set(),
         reasoningLog: [],
@@ -1371,6 +1384,8 @@ export const useAppStore = create<AppState>((set, get) => ({
             ruleSummary: `Saturation_Score=${newSegments[id].saturation.toFixed(2)} → ${nextTier} 級`,
             actions: result.actions,
             sopRef: "SOP §1",
+            locationId: id,
+            locationType: "segment",
             segmentMetrics: {
               segmentName: name,
               flowPcuh: newSegments[id].vehicleCount,
