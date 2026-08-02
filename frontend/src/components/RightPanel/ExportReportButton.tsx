@@ -23,8 +23,41 @@ export default function ExportReportButton() {
         事件: a.title,
         觸發條款: a.sopRef,
         決策: a.ruleSummary,
-        ETE: a.ete ?? "",
+        建議行動: a.actions,
         AI摘要: a.llmText ?? "",
+        ...(a.ete !== undefined && {
+          ETE預估分鐘: a.ete,
+          ETE基礎分鐘: a.eteBase,
+          ETE壅塞加成分鐘: a.etePenalty,
+        }),
+        ...(a.segmentMetrics && {
+          路段名稱: a.segmentMetrics.segmentName,
+          即時車流量_pcuh: a.segmentMetrics.flowPcuh,
+          道路飽和度_VC: a.segmentMetrics.saturation,
+        }),
+        ...(a.reroute && {
+          主要疏散路徑: a.reroute.primaryRouteName ?? "無",
+          次要替代路徑: a.reroute.secondaryRouteNames,
+          排除候選路段: a.reroute.excluded.map((e) => `${e.segmentName}：${e.reason}`),
+          疏散路徑亦壅塞: a.reroute.congestionWarning,
+        }),
+        ...(a.signalCoordination?.signalTimings?.length && {
+          號誌調整: a.signalCoordination.signalTimings.map(
+            (t) => `${t.intersectionName} 綠燈+${t.adjustPct}% ${t.goal}`,
+          ),
+        }),
+        ...(a.crossSystemCoordination?.interAgencyActions?.length && {
+          跨機關聯動: a.crossSystemCoordination.interAgencyActions.map(
+            (act) => `${act.agency}：${act.text}`,
+          ),
+        }),
+        推理步驟: (a.reasoningSteps ?? []).map((s) => ({
+          步驟: s.order,
+          狀態: s.status,
+          標題: s.title,
+          說明: s.detail,
+          ...(s.sopRef && { SOP: s.sopRef }),
+        })),
       }));
     const blob = new Blob([JSON.stringify(report, null, 2)], {
       type: "application/json",

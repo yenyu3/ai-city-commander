@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from "react";
 import { Bot, GripHorizontal, X } from "lucide-react";
 import { pick, useLanguage } from "../../i18n";
+import { useAppStore } from "../../store/appStore";
 import ChatPanel from "../RightPanel/ChatPanel";
 import styles from "./ChatFab.module.css";
 
@@ -132,6 +133,7 @@ export default function ChatFab() {
     originY: number;
   } | null>(null);
   const { language } = useLanguage();
+  const viewerMode = useAppStore((s) => s.viewerMode);
   const panelMetrics = getPanelMetrics(fabPosition);
   const buttonPosition = open ? getOpenFabPosition(panelMetrics) : fabPosition;
 
@@ -190,7 +192,11 @@ export default function ChatFab() {
           className={styles.panel}
           style={{ left: panelMetrics.x, top: panelMetrics.y }}
           role="dialog"
-          aria-label={pick(language, "What-if 問答", "What-if Q&A")}
+          aria-label={
+            viewerMode === "public"
+              ? pick(language, "市民問答", "Public Q&A")
+              : pick(language, "What-if 問答", "What-if Q&A")
+          }
         >
           <div
             className={styles.dragHandle}
@@ -202,7 +208,7 @@ export default function ChatFab() {
           >
             <GripHorizontal size={18} aria-hidden="true" />
           </div>
-          <ChatPanel />
+          <ChatPanel key={viewerMode} variant={viewerMode} />
         </div>
       )}
       <button

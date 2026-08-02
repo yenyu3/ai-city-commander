@@ -37,6 +37,7 @@ export function toDisplayDate(rawTimestamp: string, offsetMs: number): Date {
 }
 
 function taipeiParts(date: Date): Record<string, string> {
+  if (isNaN(date.getTime())) return { year: "--", month: "--", day: "--", hour: "--", minute: "--" };
   const parts = new Intl.DateTimeFormat("en-CA", {
     timeZone: TAIPEI_TZ,
     year: "numeric",
