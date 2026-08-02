@@ -72,7 +72,8 @@
 .timingRow {
   padding: 8px 10px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--soft-border);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .timingHead {
@@ -111,7 +112,8 @@
   gap: 12px;
   padding: 8px 10px;
   border-radius: var(--radius-md);
-  border: 1px solid var(--soft-border);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .iconWrap {

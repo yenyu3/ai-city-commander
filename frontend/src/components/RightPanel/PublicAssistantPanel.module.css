@@ -252,7 +252,8 @@
   gap: 6px;
   padding: 10px 12px;
   border-radius: var(--radius-md);
-  background: color-mix(in srgb, var(--text), transparent 95%);
+  background: #fff;
+  border: 1px solid rgba(0, 0, 0, 0.15);
 }
 
 .advisoryMeta {
