@@ -82,6 +82,26 @@ class InterAgencyAction:
 
 
 @dataclass
+class RoutingVariant:
+    """One weighted citizen-facing message recommending a single reroute
+    candidate -- see narrate_for_focus()'s docstring on why this exists:
+    telling every resident the SAME "best" route just moves the jam onto
+    that route. `weight` is a deterministic probability (computed from
+    real capacity_vph/current_saturation in decision_routing.decision_
+    detail()'s reroute.viableRoutes -- see agent/facts.py::decide_accident()
+    -- never LLM-invented), meant for a caller to seed-select ONE variant
+    per device so the same device sees the same recommendation across
+    reloads while the population as a whole spreads across every viable
+    route roughly proportional to its remaining capacity. Citizen only --
+    government needs the full mainRoute/secondaryRoutes picture, not one
+    randomly-assigned option."""
+
+    segment_id: str
+    text: str
+    weight: float
+
+
+@dataclass
 class NarrativeSummary:
     """One audience's integrated view of the current sweep -- structured,
     not free text. `text` is a complete account (every triggered item's
@@ -100,6 +120,12 @@ class NarrativeSummary:
     signal_coordination: list[SignalTiming] = field(default_factory=list)  # government only
     cross_system_coordination: list[InterAgencyAction] = field(default_factory=list)  # government only
     publication_eligible_location_ids: list[str] = field(default_factory=list)  # government only
+    # citizen only -- see RoutingVariant. Additive: empty unless there's an
+    # accident-kind item with 2+ viable reroute candidates worth splitting
+    # citizens across (see narrate_for_focus). headline/text above are
+    # UNCHANGED by this field's presence -- existing frontend consumers
+    # that don't know about it see exactly the same summary they always did.
+    routing_variants: list[RoutingVariant] = field(default_factory=list)
 
 
 @dataclass
@@ -217,6 +243,99 @@ _GOVERNMENT_NARRATIVE_SYSTEM_PROMPT = (
 )
 
 
+def _compute_routing_weights(viable_routes: list[dict[str, Any]]) -> dict[str, float]:
+    """Deterministic crowd-split weight per reroute candidate -- NOT an LLM
+    judgment (see RoutingVariant's docstring on why: recommending the same
+    single "best" route to every citizen just relocates the jam onto that
+    route). remaining_capacity = capacityVph * (1 - currentSaturation) --
+    how much more traffic a route can absorb before it saturates too --
+    normalized into a probability. All-saturated candidates fall back to a
+    small floor (0.01) each rather than dividing by zero, so the split
+    degrades to roughly uniform instead of breaking."""
+    remaining = {
+        r["segmentId"]: max((r.get("capacityVph") or 0.0) * (1 - (r.get("currentSaturation") or 0.0)), 0.01)
+        for r in viable_routes
+    }
+    total = sum(remaining.values())
+    return {segment_id: value / total for segment_id, value in remaining.items()}
+
+
+_ROUTING_VARIANT_SYSTEM_PROMPT = (
+    "你是台北市交通應變指揮系統的市民版分流訊息產生器。你會收到一個事故的"
+    "多個可行疏散路徑候選，每個都已經算好一個機率權重（依剩餘道路容量算出，"
+    "不是你要判斷或修改的東西，直接使用）。\n\n"
+    "為每個候選各自產生一句口語化的市民版建議訊息，語氣跟平常的市民版摘要"
+    "一致——像在跟朋友說「欸那邊塞車喔，走OO比較快」，不是公文、不要出現"
+    "「請」「敬請」「本系統」這類公文詞。每個訊息各自獨立完整、只推薦自己"
+    "那個候選路徑，不要互相比較或提到其他候選（因為每個使用者只會看到"
+    "其中一則，依權重隨機分配到，不知道還有其他版本存在）。\n\n"
+    "只能輸出一個 JSON 物件，格式：\n"
+    '{"variants": [{"segmentId": "...", "text": "..."}, ...]}\n'
+    "segmentId 要跟輸入的候選一一對應，每個候選都要有一則訊息，不要遺漏。"
+)
+
+
+def _deterministic_routing_variants(triggered_items: list[dict[str, Any]]) -> list[RoutingVariant]:
+    """No-LLM-configured path for narrate_for_focus's routing-variant split
+    -- weights are already deterministic (_compute_routing_weights), so the
+    only thing this substitutes for is the LLM-written per-variant text,
+    using the same template _routing_variant_texts falls back to per-item
+    on a real LLM failure."""
+    variants: list[RoutingVariant] = []
+    for item in triggered_items:
+        if item.get("kind") != "accident":
+            continue
+        viable_routes = (item.get("reroute") or {}).get("viableRoutes") or []
+        if len(viable_routes) < 2:
+            continue
+        weights = _compute_routing_weights(viable_routes)
+        location = item.get("title") or "事故路段"
+        variants += [
+            RoutingVariant(
+                segment_id=r["segmentId"],
+                text=f"{location}封閉中，建議改道經{r['name']}通行，並多預留通勤時間。",
+                weight=weights[r["segmentId"]],
+            )
+            for r in viable_routes
+        ]
+    return variants
+
+
+def _routing_variant_texts(
+    client: LLMClient, item: dict[str, Any], viable_routes: list[dict[str, Any]], weights: dict[str, float]
+) -> list[RoutingVariant]:
+    def fallback_text(route: dict[str, Any]) -> str:
+        location = item.get("title") or "事故路段"
+        return f"{location}封閉中，建議改道經{route['name']}通行，並多預留通勤時間。"
+
+    try:
+        facts = {
+            "incidentLocation": item.get("title"),
+            "candidates": [
+                {"segmentId": r["segmentId"], "name": r["name"], "weight": round(weights[r["segmentId"]], 3)}
+                for r in viable_routes
+            ],
+        }
+        prompt = f"=== 事故與候選路徑 ===\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n請為每個候選各自產生一則市民版訊息。"
+        raw = client.complete(system=_ROUTING_VARIANT_SYSTEM_PROMPT, prompt=prompt, max_tokens=1500)
+        parsed = _parse_json_response(raw)
+        texts_by_id = {v["segmentId"]: v["text"] for v in parsed.get("variants", []) if v.get("segmentId")}
+        return [
+            RoutingVariant(
+                segment_id=r["segmentId"],
+                text=texts_by_id.get(r["segmentId"]) or fallback_text(r),
+                weight=weights[r["segmentId"]],
+            )
+            for r in viable_routes
+        ]
+    except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
+        print(f"[agent.router_agent] narrate_for_focus (routing variants) LLM call failed, falling back: {exc}", file=sys.stderr)
+        return [
+            RoutingVariant(segment_id=r["segmentId"], text=fallback_text(r), weight=weights[r["segmentId"]])
+            for r in viable_routes
+        ]
+
+
 def narrate_for_focus(
     triggered_items: list[dict[str, Any]],
     focus_location_id: Optional[str],
@@ -226,7 +345,9 @@ def narrate_for_focus(
 ) -> Narrative:
     client = llm_client if llm_client is not None else get_configured_llm_client()
     if client is None:
-        return _fallback_narrative(triggered_items, focus_location_id, focus_location_name)
+        narrative = _fallback_narrative(triggered_items, focus_location_id, focus_location_name)
+        narrative.citizen.routing_variants = _deterministic_routing_variants(triggered_items)
+        return narrative
 
     facts = {
         "triggeredItems": triggered_items,
@@ -262,11 +383,30 @@ def narrate_for_focus(
             print(f"[agent.router_agent] narrate_for_focus (government) LLM call failed, falling back: {exc}", file=sys.stderr)
             return _fallback_narrative(triggered_items, focus_location_id, focus_location_name).government
 
-    with ThreadPoolExecutor(max_workers=2) as pool:
+    # Accident items with 2+ viable reroute candidates get a routing-variant
+    # split (see RoutingVariant/_compute_routing_weights) -- one extra
+    # parallel LLM call per such item, alongside citizen/government. Most
+    # sweeps/incidents have zero of these (no accident, or only one viable
+    # route with nothing to split), so this adds no cost in the common case.
+    variant_jobs = [
+        (item, item["reroute"]["viableRoutes"])
+        for item in triggered_items
+        if item.get("kind") == "accident" and len((item.get("reroute") or {}).get("viableRoutes") or []) >= 2
+    ]
+
+    def _variants_for(item: dict[str, Any], viable_routes: list[dict[str, Any]]):
+        def run() -> list[RoutingVariant]:
+            return _routing_variant_texts(client, item, viable_routes, _compute_routing_weights(viable_routes))
+        return run
+
+    with ThreadPoolExecutor(max_workers=2 + len(variant_jobs)) as pool:
         citizen_future = pool.submit(_citizen)
         government_future = pool.submit(_government)
+        variant_futures = [pool.submit(_variants_for(item, routes)) for item, routes in variant_jobs]
         citizen = citizen_future.result()
         government = government_future.result()
+        for future in variant_futures:
+            citizen.routing_variants += future.result()
 
     return Narrative(citizen=citizen, government=government)
 

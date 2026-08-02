@@ -209,6 +209,29 @@ def decide_accident(
             "ete_breakdown": ete_result.breakdown,
         }
 
+        # capacity_vph/current_saturation for whichever routes ended up
+        # chosen as main/secondary -- looked up from `candidates` (already
+        # fully known before the decide() call, not re-derived or asked of
+        # the LLM). This is what agent/router_agent.py's citizen routing-
+        # variant split (2026-08-02) weights each candidate by: how much
+        # more traffic a route can absorb before it saturates too, not an
+        # LLM-invented number. Kept alongside the route IDs the judgment
+        # step above already chose, not a second judgment of which routes
+        # are "viable" -- that's still main_route/secondary_routes' job.
+        candidates_by_id = {c["segment_id"]: c for c in candidates}
+        route_ids = ([main_route] if main_route else []) + list(decision.result.get("secondary_routes") or [])
+        viable_routes = [
+            {
+                "segmentId": rid,
+                "name": candidates_by_id[rid]["name"],
+                "capacityVph": candidates_by_id[rid]["capacity_vph"],
+                "currentSaturation": candidates_by_id[rid]["current_saturation"],
+            }
+            for rid in route_ids
+            if rid in candidates_by_id
+        ]
+        decision.result = {**decision.result, "viable_routes": viable_routes}
+
     return decision
 
 

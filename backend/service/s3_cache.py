@@ -37,7 +37,7 @@ from typing import Optional
 
 import s3_common
 from agent.decision_agent import Decision, ReasoningStep
-from agent.router_agent import InterAgencyAction, Narrative, NarrativeSummary, SignalTiming, Trigger
+from agent.router_agent import InterAgencyAction, Narrative, NarrativeSummary, RoutingVariant, SignalTiming, Trigger
 
 # SOP §6's multilingual judgment runs once per poll across every visible
 # station, not per station -- "all" names that it's the one cross-cutting
@@ -249,6 +249,10 @@ def _narrative_summary_to_json(summary: NarrativeSummary, *, government: bool) -
             {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
         ]
         payload["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
+    else:
+        payload["routingVariants"] = [
+            {"segmentId": v.segment_id, "text": v.text, "weight": v.weight} for v in summary.routing_variants
+        ]
     return payload
 
 
@@ -272,6 +276,11 @@ def _narrative_summary_from_json(payload: dict, *, government: bool) -> Narrativ
             for a in (payload.get("crossSystemCoordination") or [])
         ]
         summary.publication_eligible_location_ids = payload.get("publicationEligibleLocationIds") or []
+    else:
+        summary.routing_variants = [
+            RoutingVariant(segment_id=v["segmentId"], text=v["text"], weight=v["weight"])
+            for v in (payload.get("routingVariants") or [])
+        ]
     return summary
 
 

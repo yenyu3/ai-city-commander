@@ -468,6 +468,13 @@ def decision_detail(trig: Trigger, decision: Decision) -> dict[str, Any]:
             "mainRoute": decision.result.get("main_route"),
             "secondaryRoutes": decision.result.get("secondary_routes", []),
             "excluded": decision.result.get("excluded", []),
+            # capacity_vph/current_saturation per chosen route -- see
+            # agent/facts.py::decide_accident()'s docstring on why this is
+            # merged in deterministically, not LLM-judged. Feeds Phase C's
+            # citizen routing-variant split (narrate_for_focus); never used
+            # for government (which gets the full mainRoute/secondaryRoutes
+            # picture already).
+            "viableRoutes": decision.result.get("viable_routes", []),
         }
 
     estimated_recovery: Optional[dict[str, Any]] = None
@@ -585,6 +592,15 @@ def summary_json(summary: NarrativeSummary, *, government: bool) -> dict[str, An
             {"agency": a.agency, "text": a.text, "icon": a.icon} for a in summary.cross_system_coordination
         ]
         item["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
+    else:
+        # Citizen only -- see agent/router_agent.py's RoutingVariant
+        # docstring. Additive/optional: absent or empty for the common case
+        # (no accident, or only one viable reroute candidate), so existing
+        # frontend consumers that don't know this field exists see exactly
+        # the citizen summary they always did.
+        item["routingVariants"] = [
+            {"segmentId": v.segment_id, "text": v.text, "weight": v.weight} for v in summary.routing_variants
+        ]
     return item
 
 
@@ -653,7 +669,13 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
     `summary_json` output -- i.e. exactly what GET /api/decisions would
     return if this incident were the only thing in the sweep, per the user's
     direction that the notice format must match the decisions API's shape
-    (see decision_item_json/summary_json's docstrings)."""
+    (see decision_item_json/summary_json's docstrings).
+
+    2026-08-02: the report/notice write happens unconditionally now, even
+    when `pairs` ends up empty (no SOP article matched this incident's
+    facts) -- see the comment at that call site for why leaving it
+    conditional meant POST /api/incidents' `publication.status: "pending"`
+    promise could never resolve for such an incident."""
     data = _fetch_city_data(conn, scenario_at)
     # An injected incident is an explicit work request. Do not use the city
     # snapshot's `occurred_at <= scenario_at` visibility filter here: callers
@@ -718,18 +740,30 @@ def run_incident_flow(conn, scenario_at: datetime, event_id: str) -> list[tuple[
             )
         )
 
-    if pairs:
-        _write_incident_report_and_notice(scenario_at, data, incident, date, pairs)
-        logger.info(
-            "incident_flow_report_and_notice_published %s",
-            json.dumps({
-                "eventId": event_id,
-                "triggeredSopSections": [trigger.sop_section_id for trigger, _decision in pairs],
-                "decisionSources": [decision.source for _trigger, decision in pairs],
-            }),
-        )
-    else:
-        logger.info("incident_flow_no_sop_trigger %s", json.dumps({"eventId": event_id, "scenarioAt": scenario_at.isoformat()}))
+    # 2026-08-02: used to only write the report/notice when `pairs` was
+    # non-empty -- an incident whose facts don't match any SOP article
+    # (e.g. a Crowd_Control-type event, which no current article covers)
+    # then never got a report or notice at all, and POST /api/incidents'
+    # own response already promised the caller `publication.status:
+    # "pending"` -- nothing ever resolves that promise, so the frontend
+    # polls forever with no way to distinguish "still computing" from
+    # "computed, genuinely nothing triggered" (caught live testing
+    # TPE_2026_EVT_005). _write_incident_report_and_notice already handles
+    # an empty `pairs` correctly on its own (narrate_for_focus([], ...) has
+    # its own "沒有任何觸發" wording, report_builder's PDF loop is simply
+    # empty) -- the only thing stopping it was this gate, not any missing
+    # empty-case handling downstream. Now always called, so every incident
+    # gets a real, honest notice either way -- "triggered §2/§5/§3" or
+    # "evaluated, nothing triggered" -- never silence.
+    _write_incident_report_and_notice(scenario_at, data, incident, date, pairs)
+    logger.info(
+        "incident_flow_report_and_notice_published %s",
+        json.dumps({
+            "eventId": event_id,
+            "triggeredSopSections": [trigger.sop_section_id for trigger, _decision in pairs],
+            "decisionSources": [decision.source for _trigger, decision in pairs],
+        }),
+    )
 
     return pairs
 
