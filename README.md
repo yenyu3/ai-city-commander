@@ -51,15 +51,15 @@ AI City Commander 是一套面向大型城市活動與交通事件的智慧營�
 
 後端 API 路由定義於 Terraform 與本機 server，主要包含：
 
-| Method | Path | 用途 |
-| --- | --- | --- |
-| `GET` | `/api/city-state` | 查詢指定 `scenarioAt` 的交通與人流狀態 |
-| `POST` | `/api/incidents` | 建立或注入事故事件 |
-| `GET` | `/api/incidents/{eventId}/report` | 查詢事故報告產生狀態，JSON 格式完整內容內嵌回傳 |
-| `GET` | `/api/decisions` | 查詢指定時間與位置的決策結果 |
-| `POST` | `/api/chat/messages` | 送出政府端或民眾端問答 |
-| `POST` | `/api/publication` | 發布告警訊息 |
-| `GET` | `/api/experiments/public-notices` | 實驗用公開 notice/manifest 查詢 |
+| Method | Path                              | 用途                                            |
+| ------ | --------------------------------- | ----------------------------------------------- |
+| `GET`  | `/api/city-state`                 | 查詢指定 `scenarioAt` 的交通與人流狀態          |
+| `POST` | `/api/incidents`                  | 建立或注入事故事件                              |
+| `GET`  | `/api/incidents/{eventId}/report` | 查詢事故報告產生狀態，JSON 格式完整內容內嵌回傳 |
+| `GET`  | `/api/decisions`                  | 查詢指定時間與位置的決策結果                    |
+| `POST` | `/api/chat/messages`              | 送出政府端或民眾端問答                          |
+| `POST` | `/api/publication`                | 發布告警訊息                                    |
+| `GET`  | `/api/experiments/public-notices` | 實驗用公開 notice/manifest 查詢                 |
 
 ### 4. 公開告警與報告
 
@@ -69,15 +69,6 @@ AI City Commander 是一套面向大型城市活動與交通事件的智慧營�
 - Public S3 bucket + CloudFront：公開 notice 與 manifest。
 - Report API：JSON 報告以完整內容內嵌回傳；前端「匯出」按鈕則直接以現有事件/決策資料在瀏覽器端即時產生 PDF／JSON，確保匯出功能不受後端報告產生時間影響。
 - Publication API：產生多語訊息、發布狀態與 channel status。
-
-### 5. 大量用戶輪詢實驗
-
-`experiments/incident-manifest-polling/` 比較兩種公開告警讀取方式：
-
-- CloudFront 直接讀取 public results manifest/notice。
-- API Gateway + Lambda proxy 讀取 notice。
-
-實驗報告顯示，在 1,000 與 10,000 client 規模下，CloudFront 在延遲與穩定度上明顯優於 Lambda proxy，適合作為大量民眾端公開告警的主要讀取路徑。
 
 ## 系統架構
 
@@ -220,164 +211,3 @@ ANTHROPIC_API_KEY=
 OMNIROUTE_BASE_URL=
 OMNIROUTE_MODEL=
 ```
-
-若未設定任何 provider，系統會使用規則與模板 fallback，不影響基本流程測試。
-
-## 測試與品質檢查
-
-### 前端
-
-```bash
-cd frontend
-npm run lint
-npm run test
-npm run build
-```
-
-### 後端
-
-```bash
-cd backend/service
-pytest tests/ -v
-```
-
-若要測試資料庫相關流程，可先啟動 PostgreSQL：
-
-```bash
-docker run -d --name aicity-pg \
-  -e POSTGRES_PASSWORD=aicity \
-  -e POSTGRES_DB=aicity \
-  -p 5432:5432 \
-  postgres:16
-```
-
-再設定：
-
-```bash
-DATABASE_URL=postgresql://postgres:aicity@localhost:5432/aicity
-```
-
-## AWS 部署概要
-
-### 1. 建立 Terraform remote state bucket
-
-```bash
-cd backend/terraform/bootstrap
-terraform init
-terraform apply
-terraform output -raw terraform_state_bucket
-```
-
-將輸出的 bucket name 填入 `backend/terraform/dev.tfbackend`。
-
-### 2. 設定 Terraform 變數
-
-請檢查並調整：
-
-```text
-backend/terraform/terraform.tfvars
-```
-
-常見設定包含：
-
-- AWS region
-- project name
-- CORS origins
-- Aurora Serverless 參數
-- S3 bucket name
-- Bedrock model 或 AgentCore runtime 設定
-
-### 3. 建置 seed Lambda
-
-```bash
-cd backend/terraform
-./scripts/build_seed_lambda.sh
-```
-
-### 4. 部署基礎設施
-
-```bash
-terraform init -reconfigure -backend-config=dev.tfbackend
-terraform plan
-terraform apply
-```
-
-部署後可取得：
-
-```bash
-terraform output frontend_url
-terraform output api_gateway_url
-terraform output public_results_url
-```
-
-### 5. 部署前端
-
-從 repository root 執行：
-
-```bash
-./frontend/scripts/deploy.sh
-```
-
-此腳本會建置前端、上傳至 S3 frontend bucket，並對 CloudFront 建立 invalidation。
-
-## Demo 資料
-
-靜態 demo 資料位於：
-
-```text
-frontend/public/data/
-├── city_traffic_flow.csv
-├── signaling_crowd_density.csv
-├── live_incidents.json
-├── road_network_geometry.json
-├── road_paths.json
-└── station_coords.json
-```
-
-範例事故位於：
-
-```text
-docs/sample_incident_*.json
-```
-
-API 模式會改由後端讀取 Aurora PostgreSQL、S3 decision cache 與 public notice manifest。
-
-## 重要設計原則
-
-- 政府端與民眾端資訊分層：內部 reasoning、SOP references、跨機關協調與公開訊息分開處理。
-- 規則優先、AI 增強：SOP 判斷以 deterministic 規則保底，LLM 負責敘事、推理整理與自然語言輸出。
-- 可追溯決策：決策結果包含 `triggered`、`sopSectionId`、`result`、`reasoning`、`publicMessage` 與 `source`。
-- 可擴展發布：大量公開告警讀取以 CloudFront + S3 manifest 為主，避免所有民眾端流量打到 Lambda。
-- 本機與雲端路由一致：`backend/service/local_server.py` 的路由表對齊 `backend/terraform/api.tf`。
-
-## 常用指令
-
-```bash
-# Frontend
-cd frontend
-npm run dev
-npm run test
-npm run lint
-npm run build
-npm run preview
-
-# Backend
-cd backend/service
-python local_server.py 8787
-pytest tests/ -v
-
-# Terraform
-cd backend/terraform
-terraform plan
-terraform apply
-terraform output
-```
-
-## 專案狀態
-
-目前專案已具備完整的前端操作介面、後端 API handler、SOP 規則測試、LLM provider fallback、AWS Terraform 部署腳本，以及公開告警輪詢壓力測試與比較報告，可完整支援本機開發與 AWS 雲端部署兩種模式。
-
-### 後續規劃
-
-- Publication API 的多通路（簡訊、推播等）發布串接：SNS topic 與相關 IAM 權限已於 Terraform 建置完成，正式串接為後續規劃項目。
-- `/api/decisions` 目前以城市巡查（city-sweep）觸發的決策快取為主，事故觸發的個別決策以 incident/report 流程呈現；兩者的整合查詢介面為後續優化方向。
