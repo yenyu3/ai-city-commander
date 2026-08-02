@@ -251,7 +251,14 @@ def _narrative_summary_to_json(summary: NarrativeSummary, *, government: bool) -
         payload["publicationEligibleLocationIds"] = summary.publication_eligible_location_ids
     else:
         payload["routingVariants"] = [
-            {"segmentId": v.segment_id, "text": v.text, "weight": v.weight} for v in summary.routing_variants
+            {
+                "segmentId": v.segment_id,
+                "headline": v.headline,
+                "text": v.text,
+                "recommendedActions": v.recommended_actions,
+                "weight": v.weight,
+            }
+            for v in summary.routing_variants
         ]
     return payload
 
@@ -278,7 +285,13 @@ def _narrative_summary_from_json(payload: dict, *, government: bool) -> Narrativ
         summary.publication_eligible_location_ids = payload.get("publicationEligibleLocationIds") or []
     else:
         summary.routing_variants = [
-            RoutingVariant(segment_id=v["segmentId"], text=v["text"], weight=v["weight"])
+            RoutingVariant(
+                segment_id=v["segmentId"],
+                headline=v["headline"],
+                text=v["text"],
+                recommended_actions=v.get("recommendedActions") or [],
+                weight=v["weight"],
+            )
             for v in (payload.get("routingVariants") or [])
         ]
     return summary

@@ -83,22 +83,31 @@ class InterAgencyAction:
 
 @dataclass
 class RoutingVariant:
-    """One weighted citizen-facing message recommending a single reroute
-    candidate -- see narrate_for_focus()'s docstring on why this exists:
-    telling every resident the SAME "best" route just moves the jam onto
-    that route. `weight` is a deterministic probability (computed from
-    real capacity_vph/current_saturation in decision_routing.decision_
-    detail()'s reroute.viableRoutes -- see agent/facts.py::decide_accident()
-    -- never LLM-invented), meant for a caller to seed-select ONE variant
-    per device so the same device sees the same recommendation across
-    reloads while the population as a whole spreads across every viable
-    route roughly proportional to its remaining capacity. Citizen only --
-    government needs the full mainRoute/secondaryRoutes picture, not one
+    """One weighted, COMPLETE alternate citizen view recommending a single
+    reroute candidate -- see narrate_for_focus()'s docstring on why this
+    exists: telling every resident the SAME "best" route just moves the jam
+    onto that route. `headline`/`text`/`recommended_actions` are the SAME
+    shape as NarrativeSummary's own fields, on purpose (2026-08-02, per the
+    user's direction): a caller that seed-selects one variant is meant to
+    swap it in WHOLESALE, replacing citizen.headline/.text/
+    .recommendedActions entirely, not append it alongside them --
+    estimatedRecovery/prioritizedDecisionIds stay on the base citizen
+    object only, since those don't vary by which route you take. `weight`
+    is a deterministic probability (computed from real capacity_vph/
+    current_saturation in decision_routing.decision_detail()'s
+    reroute.viableRoutes -- see agent/facts.py::decide_accident() -- never
+    LLM-invented), meant for a caller to seed-select ONE variant per device
+    so the same device sees the same recommendation across reloads while
+    the population as a whole spreads across every viable route roughly
+    proportional to its remaining capacity. Citizen only -- government
+    needs the full mainRoute/secondaryRoutes picture, not one
     randomly-assigned option."""
 
     segment_id: str
+    headline: str
     text: str
     weight: float
+    recommended_actions: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -266,19 +275,29 @@ _ROUTING_VARIANT_SYSTEM_PROMPT = (
     "不是你要判斷或修改的東西，直接使用）。\n\n"
     "為每個候選各自產生一句口語化的市民版建議訊息，語氣跟平常的市民版摘要"
     "一致——像在跟朋友說「欸那邊塞車喔，走OO比較快」，不是公文、不要出現"
-    "「請」「敬請」「本系統」這類公文詞。每個訊息各自獨立完整、只推薦自己"
+    "「請」「敬請」「本系統」這類公文詞。每個變體各自獨立完整、只推薦自己"
     "那個候選路徑，不要互相比較或提到其他候選（因為每個使用者只會看到"
-    "其中一則，依權重隨機分配到，不知道還有其他版本存在）。\n\n"
+    "其中一則，依權重隨機分配到，不知道還有其他版本存在）。地點一律用"
+    "incidentLocation 給的實際地名，不要用路段代碼或模糊帶過（不能只說"
+    "「那邊」「附近」）。\n\n"
+    "每個候選要各自產生完整一組（形狀跟一般市民版摘要一樣，因為前端選中"
+    "某個候選後會整組拿去取代原本的市民版摘要顯示，不是附加內容）：\n"
+    '- "headline"：一句話結論，包含地點跟這個候選路徑名稱。\n'
+    '- "text"：完整的口語化說明段落，涵蓋事故狀況、這條路徑的優點/現況、'
+    "預計延誤時間（若有給）。\n"
+    '- "recommendedActions"：陣列，給這個候選路徑的具體行動建議（例如'
+    "改道方式、要不要考慮大眾運輸）。\n\n"
     "只能輸出一個 JSON 物件，格式：\n"
-    '{"variants": [{"segmentId": "...", "text": "..."}, ...]}\n'
-    "segmentId 要跟輸入的候選一一對應，每個候選都要有一則訊息，不要遺漏。"
+    '{"variants": [{"segmentId": "...", "headline": "...", "text": "...", '
+    '"recommendedActions": ["..."]}, ...]}\n'
+    "segmentId 要跟輸入的候選一一對應，每個候選都要有一組完整內容，不要遺漏。"
 )
 
 
 def _deterministic_routing_variants(triggered_items: list[dict[str, Any]]) -> list[RoutingVariant]:
     """No-LLM-configured path for narrate_for_focus's routing-variant split
     -- weights are already deterministic (_compute_routing_weights), so the
-    only thing this substitutes for is the LLM-written per-variant text,
+    only thing this substitutes for is the LLM-written per-variant content,
     using the same template _routing_variant_texts falls back to per-item
     on a real LLM failure."""
     variants: list[RoutingVariant] = []
@@ -293,7 +312,9 @@ def _deterministic_routing_variants(triggered_items: list[dict[str, Any]]) -> li
         variants += [
             RoutingVariant(
                 segment_id=r["segmentId"],
-                text=f"{location}封閉中，建議改道經{r['name']}通行，並多預留通勤時間。",
+                headline=f"{location}封閉中，改道經{r['name']}通行",
+                text=f"{location}目前封閉中，建議改道經{r['name']}通行，並多預留通勤時間。",
+                recommended_actions=[f"改道經{r['name']}通行", "多預留通勤時間"],
                 weight=weights[r["segmentId"]],
             )
             for r in viable_routes
@@ -304,36 +325,45 @@ def _deterministic_routing_variants(triggered_items: list[dict[str, Any]]) -> li
 def _routing_variant_texts(
     client: LLMClient, item: dict[str, Any], viable_routes: list[dict[str, Any]], weights: dict[str, float]
 ) -> list[RoutingVariant]:
-    def fallback_text(route: dict[str, Any]) -> str:
-        location = item.get("title") or "事故路段"
-        return f"{location}封閉中，建議改道經{route['name']}通行，並多預留通勤時間。"
+    location = item.get("title") or "事故路段"
+
+    def fallback_variant(route: dict[str, Any]) -> RoutingVariant:
+        return RoutingVariant(
+            segment_id=route["segmentId"],
+            headline=f"{location}封閉中，改道經{route['name']}通行",
+            text=f"{location}目前封閉中，建議改道經{route['name']}通行，並多預留通勤時間。",
+            recommended_actions=[f"改道經{route['name']}通行", "多預留通勤時間"],
+            weight=weights[route["segmentId"]],
+        )
 
     try:
         facts = {
             "incidentLocation": item.get("title"),
+            "eteMinutes": (item.get("estimatedRecovery") or {}).get("ete"),
             "candidates": [
                 {"segmentId": r["segmentId"], "name": r["name"], "weight": round(weights[r["segmentId"]], 3)}
                 for r in viable_routes
             ],
         }
-        prompt = f"=== 事故與候選路徑 ===\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n請為每個候選各自產生一則市民版訊息。"
-        raw = client.complete(system=_ROUTING_VARIANT_SYSTEM_PROMPT, prompt=prompt, max_tokens=1500)
+        prompt = f"=== 事故與候選路徑 ===\n{json.dumps(facts, ensure_ascii=False, indent=2)}\n\n請為每個候選各自產生一組完整的市民版摘要。"
+        raw = client.complete(system=_ROUTING_VARIANT_SYSTEM_PROMPT, prompt=prompt, max_tokens=3000)
         parsed = _parse_json_response(raw)
-        texts_by_id = {v["segmentId"]: v["text"] for v in parsed.get("variants", []) if v.get("segmentId")}
+        by_id = {v["segmentId"]: v for v in parsed.get("variants", []) if v.get("segmentId")}
         return [
             RoutingVariant(
                 segment_id=r["segmentId"],
-                text=texts_by_id.get(r["segmentId"]) or fallback_text(r),
+                headline=by_id[r["segmentId"]]["headline"],
+                text=by_id[r["segmentId"]]["text"],
+                recommended_actions=by_id[r["segmentId"]].get("recommendedActions") or [],
                 weight=weights[r["segmentId"]],
             )
+            if r["segmentId"] in by_id
+            else fallback_variant(r)
             for r in viable_routes
         ]
     except Exception as exc:  # noqa: BLE001 - any failure here must fall back, never crash the request
         print(f"[agent.router_agent] narrate_for_focus (routing variants) LLM call failed, falling back: {exc}", file=sys.stderr)
-        return [
-            RoutingVariant(segment_id=r["segmentId"], text=fallback_text(r), weight=weights[r["segmentId"]])
-            for r in viable_routes
-        ]
+        return [fallback_variant(r) for r in viable_routes]
 
 
 def narrate_for_focus(

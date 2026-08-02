@@ -192,6 +192,15 @@ def decide_accident(
     # or the fallback, and merged in here so callers (incl. the frontend)
     # never need their own copy of this formula either.
     if decision.triggered:
+        # decision_detail()'s `title`/`location_name` fell back to the bare
+        # segment_id ("RD_TPE_002") for accident items, since this was the
+        # only decide_*() that never merged a human-readable location_name
+        # into its result (congestion/mrt/dome already do this in
+        # _compute_decision_for_trigger) -- caught live when a citizen
+        # routing-variant message said "那邊出事了" with no actual place
+        # name. incident.location is already known, not derived by the LLM.
+        decision.result = {**decision.result, "location_name": incident.location}
+
         main_route = decision.result.get("main_route")
         incident_saturation = saturation.get(incident.affected_segment, 0.0)
         main_saturation = (

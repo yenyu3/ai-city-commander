@@ -599,7 +599,14 @@ def summary_json(summary: NarrativeSummary, *, government: bool) -> dict[str, An
         # frontend consumers that don't know this field exists see exactly
         # the citizen summary they always did.
         item["routingVariants"] = [
-            {"segmentId": v.segment_id, "text": v.text, "weight": v.weight} for v in summary.routing_variants
+            {
+                "segmentId": v.segment_id,
+                "headline": v.headline,
+                "text": v.text,
+                "recommendedActions": v.recommended_actions,
+                "weight": v.weight,
+            }
+            for v in summary.routing_variants
         ]
     return item
 
