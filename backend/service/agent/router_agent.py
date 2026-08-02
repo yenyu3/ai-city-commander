@@ -567,6 +567,44 @@ def _fallback_narrative(
     )
 
 
+def _escape_stray_quotes(text: str) -> str:
+    """Same repair as agent/decision_agent.py's _escape_stray_quotes -- see
+    that docstring for the traced real example. Repairs the model quoting a
+    field value inside a string instead of escaping it, the actual cause
+    behind most "Expecting ',' delimiter" fallbacks (not truncation, not a
+    preamble)."""
+    result = []
+    in_string = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            result.append(ch)
+            result.append(text[i + 1])
+            i += 2
+            continue
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                result.append(ch)
+                i += 1
+                continue
+            j = i + 1
+            while j < n and text[j] in " \t\n\r":
+                j += 1
+            if j >= n or text[j] in ":,}]":
+                in_string = False
+                result.append(ch)
+            else:
+                result.append('\\"')
+            i += 1
+            continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
 def _parse_json_response(raw: str) -> dict[str, Any]:
     import re
 
@@ -576,6 +614,12 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
+    # Same plain-text-preamble slip caught live in decision_agent.py's
+    # _parse_json_response -- drop anything before the first "{" instead of
+    # assuming the whole string is JSON from position 0.
+    brace_index = text.find("{")
+    if brace_index > 0:
+        text = text[brace_index:]
     try:
         # strict=False allows raw control characters (literal newlines etc.)
         # inside string values -- caught live on the deployed chat Lambda
@@ -588,21 +632,13 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
-    try:
-        # narrate_for_focus's governmentText is long-form (up to 8000
-        # tokens, every triggered item spelled out in full) -- caught live
-        # against a real Bedrock call producing a trailing comma before a
-        # closing brace, a common long-JSON-output slip that isn't a real
-        # content problem, just strict json.loads() rejecting otherwise-valid
-        # content. One retry with trailing commas stripped before giving up
-        # and falling back (which would silently discard this whole
-        # response, per narrate_for_focus's docstring on why that's costly).
-        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
-    except json.JSONDecodeError:
-        # "Extra data" -- a real Bedrock call returned a complete, valid
-        # JSON object followed by stray trailing content. json.loads()
-        # requires the ENTIRE string to be exactly one JSON document;
-        # raw_decode() instead parses just the first complete value and
-        # ignores whatever follows.
-        obj, _end = json.JSONDecoder(strict=False).raw_decode(text)
-        return obj
+    # Combined repair, applied together: strip trailing commas AND escape
+    # stray literal quotes inside string values (see _escape_stray_quotes --
+    # the actual, traced cause behind most "Expecting ',' delimiter"
+    # fallbacks). raw_decode() on top ignores any leftover trailing content
+    # past the JSON value instead of requiring the whole string to be
+    # exactly one document.
+    repaired = re.sub(r",(\s*[}\]])", r"\1", text)
+    repaired = _escape_stray_quotes(repaired)
+    obj, _end = json.JSONDecoder(strict=False).raw_decode(repaired)
+    return obj

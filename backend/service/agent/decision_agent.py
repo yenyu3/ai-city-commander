@@ -179,6 +179,55 @@ def _normalize_sop_section_id(raw: Any) -> Optional[str]:
     return match.group(0) if match else None
 
 
+def _escape_stray_quotes(text: str) -> str:
+    """Repairs the most common real failure mode behind "Expecting ','
+    delimiter" errors: the model quotes a field value inside a string
+    instead of escaping it, e.g. `"reasoning": "...type 精確等於
+    "Power_Failure"，或..."` -- that inner "Power_Failure" is a literal,
+    un-escaped quote, so json.loads() reads the string as ending right
+    before it and chokes on the leftover `Power_Failure"，或...` as
+    invalid trailing syntax. Caught live via a raw traced Bedrock response
+    (not guessed) after an earlier "preamble text" theory turned out wrong
+    on inspection.
+
+    Scans the text tracking string-open/closed state; when a `"` appears
+    while already inside a string, a REAL closing quote in valid JSON is
+    always followed (after optional whitespace) by a structural character
+    (`:`, `,`, `}`, `]`) -- anything else means the quote was meant to be
+    literal content, so it gets escaped instead of treated as the string's
+    end."""
+    result = []
+    in_string = False
+    i = 0
+    n = len(text)
+    while i < n:
+        ch = text[i]
+        if ch == "\\" and i + 1 < n:
+            result.append(ch)
+            result.append(text[i + 1])
+            i += 2
+            continue
+        if ch == '"':
+            if not in_string:
+                in_string = True
+                result.append(ch)
+                i += 1
+                continue
+            j = i + 1
+            while j < n and text[j] in " \t\n\r":
+                j += 1
+            if j >= n or text[j] in ":,}]":
+                in_string = False
+                result.append(ch)
+            else:
+                result.append('\\"')
+            i += 1
+            continue
+        result.append(ch)
+        i += 1
+    return "".join(result)
+
+
 def _parse_json_response(raw: str) -> dict[str, Any]:
     text = raw.strip()
     if text.startswith("```"):
@@ -186,6 +235,17 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         if text.startswith("json"):
             text = text[4:]
         text = text.strip()
+    # Caught live: despite the system prompt saying "只能輸出一個 JSON 物件，
+    # 不要有任何 JSON 以外的文字", a real Bedrock call still prefaced the
+    # JSON with a few sentences of plain-text preamble (e.g. "根據 SOP
+    # 判斷後..."). json.loads() then fails very early (low character
+    # position) trying to parse that preamble as JSON syntax -- symmetric
+    # fix to raw_decode() below (which handles trailing garbage): drop
+    # everything before the first "{" instead of assuming the whole string
+    # is JSON from position 0.
+    brace_index = text.find("{")
+    if brace_index > 0:
+        text = text[brace_index:]
     try:
         # strict=False allows raw control characters (literal newlines etc.)
         # inside string values -- caught live on the deployed chat Lambda
@@ -197,18 +257,15 @@ def _parse_json_response(raw: str) -> dict[str, Any]:
         return json.loads(text, strict=False)
     except json.JSONDecodeError:
         pass
-    try:
-        # Same long-JSON trailing-comma slip caught live in
-        # router_agent.py/chat.py's _parse_json_response -- one retry with
-        # trailing commas stripped before giving up and falling back. Does
-        # NOT recover a genuinely truncated response (unterminated string),
-        # which max_tokens above is sized to avoid in the first place.
-        return json.loads(re.sub(r",(\s*[}\]])", r"\1", text), strict=False)
-    except json.JSONDecodeError:
-        # "Extra data" -- a real Bedrock call returned a complete, valid
-        # JSON object followed by stray trailing content. json.loads()
-        # requires the ENTIRE string to be exactly one JSON document;
-        # raw_decode() instead parses just the first complete value and
-        # ignores whatever follows.
-        obj, _end = json.JSONDecoder(strict=False).raw_decode(text)
-        return obj
+    # Combined repair, applied together rather than as separate retries:
+    # strip trailing commas (long-JSON slip caught live in router_agent.py/
+    # chat.py) AND escape stray literal quotes inside string values (see
+    # _escape_stray_quotes -- this was the actual, traced cause behind most
+    # "Expecting ',' delimiter" fallbacks, not truncation). raw_decode()
+    # on top means any leftover trailing content past the JSON value (the
+    # model appending a stray sentence after the closing brace) is ignored
+    # too, instead of requiring the whole string to be exactly one document.
+    repaired = re.sub(r",(\s*[}\]])", r"\1", text)
+    repaired = _escape_stray_quotes(repaired)
+    obj, _end = json.JSONDecoder(strict=False).raw_decode(repaired)
+    return obj
